@@ -10,6 +10,7 @@ class Activator {
 	public static function activate() {
 		self::create_tables();
 		update_option( 'mdf_ca_db_version', MDF_CA_DB_VERSION );
+		Roles::register();
 	}
 
 	private static function create_tables() {

@@ -13,3 +13,8 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 // tablas `mdf_ca_farmacias` y `mdf_ca_documentos` (y sus datos), o
 // conservarlas para no perder documentos/farmacias por un borrado accidental
 // del plugin. De momento la desinstalacion no borra nada.
+
+// TODO: decidir tambien si al desinstalar se debe eliminar el rol
+// mdf_cliente (remove_role()). Mientras no se decida, los usuarios que lo
+// tengan simplemente se quedan sin ninguna capacidad si el rol desaparece,
+// sin que eso corrompa sus datos.

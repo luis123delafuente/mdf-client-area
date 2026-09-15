@@ -8,10 +8,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Deactivator {
 
 	/**
-	 * De momento la desactivacion no realiza ninguna accion: todavia no hay
-	 * roles, cron ni rewrite rules registrados por el plugin. Las tablas
-	 * nunca se borran aqui; eso, si procede, es responsabilidad exclusiva
-	 * de uninstall.php.
+	 * De momento la desactivacion no realiza ninguna accion: ni las tablas
+	 * ni el rol mdf_cliente se eliminan aqui, para que reactivar el plugin
+	 * los deje exactamente como estaban (Activator::activate() los vuelve a
+	 * dejar en su estado correcto de todos modos). Borrarlos, si procede,
+	 * es responsabilidad exclusiva de uninstall.php.
 	 */
 	public static function deactivate() {
 	}

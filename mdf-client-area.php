@@ -47,3 +47,5 @@ spl_autoload_register(
 
 register_activation_hook( __FILE__, array( 'MdfClientArea\\Activator', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'MdfClientArea\\Deactivator', 'deactivate' ) );
+
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Role_Restrictions', 'register_hooks' ) );
