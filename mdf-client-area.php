@@ -50,3 +50,8 @@ register_deactivation_hook( __FILE__, array( 'MdfClientArea\\Deactivator', 'deac
 
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Role_Restrictions', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Documento_Endpoint', 'register_hooks' ) );
+
+// TEMPORAL -- tarea #233 (primer despliegue en produccion). Borrar esta
+// linea junto con temp-233-seed-produccion.php en cuanto se confirme que
+// los datos de prueba quedaron creados en produccion.
+require_once MDF_CA_PLUGIN_DIR . 'temp-233-seed-produccion.php';
