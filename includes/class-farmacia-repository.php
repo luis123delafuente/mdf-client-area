@@ -34,6 +34,24 @@ class Farmacia_Repository {
 	}
 
 	/**
+	 * Resuelve la farmacia vinculada a un usuario de WordPress. wp_user_id
+	 * no tiene indice unico a proposito (ver Farmacia): hoy la relacion es
+	 * 1:1 y esto devuelve como mucho una fila, pero si en el futuro un
+	 * usuario pudiera vincularse a varias farmacias, este es el unico
+	 * metodo a cambiar (por una lista), sin tocar a quien lo consume.
+	 */
+	public function find_by_wp_user_id( int $wp_user_id ): ?Farmacia {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+		$row   = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE wp_user_id = %d", $wp_user_id )
+		);
+
+		return $row ? Farmacia::from_db_row( $row ) : null;
+	}
+
+	/**
 	 * Inserta una farmacia nueva. wp_user_id es opcional a nivel de
 	 * persistencia (ver Farmacia): la obligatoriedad de vincular un usuario
 	 * en el alta actual la exige Farmacia_Service, no este repositorio.
