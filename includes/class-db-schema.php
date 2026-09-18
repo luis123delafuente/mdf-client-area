@@ -38,11 +38,17 @@ class DB_Schema {
 		$farmacias_table  = self::get_farmacias_table_name();
 		$documentos_table = self::get_documentos_table_name();
 
+		// plan es VARCHAR nullable, no un campo con FK a una tabla de planes:
+		// en Fase 2 todavia no existe la entidad real (ver CLAUDE.md, Planes
+		// es entidad de datos a partir de Fase 3). Nullable para no requerir
+		// backfill de las farmacias ya existentes; sin plan asignado el
+		// catalogo por plan simplemente no muestra nada (Permissions).
 		$farmacias_sql = "CREATE TABLE {$farmacias_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			cif VARCHAR(9) NOT NULL,
 			nombre VARCHAR(255) NOT NULL,
 			wp_user_id BIGINT UNSIGNED NULL,
+			plan VARCHAR(50) NULL,
 			fecha_alta DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			UNIQUE KEY cif (cif),

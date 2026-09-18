@@ -24,6 +24,26 @@ class Documento_Repository {
 	}
 
 	/**
+	 * Documentos de una farmacia, mas recientes primero. Usado por el
+	 * listado de front (#241): la consulta ya viene acotada a la farmacia,
+	 * asi que quien la consume no necesita repetir la comprobacion de
+	 * visibilidad con Permissions (esa sigue siendo la unica puerta para el
+	 * endpoint de descarga, ver Documento_Endpoint).
+	 *
+	 * @return Documento[]
+	 */
+	public function find_by_farmacia_id( int $farmacia_id ): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE farmacia_id = %d ORDER BY fecha_subida DESC", $farmacia_id )
+		);
+
+		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows );
+	}
+
+	/**
 	 * Insercion minima de metadatos, sin gestion de subida de fichero
 	 * (eso es responsabilidad de la tarea de subida, #231).
 	 */

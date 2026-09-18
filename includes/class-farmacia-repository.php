@@ -82,4 +82,26 @@ class Farmacia_Repository {
 
 		return $this->find_by_id( (int) $wpdb->insert_id );
 	}
+
+	/**
+	 * Fija el plan de una farmacia. Placeholder de prueba (ver
+	 * Catalogo_Herramientas): en Fase 2 no hay flujo de negocio que llame a
+	 * esto todavia, solo el seed de datos de prueba. Null borra el plan
+	 * asignado.
+	 */
+	public function update_plan( int $farmacia_id, ?string $plan ): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+
+		$result = $wpdb->update(
+			$table,
+			array( 'plan' => $plan ),
+			array( 'id' => $farmacia_id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		return false !== $result;
+	}
 }
