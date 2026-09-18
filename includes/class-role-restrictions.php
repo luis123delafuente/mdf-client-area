@@ -37,6 +37,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  * wp-admin), cuyo path de cookie el propio WordPress restringe a
  * /wp-admin: nunca llega en una peticion a una pagina normal del front,
  * asi que siempre habria forzado el login aunque hubiera sesion.
+ *
+ * La barra de administracion se oculta en el front solo para mdf_cliente
+ * (ruido visual de cara a una farmacia real, no un problema de seguridad:
+ * el acceso a wp-admin ya esta bloqueado por bloquear_acceso_admin()).
+ * Se condiciona el filtro show_admin_bar al rol en vez de desactivarla de
+ * forma global, para no afectar a otros roles.
  */
 class Role_Restrictions {
 
@@ -44,6 +50,7 @@ class Role_Restrictions {
 		add_filter( 'login_redirect', array( __CLASS__, 'redirigir_tras_login' ), 10, 3 );
 		add_action( 'init', array( __CLASS__, 'bloquear_acceso_admin' ) );
 		add_action( 'template_redirect', array( __CLASS__, 'proteger_area_privada' ) );
+		add_filter( 'show_admin_bar', array( __CLASS__, 'ocultar_admin_bar_cliente' ) );
 	}
 
 	/**
@@ -96,6 +103,17 @@ class Role_Restrictions {
 
 	private static function url_actual(): string {
 		return home_url( add_query_arg( null, null ) );
+	}
+
+	/**
+	 * @param bool $show
+	 */
+	public static function ocultar_admin_bar_cliente( $show ): bool {
+		if ( Roles::current_user_is_cliente() ) {
+			return false;
+		}
+
+		return $show;
 	}
 
 	/**
