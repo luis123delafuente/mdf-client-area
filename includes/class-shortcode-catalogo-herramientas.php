@@ -6,12 +6,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Shortcode de front para el catalogo de herramientas filtrado por el plan
- * de la farmacia del usuario logueado (Fase 2, tarea #242). El catalogo en
- * si es un placeholder de prueba (ver Catalogo_Herramientas); que items
- * son visibles para que plan lo decide unicamente
- * Permissions::puede_ver_item_catalogo(), no se repite aqui esa
+ * Shortcode de front para el catalogo (Herramientas o Formacion) filtrado
+ * por el plan de la farmacia del usuario logueado. Desde Fase 3 (#247) lee
+ * de Catalogo_Repository, no del array hardcodeado de Catalogo_Herramientas
+ * (retirada); que items son visibles para que plan lo sigue decidiendo
+ * unicamente Permissions::puede_ver_item_catalogo(), no se repite aqui esa
  * comparacion.
+ *
+ * El nombre del shortcode y su publicacion sin atributos
+ * ([mdf_ca_catalogo_herramientas], ya usado por MKT en la pagina
+ * Herramientas) no cambian: el atributo "seccion" es opcional y por
+ * defecto vale "herramientas", asi que la sintaxis ya publicada sigue
+ * funcionando identica. Se anade porque la tabla de catalogo ahora
+ * modela tambien la seccion Formacion (ver DB_Schema); sin este atributo,
+ * esos items quedarian sin ningun shortcode capaz de mostrarlos.
  *
  * Mismo patron que Shortcode_Listado_Documentos: sin sesion, sin farmacia
  * o farmacia sin plan asignado, el catalogo se muestra vacio, nunca un
@@ -25,12 +33,18 @@ class Shortcode_Catalogo_Herramientas {
 		add_shortcode( self::TAG, array( __CLASS__, 'render' ) );
 	}
 
-	public static function render(): string {
+	/**
+	 * @param array|string $atts
+	 */
+	public static function render( $atts = array() ): string {
+		$atts    = shortcode_atts( array( 'seccion' => Catalogo_Secciones::HERRAMIENTAS ), $atts, self::TAG );
+		$seccion = Catalogo_Secciones::es_valida( $atts['seccion'] ) ? $atts['seccion'] : Catalogo_Secciones::HERRAMIENTAS;
+
 		$usuario = wp_get_current_user();
 
 		$items = array_filter(
-			Catalogo_Herramientas::get_items(),
-			static function ( array $item ) use ( $usuario ) {
+			( new Catalogo_Repository() )->find_by_seccion( $seccion ),
+			static function ( Catalogo_Item $item ) use ( $usuario ) {
 				return Permissions::puede_ver_item_catalogo( $usuario, $item );
 			}
 		);
@@ -49,15 +63,36 @@ class Shortcode_Catalogo_Herramientas {
 	}
 
 	/**
-	 * @param array<int, array{id: string, nombre: string, planes: string[]}> $items
+	 * @param Catalogo_Item[] $items
 	 */
 	private static function render_lista( array $items ): string {
 		$li = '';
 
 		foreach ( $items as $item ) {
-			$li .= '<li class="mdf-ca-catalogo-herramientas__item">' . esc_html( $item['nombre'] ) . '</li>';
+			$li .= self::render_item( $item );
 		}
 
 		return '<ul class="mdf-ca-catalogo-herramientas">' . $li . '</ul>';
+	}
+
+	/**
+	 * El enlace (si lo tiene) se renderiza tal cual: no es un documento
+	 * privado servido por Documento_Endpoint, es un recurso de catalogo
+	 * (p. ej. la Academia, o un recurso externo) que MKT/el administrador
+	 * decide explicitamente al dar de alta el item -- la regla de "nunca
+	 * un enlace directo" (CLAUDE.md) es sobre documentos privados por
+	 * farmacia, no sobre esto.
+	 */
+	private static function render_item( Catalogo_Item $item ): string {
+		$atributo_tipo = esc_attr( $item->get_tipo() );
+		$nombre        = esc_html( $item->get_nombre() );
+
+		if ( $item->get_enlace_url() ) {
+			$contenido = '<a href="' . esc_url( $item->get_enlace_url() ) . '" target="_blank" rel="noopener noreferrer">' . $nombre . '</a>';
+		} else {
+			$contenido = $nombre;
+		}
+
+		return '<li class="mdf-ca-catalogo-herramientas__item" data-tipo="' . $atributo_tipo . '">' . $contenido . '</li>';
 	}
 }

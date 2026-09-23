@@ -14,11 +14,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  * espacio para farmacias sin usuario asociado todavia (p. ej. import CSV
  * de fase 4) sin tener que rehacer esta clase.
  *
- * plan es un simple VARCHAR nullable, no una relacion a una entidad real
- * todavia (ver CLAUDE.md: Planes es entidad de datos a partir de Fase 3).
- * Sin plan asignado, esta clase no decide nada por su cuenta: es
- * Permissions::puede_ver_item_catalogo() quien trata "sin plan" como "no
- * ve nada de catalogo", igual que "sin farmacia" en el resto del plugin.
+ * plan_id es una referencia (sin FK real, ver DB_Schema) a wp_mdf_ca_planes,
+ * nullable: una farmacia puede no tener plan asignado. Esta clase no
+ * resuelve el plan en si (ni su slug ni su nombre): es
+ * Permissions::puede_ver_item_catalogo() quien trata "sin plan" o "plan_id
+ * que ya no resuelve a ningun plan" como "no ve nada de catalogo", igual que
+ * "sin farmacia" en el resto del plugin. Resolver plan_id contra
+ * Plan_Repository fuera de Permissions violaria la regla de que las
+ * comparaciones de plan viven en un unico sitio.
  */
 class Farmacia {
 
@@ -26,15 +29,15 @@ class Farmacia {
 	private string $cif;
 	private string $nombre;
 	private ?int $wp_user_id;
-	private ?string $plan;
+	private ?int $plan_id;
 	private string $fecha_alta;
 
-	public function __construct( int $id, string $cif, string $nombre, ?int $wp_user_id, ?string $plan, string $fecha_alta ) {
+	public function __construct( int $id, string $cif, string $nombre, ?int $wp_user_id, ?int $plan_id, string $fecha_alta ) {
 		$this->id         = $id;
 		$this->cif        = $cif;
 		$this->nombre     = $nombre;
 		$this->wp_user_id = $wp_user_id;
-		$this->plan       = $plan;
+		$this->plan_id    = $plan_id;
 		$this->fecha_alta = $fecha_alta;
 	}
 
@@ -44,7 +47,7 @@ class Farmacia {
 			$row->cif,
 			$row->nombre,
 			null !== $row->wp_user_id ? (int) $row->wp_user_id : null,
-			$row->plan ?? null,
+			null !== $row->plan_id ? (int) $row->plan_id : null,
 			$row->fecha_alta
 		);
 	}
@@ -65,8 +68,8 @@ class Farmacia {
 		return $this->wp_user_id;
 	}
 
-	public function get_plan(): ?string {
-		return $this->plan;
+	public function get_plan_id(): ?int {
+		return $this->plan_id;
 	}
 
 	public function get_fecha_alta(): string {

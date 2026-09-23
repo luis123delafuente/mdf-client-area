@@ -73,11 +73,16 @@ class Shortcode_Listado_Documentos {
 	}
 
 	/**
-	 * El enlace apunta siempre al endpoint de servido (#232), nunca a una
-	 * ruta de fichero directa (CLAUDE.md, regla no negociable 1).
+	 * El enlace apunta al visor (#248), nunca al endpoint de servido (#232)
+	 * ni a una ruta de fichero directa (CLAUDE.md, regla no negociable 1):
+	 * el visor es quien hace el fetch autenticado al endpoint desde su
+	 * propio JS, pero una navegacion normal de <a href> directa al endpoint
+	 * abriria el fichero crudo en el visor nativo del navegador (con su
+	 * propia barra de imprimir/guardar), justo lo que el visor propio
+	 * existe para evitar.
 	 */
 	private static function render_item( Documento $documento ): string {
-		$url   = home_url( 'mdf-ca-documento/' . $documento->get_id() . '/' );
+		$url   = home_url( 'mdf-ca-visor/' . $documento->get_id() . '/' );
 		$fecha = mysql2date( get_option( 'date_format' ), $documento->get_fecha_subida() );
 
 		return '<li class="mdf-ca-listado-documentos__item">'

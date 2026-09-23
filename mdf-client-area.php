@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.3.0' );
-define( 'MDF_CA_DB_VERSION', '1.1.0' );
+define( 'MDF_CA_VERSION', '0.9.1' );
+define( 'MDF_CA_DB_VERSION', '1.4.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MDF_CA_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
@@ -57,7 +57,15 @@ register_deactivation_hook( __FILE__, array( 'MdfClientArea\\Deactivator', 'deac
 add_action( 'init', array( 'MdfClientArea\\Activator', 'maybe_upgrade' ), 0 );
 
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Role_Restrictions', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Farmacias', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Planes', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Documentos', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Catalogo', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Invitaciones', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Invitacion_Service', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Login_Personalizado', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Documento_Endpoint', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Documento_Visor', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Shortcode_Listado_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Shortcode_Catalogo_Herramientas', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Shortcode_Si_Plan', 'register_hooks' ) );

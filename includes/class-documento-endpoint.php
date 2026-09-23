@@ -91,7 +91,13 @@ class Documento_Endpoint {
 		exit;
 	}
 
-	private static function get_carpeta_documentos(): string {
+	/**
+	 * Publico (antes privado) para que Documento_Service la reutilice al
+	 * guardar un fichero recien subido: una unica fuente de verdad para la
+	 * ruta de la carpeta privada, en vez de duplicar la cadena en dos
+	 * sitios. No cambia nada de la logica de permisos de esta clase.
+	 */
+	public static function get_carpeta_documentos(): string {
 		return ABSPATH . 'Clientes/private-docs';
 	}
 }

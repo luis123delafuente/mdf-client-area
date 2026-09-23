@@ -11,6 +11,24 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Farmacia_Repository {
 
+	/**
+	 * Todas las farmacias, orden alfabetico por nombre. Usado por el
+	 * selector de farmacia de Admin_Documentos (#246): con el volumen de
+	 * farmacias piloto esperado (un puñado, no cientos) un <select> con
+	 * todas ellas es mas usable que un buscador con autocompletado, que
+	 * seria sobre-ingenieria para este volumen de datos.
+	 *
+	 * @return Farmacia[]
+	 */
+	public function find_all(): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+		$rows  = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY nombre ASC" );
+
+		return array_map( array( 'MdfClientArea\\Farmacia', 'from_db_row' ), $rows );
+	}
+
 	public function find_by_cif( string $cif ): ?Farmacia {
 		global $wpdb;
 
@@ -84,24 +102,63 @@ class Farmacia_Repository {
 	}
 
 	/**
-	 * Fija el plan de una farmacia. Placeholder de prueba (ver
-	 * Catalogo_Herramientas): en Fase 2 no hay flujo de negocio que llame a
-	 * esto todavia, solo el seed de datos de prueba. Null borra el plan
-	 * asignado.
+	 * Vincula una farmacia a un usuario de WordPress. Usado por
+	 * Invitacion_Service (#249) cuando una farmacia sin usuario todavia
+	 * (wp_user_id NULL) recibe su primera invitacion: el usuario se crea
+	 * primero (sin contrasena utilizable, ver Invitacion_Service) y este
+	 * metodo es quien lo vincula despues, sin tener que pasar por
+	 * Farmacia_Service::crear() de nuevo.
 	 */
-	public function update_plan( int $farmacia_id, ?string $plan ): bool {
+	public function update_wp_user_id( int $farmacia_id, int $wp_user_id ): bool {
 		global $wpdb;
 
 		$table = DB_Schema::get_farmacias_table_name();
 
 		$result = $wpdb->update(
 			$table,
-			array( 'plan' => $plan ),
+			array( 'wp_user_id' => $wp_user_id ),
 			array( 'id' => $farmacia_id ),
-			array( '%s' ),
+			array( '%d' ),
 			array( '%d' )
 		);
 
 		return false !== $result;
+	}
+
+	/**
+	 * Fija el plan de una farmacia. Null desasigna el plan (vuelve al mismo
+	 * estado "sin plan" de un alta nueva).
+	 */
+	public function update_plan( int $farmacia_id, ?int $plan_id ): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+
+		$result = $wpdb->update(
+			$table,
+			array( 'plan_id' => $plan_id ),
+			array( 'id' => $farmacia_id ),
+			array( '%d' ),
+			array( '%d' )
+		);
+
+		return false !== $result;
+	}
+
+	/**
+	 * Cuantas farmacias tienen asignado un plan concreto. Usado por
+	 * Plan_Service::eliminar() para bloquear el borrado de un plan todavia
+	 * en uso (ver su cabecera): consulta contra la tabla propia de esta
+	 * clase, no contra wp_mdf_ca_planes, siguiendo el mismo criterio de "un
+	 * repositorio, su tabla" que el resto del plugin.
+	 */
+	public function count_by_plan_id( int $plan_id ): int {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+
+		return (int) $wpdb->get_var(
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE plan_id = %d", $plan_id )
+		);
 	}
 }

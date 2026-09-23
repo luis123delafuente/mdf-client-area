@@ -12,12 +12,18 @@ if ( ! defined( 'ABSPATH' ) ) {
  * ruta_fichero es la ruta interna del fichero dentro de la carpeta privada
  * (fuera del docroot publico, ver CLAUDE.md), nunca una URL servible
  * directamente: eso lo decide en su momento el script de servido (#232).
+ *
+ * tipo_documento es la etiqueta de Documento_Tipos (contrato, factura,
+ * presupuesto, entregable, otro), nullable: los documentos de prueba de
+ * fases anteriores a la subida desde backoffice (#246) no la tienen, y no
+ * se les exige backfill (mismo criterio que plan_id en Farmacia).
  */
 class Documento {
 
 	private int $id;
 	private int $farmacia_id;
 	private string $nombre;
+	private ?string $tipo_documento;
 	private string $ruta_fichero;
 	private ?string $tipo_mime;
 	private ?int $tamano_bytes;
@@ -27,18 +33,20 @@ class Documento {
 		int $id,
 		int $farmacia_id,
 		string $nombre,
+		?string $tipo_documento,
 		string $ruta_fichero,
 		?string $tipo_mime,
 		?int $tamano_bytes,
 		string $fecha_subida
 	) {
-		$this->id           = $id;
-		$this->farmacia_id  = $farmacia_id;
-		$this->nombre       = $nombre;
-		$this->ruta_fichero = $ruta_fichero;
-		$this->tipo_mime    = $tipo_mime;
-		$this->tamano_bytes = $tamano_bytes;
-		$this->fecha_subida = $fecha_subida;
+		$this->id             = $id;
+		$this->farmacia_id    = $farmacia_id;
+		$this->nombre         = $nombre;
+		$this->tipo_documento = $tipo_documento;
+		$this->ruta_fichero   = $ruta_fichero;
+		$this->tipo_mime      = $tipo_mime;
+		$this->tamano_bytes   = $tamano_bytes;
+		$this->fecha_subida   = $fecha_subida;
 	}
 
 	public static function from_db_row( object $row ): self {
@@ -46,6 +54,7 @@ class Documento {
 			(int) $row->id,
 			(int) $row->farmacia_id,
 			$row->nombre,
+			$row->tipo_documento ?? null,
 			$row->ruta_fichero,
 			$row->tipo_mime,
 			null !== $row->tamano_bytes ? (int) $row->tamano_bytes : null,
@@ -63,6 +72,10 @@ class Documento {
 
 	public function get_nombre(): string {
 		return $this->nombre;
+	}
+
+	public function get_tipo_documento(): ?string {
+		return $this->tipo_documento;
 	}
 
 	public function get_ruta_fichero(): string {

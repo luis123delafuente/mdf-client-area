@@ -46,29 +46,41 @@ class Permissions {
 	}
 
 	/**
-	 * $item es la forma placeholder de Catalogo_Herramientas (Fase 2, ver
-	 * su cabecera): un array con al menos 'planes' => string[]. Cuando el
-	 * catalogo sea una entidad real en Fase 3, este metodo es el unico
-	 * sitio a tocar -- quien ya llama a puede_ver_item_catalogo() no
-	 * cambia.
-	 *
-	 * @param array{planes?: string[]}|null $item
+	 * $item es ahora un Catalogo_Item real (Fase 3, #247), ya no el array
+	 * placeholder de Catalogo_Herramientas (Fase 2). El contrato hacia
+	 * puede_ver_bloque_por_plan() no cambia: sigue siendo "lista de slugs
+	 * permitidos", solo cambia de donde sale esa lista -- antes una clave
+	 * de un array hardcodeado, ahora Catalogo_Item::get_planes_slugs(),
+	 * resuelta por Catalogo_Repository contra la tabla puente
+	 * wp_mdf_ca_catalogo_planes. Un item sin ningun plan asignado trae un
+	 * array vacio, y puede_ver_bloque_por_plan() ya trata una lista vacia
+	 * como "nadie pasa" (mismo criterio restrictivo por defecto que
+	 * "farmacia sin plan"): no hizo falta anadir ningun caso especial aqui
+	 * para eso.
 	 */
-	public static function puede_ver_item_catalogo( ?\WP_User $usuario, ?array $item ): bool {
+	public static function puede_ver_item_catalogo( ?\WP_User $usuario, ?Catalogo_Item $item ): bool {
 		if ( ! $item ) {
 			return false;
 		}
 
-		return self::puede_ver_bloque_por_plan( $usuario, $item['planes'] ?? array() );
+		return self::puede_ver_bloque_por_plan( $usuario, $item->get_planes_slugs() );
 	}
 
 	/**
 	 * Version generica: "¿el plan de esta farmacia esta en esta lista de
 	 * planes permitidos?", sin asumir nada sobre el recurso que envuelve
 	 * (bloque de contenido arbitrario de Shortcode_Si_Plan, o el catalogo
-	 * a traves de puede_ver_item_catalogo()). Sin plan asignado a la
-	 * farmacia, no pasa ninguna lista: mismo criterio conservador que el
-	 * resto de esta clase.
+	 * a traves de puede_ver_item_catalogo()). $planes_permitidos son slugs
+	 * de plan (el atributo "planes" de [mdf_ca_si_plan], y desde
+	 * Catalogo_Item::get_planes_slugs() para el catalogo -- ambos usaban ya
+	 * ese formato desde Fase 2; Fase 3 solo cambia de donde sale el slug de
+	 * la farmacia y del item, no el contrato hacia fuera). Sin plan
+	 * asignado a la farmacia, o con un plan_id que ya no
+	 * resuelve a ningun plan (p. ej. quedo huerfano antes de que
+	 * Plan_Service::eliminar() empezara a impedirlo), no pasa ninguna lista:
+	 * mismo criterio conservador que el resto de esta clase. Este es el
+	 * unico punto del plugin que resuelve un plan_id contra Plan_Repository
+	 * para comparar planes.
 	 *
 	 * @param string[] $planes_permitidos
 	 */
@@ -79,11 +91,17 @@ class Permissions {
 
 		$farmacia = self::farmacia_del_usuario( $usuario );
 
-		if ( ! $farmacia || ! $farmacia->get_plan() ) {
+		if ( ! $farmacia || ! $farmacia->get_plan_id() ) {
 			return false;
 		}
 
-		return in_array( $farmacia->get_plan(), $planes_permitidos, true );
+		$plan = ( new Plan_Repository() )->find_by_id( $farmacia->get_plan_id() );
+
+		if ( ! $plan ) {
+			return false;
+		}
+
+		return in_array( $plan->get_slug(), $planes_permitidos, true );
 	}
 
 	private static function usuario_autenticado( ?\WP_User $usuario ): bool {

@@ -1,0 +1,11 @@
+<IfModule mod_mime.c>
+	# El visor (#248) carga PDF.js como modulo ES (<script type="module">
+	# + import() dinamico), que exige un Content-Type de JavaScript valido
+	# en la respuesta -- si no, el navegador rechaza el modulo entero
+	# ("Failed to load module script"). En local (Apache de Local by WP
+	# Engine) .mjs ya se sirve como application/javascript por defecto,
+	# pero no hay garantia de que el Apache de IONOS en produccion tenga
+	# ese mapeo: esta regla lo fija explicitamente para no depender de la
+	# configuracion del hosting.
+	AddType application/javascript .mjs
+</IfModule>
