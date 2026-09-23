@@ -254,6 +254,15 @@
 	 * que se pueda ocultar con devtools sin perder tambien el documento.
 	 * Repetida en diagonal para que no haya ningun hueco grande sin marca
 	 * util para recortar.
+	 *
+	 * El paso del patron (pasoX/pasoY) ya no es una constante fija: se mide
+	 * con ctx.measureText() el ancho real que ocupa el texto (CIF + nombre
+	 * de farmacia, longitud variable segun la farmacia) con la fuente ya
+	 * aplicada al contexto, y se le suma un margen proporcional a ese ancho
+	 * -- asi dos repeticiones consecutivas de una misma fila nunca se tocan
+	 * ni se cruzan, tanto con nombres cortos como largos. El paso vertical
+	 * sigue el mismo criterio, proporcional al tamanio de fuente en vez de
+	 * a una fraccion fija del canvas.
 	 */
 	function dibujarMarcaDeAgua() {
 		var texto = config.marcaAgua;
@@ -264,11 +273,12 @@
 
 		var ancho = elCanvas.width;
 		var alto  = elCanvas.height;
+		var tamanioFuente = Math.max( 14, Math.round( ancho / 40 ) );
 
 		ctx.save();
 		ctx.globalAlpha = 0.15;
 		ctx.fillStyle = '#000000';
-		ctx.font = Math.max( 14, Math.round( ancho / 40 ) ) + 'px sans-serif';
+		ctx.font = tamanioFuente + 'px sans-serif';
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
 
@@ -276,8 +286,9 @@
 		ctx.rotate( -Math.PI / 6 );
 		ctx.translate( -ancho / 2, -alto / 2 );
 
-		var pasoX = Math.max( 220, ancho / 4 );
-		var pasoY = Math.max( 140, alto / 6 );
+		var anchoTexto = ctx.measureText( texto ).width;
+		var pasoX = anchoTexto * 2.3;
+		var pasoY = tamanioFuente * 5.5;
 		var margen = Math.max( ancho, alto );
 
 		for ( var y = -margen; y < alto + margen; y += pasoY ) {
