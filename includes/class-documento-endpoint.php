@@ -61,7 +61,35 @@ class Documento_Endpoint {
 			self::responder_no_encontrado();
 		}
 
-		self::servir_fichero( $documento );
+		$puede_descargar = Permissions::puede_descargar_documento( $usuario, $documento );
+
+		// Restriccion adicional sobre documentos ya visibles: si no es
+		// descargable, solo se entrega al fetch() del visor. Mismo 404
+		// uniforme que el resto de rechazos, sin pista de por que.
+		if ( ! $puede_descargar && ! self::es_peticion_del_visor( $usuario, $documento ) ) {
+			self::responder_no_encontrado();
+		}
+
+		self::servir_fichero( $documento, $puede_descargar );
+	}
+
+	/**
+	 * Refuerzo: una navegacion directa a la URL (barra de direcciones,
+	 * enlace) llega con Sec-Fetch-Dest: document y se rechaza aunque el
+	 * token fuera valido. Si el navegador no envia la cabecera (antiguo), se
+	 * ignora y decide solo el token: su ausencia no rompe nada.
+	 */
+	private static function es_peticion_del_visor( \WP_User $usuario, Documento $documento ): bool {
+		$destino = isset( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ? strtolower( (string) $_SERVER['HTTP_SEC_FETCH_DEST'] ) : '';
+
+		if ( 'document' === $destino ) {
+			return false;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- el token de un solo uso es la verificacion.
+		$token = isset( $_GET[ Documento_Token::PARAMETRO ] ) ? sanitize_text_field( wp_unslash( $_GET[ Documento_Token::PARAMETRO ] ) ) : '';
+
+		return Documento_Token::consumir( $token, (int) $usuario->ID, $documento->get_id() );
 	}
 
 	private static function responder_no_encontrado(): void {
@@ -70,7 +98,7 @@ class Documento_Endpoint {
 		wp_die( 'Documento no encontrado.', 'Documento no encontrado', array( 'response' => 404 ) );
 	}
 
-	private static function servir_fichero( Documento $documento ): void {
+	private static function servir_fichero( Documento $documento, bool $puede_descargar ): void {
 		$carpeta_real = realpath( self::get_carpeta_documentos() );
 		$ruta_real    = $carpeta_real ? realpath( $carpeta_real . DIRECTORY_SEPARATOR . $documento->get_ruta_fichero() ) : false;
 
@@ -83,7 +111,7 @@ class Documento_Endpoint {
 
 		$tipo_mime = $documento->get_tipo_mime() ?: 'application/octet-stream';
 		$es_excel  = Documento_Service::MIME_XLSX === $tipo_mime;
-		$descarga  = $es_excel && Permissions::puede_descargar_documento( wp_get_current_user(), $documento );
+		$descarga  = $es_excel && $puede_descargar;
 
 		nocache_headers();
 		header( 'Content-Type: ' . $tipo_mime );

@@ -106,7 +106,14 @@
 	}
 
 	function cargarDocumento() {
-		fetch( config.endpointUrl, { credentials: 'same-origin' } )
+		// Token de un solo uso emitido al renderizar esta pagina (solo si el
+		// documento no es descargable). Este es el unico fetch() al endpoint:
+		// PDF.js recibe los bytes por { data } y SheetJS se carga del plugin.
+		var url = config.token
+			? config.endpointUrl + '?' + encodeURIComponent( config.tokenParam ) + '=' + encodeURIComponent( config.token )
+			: config.endpointUrl;
+
+		fetch( url, { credentials: 'same-origin' } )
 			.then( function ( respuesta ) {
 				if ( ! respuesta.ok ) {
 					// Documento_Endpoint responde siempre 404 para sesion
@@ -159,11 +166,11 @@
 		boton.className = 'mdf-ca-visor__boton';
 		boton.textContent = 'Reintentar';
 		boton.style.marginTop = '12px';
+		// El token es de un solo uso y caduca: repetir el fetch() con el
+		// mismo fallaria siempre. Recargar la pagina emite uno nuevo (y, si la
+		// sesion caduco, lleva al login).
 		boton.addEventListener( 'click', function () {
-			ocultarEstado();
-			elBarra.hidden = true;
-			mostrarEstado( 'Cargando documento...' );
-			cargarDocumento();
+			window.location.reload();
 		} );
 		return boton;
 	}

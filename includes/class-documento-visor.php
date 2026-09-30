@@ -112,10 +112,19 @@ class Documento_Visor {
 		$marca_agua    = self::get_marca_agua_texto();
 		// Boton de descarga solo si Permissions lo permite (hoy: Excel marcado
 		// como descargable). La decision no se repite aqui, se pregunta.
-		$puede_descargar = Permissions::puede_descargar_documento(
-			wp_get_current_user(),
-			( new Documento_Repository() )->find_by_id( $documento_id )
-		);
+		$documento       = ( new Documento_Repository() )->find_by_id( $documento_id );
+		$usuario         = wp_get_current_user();
+		$puede_descargar = Permissions::puede_descargar_documento( $usuario, $documento );
+
+		// Token de un solo uso para el fetch() del visor (ver
+		// Documento_Token). Solo si el documento es visible y no es
+		// descargable: si lo es, el endpoint no lo exige; si no es visible,
+		// el endpoint dara 404 igualmente y no se emite nada.
+		$token = '';
+
+		if ( ! $puede_descargar && Permissions::puede_ver_documento( $usuario, $documento ) ) {
+			$token = Documento_Token::emitir( (int) $usuario->ID, $documento_id );
+		}
 
 		header( 'Content-Type: text/html; charset=UTF-8' );
 		?>
@@ -148,6 +157,8 @@ class Documento_Visor {
 	<script>
 		window.MDF_CA_VISOR = {
 			endpointUrl: <?php echo wp_json_encode( $endpoint_url ); ?>,
+			tokenParam: <?php echo wp_json_encode( Documento_Token::PARAMETRO ); ?>,
+			token: <?php echo wp_json_encode( $token ); ?>,
 			pdfjsBase: <?php echo wp_json_encode( $pdfjs_base ); ?>,
 			sheetjsUrl: <?php echo wp_json_encode( $sheetjs_url ); ?>,
 			marcaAgua: <?php echo wp_json_encode( $marca_agua ); ?>,
