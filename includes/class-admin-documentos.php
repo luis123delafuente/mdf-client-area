@@ -46,6 +46,13 @@ class Admin_Documentos {
 			return;
 		}
 
+		wp_enqueue_style(
+			'mdf-ca-admin-selector-farmacia',
+			plugins_url( 'assets/css/admin-selector-farmacia.css', MDF_CA_PLUGIN_FILE ),
+			array(),
+			MDF_CA_VERSION
+		);
+
 		wp_enqueue_script(
 			'mdf-ca-admin-selector-farmacia',
 			plugins_url( 'assets/js/admin-selector-farmacia.js', MDF_CA_PLUGIN_FILE ),

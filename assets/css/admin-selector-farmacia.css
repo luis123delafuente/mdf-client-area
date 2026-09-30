@@ -1,0 +1,66 @@
+.mdf-ca-selector-farmacia__filtros {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	flex-wrap: wrap;
+}
+
+.mdf-ca-selector-farmacia__combo {
+	position: relative;
+	width: 25em;
+	max-width: 100%;
+}
+
+.mdf-ca-selector-farmacia__combo input {
+	width: 100%;
+}
+
+.mdf-ca-selector-farmacia__lista {
+	position: absolute;
+	z-index: 100;
+	top: 100%;
+	left: 0;
+	right: 0;
+	margin: 2px 0 0;
+	padding: 0;
+	max-height: 280px;
+	overflow-y: auto;
+	background: #fff;
+	border: 1px solid #8c8f94;
+	border-radius: 4px;
+	box-shadow: 0 4px 12px rgba( 0, 0, 0, 0.15 );
+}
+
+.mdf-ca-selector-farmacia__lista[hidden] {
+	display: none;
+}
+
+.mdf-ca-selector-farmacia__opcion {
+	margin: 0;
+	padding: 6px 10px;
+	cursor: pointer;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.mdf-ca-selector-farmacia__opcion:last-child {
+	border-bottom: 0;
+}
+
+.mdf-ca-selector-farmacia__opcion[aria-selected="true"] {
+	font-weight: 600;
+}
+
+.mdf-ca-selector-farmacia__opcion.is-activa {
+	background: #2271b1;
+	color: #fff;
+}
+
+.mdf-ca-selector-farmacia__opcion small {
+	display: block;
+	opacity: 0.75;
+}
+
+.mdf-ca-selector-farmacia__vacio {
+	padding: 8px 10px;
+	color: #646970;
+}

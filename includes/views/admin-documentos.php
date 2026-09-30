@@ -44,34 +44,47 @@ if ( ! defined( 'ABSPATH' ) ) {
 						<th scope="row"><label for="mdf-ca-documento-farmacia">Farmacia</label></th>
 						<td>
 							<div class="mdf-ca-selector-farmacia" data-mdf-ca-selector-farmacia>
-								<p>
-									<input
-										type="search"
-										id="mdf-ca-documento-farmacia-buscar"
-										class="regular-text"
-										placeholder="Buscar por nombre o CIF/NIF"
-										autocomplete="off"
-										data-mdf-ca-buscar
-									/>
+								<div class="mdf-ca-selector-farmacia__filtros">
+									<div class="mdf-ca-selector-farmacia__combo">
+										<input
+											type="text"
+											id="mdf-ca-documento-farmacia"
+											class="regular-text"
+											placeholder="Haz clic y busca por nombre o CIF/NIF"
+											autocomplete="off"
+											role="combobox"
+											aria-expanded="false"
+											aria-controls="mdf-ca-documento-farmacia-lista"
+											aria-autocomplete="list"
+											data-mdf-ca-buscar
+										/>
+										<ul id="mdf-ca-documento-farmacia-lista" class="mdf-ca-selector-farmacia__lista" role="listbox" hidden data-mdf-ca-lista></ul>
+									</div>
 									<select data-mdf-ca-tipo-entidad aria-label="Filtrar por tipo de entidad">
 										<option value="">Todos los tipos</option>
 										<?php foreach ( Farmacia::TIPOS_ENTIDAD as $clave => $etiqueta ) : ?>
 											<option value="<?php echo esc_attr( $clave ); ?>"><?php echo esc_html( $etiqueta ); ?></option>
 										<?php endforeach; ?>
 									</select>
-								</p>
-								<select id="mdf-ca-documento-farmacia" name="farmacia_id" required data-mdf-ca-farmacia>
-									<option value="">-- Selecciona una farmacia --</option>
-									<?php foreach ( $farmacias as $farmacia ) : ?>
-										<option
-											value="<?php echo esc_attr( (string) $farmacia->get_id() ); ?>"
-											data-tipo="<?php echo esc_attr( $farmacia->get_tipo_entidad() ); ?>"
-											data-busqueda="<?php echo esc_attr( $farmacia->get_nombre() . ' ' . $farmacia->get_cif() ); ?>"
-										>
-											<?php echo esc_html( $farmacia->get_nombre() . ' (' . $farmacia->get_cif() . ') - ' . $farmacia->get_tipo_entidad_etiqueta() ); ?>
-										</option>
-									<?php endforeach; ?>
-								</select>
+								</div>
+								<input type="hidden" name="farmacia_id" value="" data-mdf-ca-farmacia-id />
+								<script type="application/json" data-mdf-ca-farmacias>
+									<?php
+									echo wp_json_encode(
+										array_map(
+											static fn( Farmacia $f ): array => array(
+												'id'     => $f->get_id(),
+												'nombre' => $f->get_nombre(),
+												'cif'    => $f->get_cif(),
+												'tipo'   => $f->get_tipo_entidad(),
+												'tipoEt' => $f->get_tipo_entidad_etiqueta(),
+											),
+											$farmacias
+										),
+										JSON_HEX_TAG | JSON_HEX_AMP
+									);
+									?>
+								</script>
 								<p class="description" data-mdf-ca-contador aria-live="polite"></p>
 							</div>
 						</td>
