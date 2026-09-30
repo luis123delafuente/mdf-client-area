@@ -102,3 +102,16 @@ body {
 	padding: 40px 16px;
 	font-size: 15px;
 }
+
+.mdf-ca-visor__hoja {
+	background: #4a4e51;
+	color: #fff;
+	border: 1px solid #5c6063;
+	border-radius: 4px;
+	padding: 6px 10px;
+	font-size: 14px;
+}
+
+.mdf-ca-visor__hoja[hidden] {
+	display: none;
+}

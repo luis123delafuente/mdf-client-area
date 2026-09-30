@@ -46,6 +46,19 @@ class Permissions {
 	}
 
 	/**
+	 * Descargar el fichero crudo (no verlo en el visor). Un Excel solo se
+	 * descarga si, ademas de poder verlo, se marco como descargable al
+	 * subirlo; el resto de documentos nunca se descargan. Vive aqui, junto
+	 * a puede_ver_documento(), para que "que puede hacer esta farmacia con
+	 * este documento" se decida en un unico sitio.
+	 */
+	public static function puede_descargar_documento( ?\WP_User $usuario, ?Documento $documento ): bool {
+		return self::puede_ver_documento( $usuario, $documento )
+			&& Documento_Service::MIME_XLSX === $documento->get_tipo_mime()
+			&& $documento->is_descargable();
+	}
+
+	/**
 	 * $item es ahora un Catalogo_Item real (Fase 3, #247), ya no el array
 	 * placeholder de Catalogo_Herramientas (Fase 2). El contrato hacia
 	 * puede_ver_bloque_por_plan() no cambia: sigue siendo "lista de slugs

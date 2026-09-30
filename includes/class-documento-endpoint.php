@@ -81,9 +81,22 @@ class Documento_Endpoint {
 			self::responder_no_encontrado();
 		}
 
+		$tipo_mime = $documento->get_tipo_mime() ?: 'application/octet-stream';
+		$es_excel  = Documento_Service::MIME_XLSX === $tipo_mime;
+		$descarga  = $es_excel && Permissions::puede_descargar_documento( wp_get_current_user(), $documento );
+
 		nocache_headers();
-		header( 'Content-Type: ' . ( $documento->get_tipo_mime() ?: 'application/octet-stream' ) );
-		header( 'Content-Disposition: inline; filename="' . rawurlencode( $documento->get_nombre() ) . '"' );
+		header( 'Content-Type: ' . $tipo_mime );
+
+		if ( $descarga ) {
+			$nombre_descarga = preg_replace( '/\.xlsx$/i', '', $documento->get_nombre() ) . '.xlsx';
+			header( "Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode( $nombre_descarga ) );
+		} elseif ( $es_excel ) {
+			header( 'Content-Disposition: inline' );
+		} else {
+			header( 'Content-Disposition: inline; filename="' . rawurlencode( $documento->get_nombre() ) . '"' );
+		}
+
 		header( 'Content-Length: ' . filesize( $ruta_real ) );
 		header( 'X-Content-Type-Options: nosniff' );
 

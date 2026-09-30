@@ -72,7 +72,8 @@ class Documento_Repository {
 		string $ruta_fichero,
 		?string $tipo_mime = null,
 		?int $tamano_bytes = null,
-		?string $tipo_documento = null
+		?string $tipo_documento = null,
+		bool $descargable = false
 	): ?Documento {
 		global $wpdb;
 
@@ -99,6 +100,9 @@ class Documento_Repository {
 			$data['tipo_documento'] = $tipo_documento;
 			$format[]               = '%s';
 		}
+
+		$data['descargable'] = $descargable ? 1 : 0;
+		$format[]            = '%d';
 
 		$result = $wpdb->insert( $table, $data, $format );
 

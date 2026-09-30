@@ -82,7 +82,10 @@ class Shortcode_Listado_Documentos {
 	 * existe para evitar.
 	 */
 	private static function render_item( Documento $documento ): string {
-		$url   = home_url( 'mdf-ca-visor/' . $documento->get_id() . '/' );
+		// Solo un Excel marcado como descargable va directo al endpoint
+		// (descarga). Todo lo demas, incluido el Excel por defecto, al visor.
+		$ruta  = Documento_Service::MIME_XLSX === $documento->get_tipo_mime() && $documento->is_descargable() ? 'mdf-ca-documento/' : 'mdf-ca-visor/';
+		$url   = home_url( $ruta . $documento->get_id() . '/' );
 		$fecha = mysql2date( get_option( 'date_format' ), $documento->get_fecha_subida() );
 
 		return '<li class="mdf-ca-listado-documentos__item">'

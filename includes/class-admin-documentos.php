@@ -26,6 +26,7 @@ class Admin_Documentos {
 	public static function register_hooks(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ) );
 		add_action( 'admin_post_mdf_ca_subir_documento', array( __CLASS__, 'gestionar_subir' ) );
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'encolar_assets' ) );
 	}
 
 	public static function registrar_menu(): void {
@@ -40,12 +41,30 @@ class Admin_Documentos {
 		);
 	}
 
+	public static function encolar_assets( string $hook_suffix ): void {
+		if ( 'toplevel_page_' . self::MENU_SLUG !== $hook_suffix ) {
+			return;
+		}
+
+		wp_enqueue_script(
+			'mdf-ca-admin-selector-farmacia',
+			plugins_url( 'assets/js/admin-selector-farmacia.js', MDF_CA_PLUGIN_FILE ),
+			array(),
+			MDF_CA_VERSION,
+			true
+		);
+	}
+
 	public static function render_pagina(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
-		$farmacias        = ( new Farmacia_Repository() )->find_all();
+		$farmacias = ( new Farmacia_Repository() )->find_all();
+		usort(
+			$farmacias,
+			static fn( Farmacia $a, Farmacia $b ): int => strcasecmp( $a->get_nombre(), $b->get_nombre() )
+		);
 		$farmacias_por_id = array();
 
 		foreach ( $farmacias as $farmacia ) {
@@ -72,7 +91,10 @@ class Admin_Documentos {
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES no se sanea con wp_unslash/sanitize_*, Documento_Service::subir() valida cada campo antes de usarlo.
 		$archivo = isset( $_FILES['documento'] ) ? $_FILES['documento'] : null;
 
-		$resultado = ( new Documento_Service() )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo );
+		// Checkbox HTML: solo llega si esta marcado. Sin marcar => false (por defecto no descargable).
+		$descargable = ! empty( $_POST['descargable'] );
+
+		$resultado = ( new Documento_Service() )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable );
 
 		if ( is_wp_error( $resultado ) ) {
 			self::guardar_aviso( 'error', $resultado->get_error_message() );

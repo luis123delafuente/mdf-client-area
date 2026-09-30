@@ -60,6 +60,47 @@ class Farmacia {
 		return $this->cif;
 	}
 
+	/** Clave => etiqueta de los tipos de entidad que distingue el backoffice. */
+	public const TIPOS_ENTIDAD = array(
+		'persona_fisica' => 'Persona fisica',
+		'sl'             => 'SL',
+		'sa'             => 'SA',
+		'cb'             => 'Comunidad de bienes',
+		'otra'           => 'Otras entidades',
+	);
+
+	/**
+	 * Tipo de entidad derivado de la forma del identificador fiscal (mismo
+	 * criterio de "mirar el primer caracter" que Identificador_Fiscal_
+	 * Validator): digito, o K/L/M (NIF especiales de persona fisica) =>
+	 * persona fisica; A => SA; B => SL; E => comunidad de bienes; cualquier
+	 * otra letra de sociedad (asociaciones, cooperativas, UTE...) => otra.
+	 * No se persiste: es un dato derivable del CIF, asi que no hay esquema
+	 * que migrar ni puede quedar desincronizado con el CIF.
+	 */
+	public function get_tipo_entidad(): string {
+		$primera = '' !== $this->cif ? strtoupper( $this->cif[0] ) : '';
+
+		if ( '' !== $primera && ( ctype_digit( $primera ) || in_array( $primera, array( 'K', 'L', 'M' ), true ) ) ) {
+			return 'persona_fisica';
+		}
+
+		switch ( $primera ) {
+			case 'A':
+				return 'sa';
+			case 'B':
+				return 'sl';
+			case 'E':
+				return 'cb';
+			default:
+				return 'otra';
+		}
+	}
+
+	public function get_tipo_entidad_etiqueta(): string {
+		return self::TIPOS_ENTIDAD[ $this->get_tipo_entidad() ];
+	}
+
 	public function get_nombre(): string {
 		return $this->nombre;
 	}

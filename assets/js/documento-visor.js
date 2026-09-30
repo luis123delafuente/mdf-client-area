@@ -24,6 +24,12 @@
  *   CIF y nombre de la farmacia grabados encima. No es una barrera
  *   infranqueable -- es una marca de agua, no un DRM -- pero cualquier
  *   copia que salga es trazable.
+ * - Excel (.xlsx): SheetJS (vendorizado en assets/vendor/sheetjs/) parsea el
+ *   libro en el navegador y el visor dibuja la cuadricula en el mismo canvas
+ *   que un PDF, con la misma marca de agua: sin texto seleccionable ni
+ *   copiable y sin boton de descarga. Igual que con un PDF, los bytes llegan
+ *   al navegador via fetch(): un usuario con devtools puede sacarlos de la
+ *   pestana Red. Es disuasion y trazabilidad (marca de agua), no DRM.
  * - PrintScreen (captura de pantalla del sistema operativo) no se puede
  *   bloquear desde una pagina web, con ninguna tecnica: ni esta ni ninguna
  *   otra lo consigue. No se intenta.
@@ -40,6 +46,7 @@
 	var elAnterior  = document.getElementById( 'mdf-ca-visor-anterior' );
 	var elSiguiente = document.getElementById( 'mdf-ca-visor-siguiente' );
 	var elPagina    = document.getElementById( 'mdf-ca-visor-pagina' );
+	var elHoja      = document.getElementById( 'mdf-ca-visor-hoja' );
 	var ctx         = elCanvas.getContext( '2d' );
 
 	/** @type {import('../vendor/pdfjs/pdf.min.mjs')|null} */
@@ -50,6 +57,13 @@
 	var renderizando = false;
 	var esImagenUnica = false;
 	var bitmapImagen = null;
+
+	// Excel: libro de SheetJS ya parseado y la hoja que se esta mostrando.
+	var FILAS_POR_PAGINA = 40;
+	var MAX_FILAS        = 2000;
+	var MAX_COLUMNAS     = 60;
+	var libroActual = null;
+	var hojaActual  = null; // { ws, filas, columnas, anchos[], anchoTotal }
 
 	iniciar();
 
@@ -66,13 +80,16 @@
 		elSiguiente.addEventListener( 'click', function () {
 			irAPagina( paginaActual + 1 );
 		} );
+		elHoja.addEventListener( 'change', function () {
+			seleccionarHoja( elHoja.value );
+		} );
 		elCanvas.addEventListener( 'dragstart', function ( e ) {
 			e.preventDefault();
 		} );
 
 		var reintentando = false;
 		window.addEventListener( 'resize', debounce( function () {
-			if ( ! reintentando && ( pdfActual || bitmapImagen ) ) {
+			if ( ! reintentando && hayContenido() ) {
 				renderizarPaginaActual();
 			}
 		}, 200 ) );
@@ -112,6 +129,10 @@
 
 				if ( resultado.tipoContenido.indexOf( 'image/' ) === 0 ) {
 					return abrirImagen( resultado.buffer, resultado.tipoContenido );
+				}
+
+				if ( resultado.tipoContenido.indexOf( 'spreadsheetml' ) !== -1 ) {
+					return abrirExcel( resultado.buffer );
 				}
 
 				mostrarEstado( 'Este tipo de documento no se puede visualizar aqui.' );
@@ -192,6 +213,159 @@
 		} );
 	}
 
+	function hayContenido() {
+		return !! ( pdfActual || bitmapImagen || hojaActual );
+	}
+
+	function cargarSheetJs() {
+		if ( window.XLSX ) {
+			return Promise.resolve();
+		}
+
+		return new Promise( function ( resolver, rechazar ) {
+			var script = document.createElement( 'script' );
+			script.src = config.sheetjsUrl;
+			script.onload = resolver;
+			script.onerror = rechazar;
+			document.head.appendChild( script );
+		} );
+	}
+
+	function abrirExcel( buffer ) {
+		return cargarSheetJs().then( function () {
+			libroActual = window.XLSX.read( buffer, {
+				type: 'array',
+				cellFormula: false,
+				cellStyles: true, // Necesario para leer anchos de columna (!cols).
+				sheetRows: MAX_FILAS + 1
+			} );
+
+			elHoja.innerHTML = '';
+			libroActual.SheetNames.forEach( function ( nombre ) {
+				var opcion = document.createElement( 'option' );
+				opcion.value = nombre;
+				opcion.textContent = nombre;
+				elHoja.appendChild( opcion );
+			} );
+			elHoja.hidden = libroActual.SheetNames.length < 2;
+			esImagenUnica = false;
+			elBarra.hidden = false;
+			ocultarEstado();
+
+			return seleccionarHoja( libroActual.SheetNames[ 0 ] );
+		} ).catch( function () {
+			mostrarEstado( 'No se pudo procesar el Excel. Puede que el fichero este daniado.' );
+		} );
+	}
+
+	function seleccionarHoja( nombre ) {
+		var ws = libroActual.Sheets[ nombre ];
+		var rango = ws && ws[ '!ref' ] ? window.XLSX.utils.decode_range( ws[ '!ref' ] ) : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } };
+		var filas = Math.min( rango.e.r + 1, MAX_FILAS );
+		var columnas = Math.min( rango.e.c + 1, MAX_COLUMNAS );
+		var anchos = [];
+		var anchoTotal = 0;
+
+		for ( var c = 0; c < columnas; c++ ) {
+			var col = ws && ws[ '!cols' ] ? ws[ '!cols' ][ c ] : null;
+			var ancho = col && col.hidden ? 0 : ( col && col.wpx ? col.wpx : ( col && col.wch ? col.wch * 7 + 5 : 90 ) );
+			ancho = Math.min( ancho, 400 );
+			anchos.push( ancho );
+			anchoTotal += ancho;
+		}
+
+		hojaActual = { ws: ws, filas: filas, columnas: columnas, anchos: anchos, anchoTotal: anchoTotal };
+		totalPaginas = Math.max( 1, Math.ceil( filas / FILAS_POR_PAGINA ) );
+		paginaActual = 1;
+		elHoja.value = nombre;
+
+		return renderizarPaginaActual();
+	}
+
+	function renderizarHojaActual() {
+		var h = hojaActual;
+		var inicio = ( paginaActual - 1 ) * FILAS_POR_PAGINA;
+		var fin = Math.min( inicio + FILAS_POR_PAGINA, h.filas );
+		var altoCab = 24;
+		var altoFila = 24;
+		var anchoNum = 56;
+		var utils = window.XLSX.utils;
+
+		// Minimos para que la marca de agua (proporcional al ancho) se lea
+		// entera aunque la hoja sea minuscula.
+		elCanvas.width = Math.max( 800, anchoNum + h.anchoTotal );
+		elCanvas.height = Math.max( 240, altoCab + ( fin - inicio ) * altoFila );
+
+		ctx.fillStyle = '#ffffff';
+		ctx.fillRect( 0, 0, elCanvas.width, elCanvas.height );
+		ctx.font = '13px sans-serif';
+		ctx.textBaseline = 'middle';
+		ctx.strokeStyle = '#d0d3d6';
+		ctx.lineWidth = 1;
+
+		// Cabeceras de columna y numeros de fila, como en Excel.
+		ctx.fillStyle = '#f1f3f4';
+		ctx.fillRect( 0, 0, elCanvas.width, altoCab );
+		ctx.fillRect( 0, 0, anchoNum, elCanvas.height );
+		ctx.fillStyle = '#444444';
+		ctx.textAlign = 'center';
+
+		var x = anchoNum;
+		var posiciones = [];
+		for ( var c = 0; c < h.columnas; c++ ) {
+			posiciones.push( x );
+			ctx.fillText( utils.encode_col( c ), x + h.anchos[ c ] / 2, altoCab / 2 );
+			x += h.anchos[ c ];
+		}
+
+		for ( var r = inicio; r < fin; r++ ) {
+			var y = altoCab + ( r - inicio ) * altoFila;
+			ctx.fillStyle = '#444444';
+			ctx.textAlign = 'center';
+			ctx.fillText( String( r + 1 ), anchoNum / 2, y + altoFila / 2 );
+
+			for ( var cc = 0; cc < h.columnas; cc++ ) {
+				var celda = h.ws ? h.ws[ utils.encode_cell( { r: r, c: cc } ) ] : null;
+				if ( ! celda || h.anchos[ cc ] === 0 ) {
+					continue;
+				}
+
+				var texto = celda.w !== undefined ? celda.w : ( celda.v !== undefined && celda.v !== null ? String( celda.v ) : '' );
+				if ( texto === '' ) {
+					continue;
+				}
+
+				var numerico = celda.t === 'n';
+				ctx.save();
+				ctx.beginPath();
+				ctx.rect( posiciones[ cc ], y, h.anchos[ cc ], altoFila );
+				ctx.clip();
+				ctx.fillStyle = '#111111';
+				ctx.textAlign = numerico ? 'right' : 'left';
+				ctx.fillText( texto, numerico ? posiciones[ cc ] + h.anchos[ cc ] - 6 : posiciones[ cc ] + 6, y + altoFila / 2 );
+				ctx.restore();
+			}
+		}
+
+		// Cuadricula por encima, una sola pasada.
+		ctx.beginPath();
+		for ( var i = 0; i <= fin - inicio; i++ ) {
+			ctx.moveTo( 0, altoCab + i * altoFila + 0.5 );
+			ctx.lineTo( elCanvas.width, altoCab + i * altoFila + 0.5 );
+		}
+		ctx.moveTo( 0, 0.5 );
+		ctx.lineTo( elCanvas.width, 0.5 );
+		ctx.moveTo( anchoNum + 0.5, 0 );
+		ctx.lineTo( anchoNum + 0.5, elCanvas.height );
+		for ( var k = 0; k < h.columnas; k++ ) {
+			ctx.moveTo( posiciones[ k ] + h.anchos[ k ] + 0.5, 0 );
+			ctx.lineTo( posiciones[ k ] + h.anchos[ k ] + 0.5, elCanvas.height );
+		}
+		ctx.stroke();
+
+		return Promise.resolve();
+	}
+
 	function irAPagina( numero ) {
 		if ( renderizando || numero < 1 || numero > totalPaginas ) {
 			return;
@@ -209,7 +383,12 @@
 		renderizando = true;
 		actualizarControles();
 
-		var promesa = esImagenUnica ? renderizarImagenActual() : renderizarPaginaPdf( paginaActual );
+		var promesa;
+		if ( hojaActual ) {
+			promesa = renderizarHojaActual();
+		} else {
+			promesa = esImagenUnica ? renderizarImagenActual() : renderizarPaginaPdf( paginaActual );
+		}
 
 		return promesa.then( function () {
 			dibujarMarcaDeAgua();
@@ -303,7 +482,7 @@
 	function actualizarControles() {
 		elAnterior.disabled = renderizando || paginaActual <= 1;
 		elSiguiente.disabled = renderizando || paginaActual >= totalPaginas;
-		elPagina.textContent = totalPaginas > 1 ? ( 'Pagina ' + paginaActual + ' de ' + totalPaginas ) : '';
+		elPagina.textContent = totalPaginas > 1 ? ( ( hojaActual ? 'Filas ' + ( ( paginaActual - 1 ) * FILAS_POR_PAGINA + 1 ) + '-' + Math.min( paginaActual * FILAS_POR_PAGINA, hojaActual.filas ) + ' (pagina ' : 'Pagina ' ) + paginaActual + ' de ' + totalPaginas + ( hojaActual ? ')' : '' ) ) : '';
 	}
 
 	function mostrarEstado( mensaje, elementoExtra ) {
@@ -369,7 +548,7 @@
 		} );
 
 		window.addEventListener( 'afterprint', function () {
-			if ( pdfActual || bitmapImagen ) {
+			if ( hayContenido() ) {
 				renderizarPaginaActual();
 			}
 		} );

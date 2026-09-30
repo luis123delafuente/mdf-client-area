@@ -106,6 +106,7 @@ class Documento_Visor {
 
 		$endpoint_url  = home_url( 'mdf-ca-documento/' . $documento_id . '/' );
 		$pdfjs_base    = plugins_url( 'assets/vendor/pdfjs', MDF_CA_PLUGIN_FILE );
+		$sheetjs_url   = plugins_url( 'assets/vendor/sheetjs/xlsx.mini.min.js', MDF_CA_PLUGIN_FILE );
 		$visor_css_url = plugins_url( 'assets/css/documento-visor.css', MDF_CA_PLUGIN_FILE );
 		$visor_js_url  = plugins_url( 'assets/js/documento-visor.js', MDF_CA_PLUGIN_FILE );
 		$marca_agua    = self::get_marca_agua_texto();
@@ -125,6 +126,7 @@ class Documento_Visor {
 	<div id="mdf-ca-visor" class="mdf-ca-visor">
 		<div class="mdf-ca-visor__barra">
 			<button id="mdf-ca-visor-anterior" type="button" class="mdf-ca-visor__boton" disabled>&larr; Anterior</button>
+			<select id="mdf-ca-visor-hoja" class="mdf-ca-visor__hoja" aria-label="Hoja" hidden></select>
 			<span id="mdf-ca-visor-pagina" class="mdf-ca-visor__pagina"></span>
 			<button id="mdf-ca-visor-siguiente" type="button" class="mdf-ca-visor__boton" disabled>Siguiente &rarr;</button>
 		</div>
@@ -138,6 +140,7 @@ class Documento_Visor {
 		window.MDF_CA_VISOR = {
 			endpointUrl: <?php echo wp_json_encode( $endpoint_url ); ?>,
 			pdfjsBase: <?php echo wp_json_encode( $pdfjs_base ); ?>,
+			sheetjsUrl: <?php echo wp_json_encode( $sheetjs_url ); ?>,
 			marcaAgua: <?php echo wp_json_encode( $marca_agua ); ?>
 		};
 	</script>

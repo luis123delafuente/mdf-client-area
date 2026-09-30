@@ -28,6 +28,7 @@ class Documento {
 	private ?string $tipo_mime;
 	private ?int $tamano_bytes;
 	private string $fecha_subida;
+	private bool $descargable;
 
 	public function __construct(
 		int $id,
@@ -37,7 +38,8 @@ class Documento {
 		string $ruta_fichero,
 		?string $tipo_mime,
 		?int $tamano_bytes,
-		string $fecha_subida
+		string $fecha_subida,
+		bool $descargable = false
 	) {
 		$this->id             = $id;
 		$this->farmacia_id    = $farmacia_id;
@@ -47,6 +49,7 @@ class Documento {
 		$this->tipo_mime      = $tipo_mime;
 		$this->tamano_bytes   = $tamano_bytes;
 		$this->fecha_subida   = $fecha_subida;
+		$this->descargable    = $descargable;
 	}
 
 	public static function from_db_row( object $row ): self {
@@ -58,7 +61,8 @@ class Documento {
 			$row->ruta_fichero,
 			$row->tipo_mime,
 			null !== $row->tamano_bytes ? (int) $row->tamano_bytes : null,
-			$row->fecha_subida
+			$row->fecha_subida,
+			! empty( $row->descargable )
 		);
 	}
 
@@ -88,6 +92,10 @@ class Documento {
 
 	public function get_tamano_bytes(): ?int {
 		return $this->tamano_bytes;
+	}
+
+	public function is_descargable(): bool {
+		return $this->descargable;
 	}
 
 	public function get_fecha_subida(): string {

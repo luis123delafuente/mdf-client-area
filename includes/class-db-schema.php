@@ -113,6 +113,10 @@ class DB_Schema {
 		// Fase 3 sin ningun flujo de alta/edicion previsto. Nullable por el
 		// mismo motivo que plan_id: no exigir backfill a los documentos de
 		// prueba ya existentes de fases anteriores.
+		// descargable solo tiene efecto en documentos Excel (PDF e imagenes
+		// nunca se descargan, van al visor). NOT NULL DEFAULT 0: todo
+		// documento, incluidos los ya existentes, es no descargable salvo
+		// que alguien lo marque expresamente al subirlo.
 		$documentos_sql = "CREATE TABLE {$documentos_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			farmacia_id BIGINT UNSIGNED NOT NULL,
@@ -121,6 +125,7 @@ class DB_Schema {
 			ruta_fichero VARCHAR(500) NOT NULL,
 			tipo_mime VARCHAR(100) NULL,
 			tamano_bytes BIGINT UNSIGNED NULL,
+			descargable TINYINT(1) NOT NULL DEFAULT 0,
 			fecha_subida DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			KEY farmacia_id (farmacia_id)

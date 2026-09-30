@@ -43,14 +43,37 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<tr>
 						<th scope="row"><label for="mdf-ca-documento-farmacia">Farmacia</label></th>
 						<td>
-							<select id="mdf-ca-documento-farmacia" name="farmacia_id" required>
-								<option value="">-- Selecciona una farmacia --</option>
-								<?php foreach ( $farmacias as $farmacia ) : ?>
-									<option value="<?php echo esc_attr( (string) $farmacia->get_id() ); ?>">
-										<?php echo esc_html( $farmacia->get_nombre() . ' (' . $farmacia->get_cif() . ')' ); ?>
-									</option>
-								<?php endforeach; ?>
-							</select>
+							<div class="mdf-ca-selector-farmacia" data-mdf-ca-selector-farmacia>
+								<p>
+									<input
+										type="search"
+										id="mdf-ca-documento-farmacia-buscar"
+										class="regular-text"
+										placeholder="Buscar por nombre o CIF/NIF"
+										autocomplete="off"
+										data-mdf-ca-buscar
+									/>
+									<select data-mdf-ca-tipo-entidad aria-label="Filtrar por tipo de entidad">
+										<option value="">Todos los tipos</option>
+										<?php foreach ( Farmacia::TIPOS_ENTIDAD as $clave => $etiqueta ) : ?>
+											<option value="<?php echo esc_attr( $clave ); ?>"><?php echo esc_html( $etiqueta ); ?></option>
+										<?php endforeach; ?>
+									</select>
+								</p>
+								<select id="mdf-ca-documento-farmacia" name="farmacia_id" required data-mdf-ca-farmacia>
+									<option value="">-- Selecciona una farmacia --</option>
+									<?php foreach ( $farmacias as $farmacia ) : ?>
+										<option
+											value="<?php echo esc_attr( (string) $farmacia->get_id() ); ?>"
+											data-tipo="<?php echo esc_attr( $farmacia->get_tipo_entidad() ); ?>"
+											data-busqueda="<?php echo esc_attr( $farmacia->get_nombre() . ' ' . $farmacia->get_cif() ); ?>"
+										>
+											<?php echo esc_html( $farmacia->get_nombre() . ' (' . $farmacia->get_cif() . ') - ' . $farmacia->get_tipo_entidad_etiqueta() ); ?>
+										</option>
+									<?php endforeach; ?>
+								</select>
+								<p class="description" data-mdf-ca-contador aria-live="polite"></p>
+							</div>
 						</td>
 					</tr>
 					<tr>
@@ -84,10 +107,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 								type="file"
 								id="mdf-ca-documento-fichero"
 								name="documento"
-								accept=".pdf,.jpg,.jpeg,.png,.webp"
+								accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx"
 								required
 							/>
-							<p class="description">PDF, JPG, PNG o WEBP. Tamano maximo: 20 MB.</p>
+							<p class="description">PDF, JPG, PNG, WEBP o Excel (.xlsx, sin macros). Tamano maximo: 20 MB. Los Excel no se muestran en el visor: el cliente los descarga.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Descarga</th>
+						<td>
+							<label for="mdf-ca-documento-descargable">
+								<input type="checkbox" id="mdf-ca-documento-descargable" name="descargable" value="1" />
+								Permitir que la farmacia descargue el fichero
+							</label>
+							<p class="description">
+								Solo aplica a Excel. Sin marcar (por defecto), el cliente solo puede
+								verlo en el visor, con marca de agua, sin boton de descarga.
+							</p>
 						</td>
 					</tr>
 				</tbody>
@@ -109,6 +145,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<th>Farmacia</th>
 					<th>Tipo</th>
 					<th>Tamano</th>
+					<th>Descarga</th>
 					<th>Subido</th>
 				</tr>
 			</thead>
@@ -128,6 +165,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 						<td>
 							<?php echo $documento->get_tamano_bytes() ? esc_html( size_format( $documento->get_tamano_bytes() ) ) : '-'; ?>
 						</td>
+						<td><?php echo Documento_Service::MIME_XLSX === $documento->get_tipo_mime() ? ( $documento->is_descargable() ? 'Si' : 'No' ) : '-'; ?></td>
 						<td><?php echo esc_html( $documento->get_fecha_subida() ); ?></td>
 					</tr>
 				<?php endforeach; ?>

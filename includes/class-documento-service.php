@@ -29,14 +29,13 @@ class Documento_Service {
 	private const TAMANO_MAXIMO_BYTES = 20 * 1024 * 1024;
 
 	/**
-	 * Solo PDF e imagenes rasterizadas comunes: es lo que cubre contratos,
-	 * facturas, presupuestos y entregables (documentos generados o
-	 * escaneados, nunca ejecutables ni plantillas con macros). Se excluye a
-	 * proposito cualquier formato de Office (macros) y SVG (puede llevar
-	 * script embebido) aunque tecnicamente pudieran aparecer como
-	 * "entregable": el coste de pedir que se suba en PDF es minimo frente
-	 * al riesgo de aceptar formatos con capacidad de ejecutar codigo en una
-	 * pantalla de administracion.
+	 * PDF, imagenes rasterizadas comunes y Excel moderno (.xlsx). Se excluye
+	 * a proposito SVG (puede llevar script embebido) y los Excel con
+	 * capacidad de macros (.xlsm, .xlsb) y el formato binario antiguo (.xls),
+	 * donde no se puede garantizar de forma fiable la ausencia de VBA. Un
+	 * .xlsx legitimo no puede contener macros, pero la extension la
+	 * controla quien sube el fichero: por eso validar_xlsx() inspecciona el
+	 * contenido real del ZIP en vez de fiarse del nombre.
 	 *
 	 * Formato que exige wp_check_filetype_and_ext(): extension(es) => MIME.
 	 */
@@ -45,7 +44,14 @@ class Documento_Service {
 		'jpg|jpeg' => 'image/jpeg',
 		'png'      => 'image/png',
 		'webp'     => 'image/webp',
+		'xlsx'     => self::MIME_XLSX,
 	);
+
+	public const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+	/** Limites anti zip-bomb para validar_xlsx(): nunca se descomprime nada, solo se suman los tamanos declarados. */
+	private const XLSX_MAX_ENTRADAS          = 2000;
+	private const XLSX_MAX_DESCOMPRIMIDO_BYTES = 200 * 1024 * 1024;
 
 	private Documento_Repository $repository;
 	private Farmacia_Repository $farmacia_repository;
@@ -59,7 +65,7 @@ class Documento_Service {
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo ) {
+	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable = false ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Selecciona una farmacia valida.' );
 		}
@@ -89,8 +95,16 @@ class Documento_Service {
 		if ( ! $filetype['ext'] || ! $filetype['type'] ) {
 			return new \WP_Error(
 				'mdf_ca_documento_tipo_fichero_no_permitido',
-				'Tipo de fichero no permitido. Solo se aceptan PDF, JPG, PNG y WEBP.'
+				'Tipo de fichero no permitido. Solo se aceptan PDF, JPG, PNG, WEBP y Excel (.xlsx).'
 			);
+		}
+
+		if ( 'xlsx' === $filetype['ext'] ) {
+			$validacion_xlsx = self::validar_xlsx( $archivo['tmp_name'] );
+
+			if ( is_wp_error( $validacion_xlsx ) ) {
+				return $validacion_xlsx;
+			}
 		}
 
 		$carpeta = Documento_Endpoint::get_carpeta_documentos();
@@ -115,7 +129,10 @@ class Documento_Service {
 			$nombre_fichero,
 			$filetype['type'],
 			(int) $archivo['size'],
-			$tipo_documento
+			$tipo_documento,
+			// Solo un Excel puede ser descargable; para el resto el flag se
+			// ignora (siempre visor), aunque llegue marcado.
+			$descargable && self::MIME_XLSX === $filetype['type']
 		);
 
 		if ( null === $documento ) {
@@ -156,6 +173,95 @@ class Documento_Service {
 				'mdf_ca_documento_fichero_demasiado_grande',
 				sprintf( 'El fichero supera el tamano maximo permitido (%d MB).', self::TAMANO_MAXIMO_BYTES / 1024 / 1024 )
 			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Un .xlsx es un ZIP (OOXML). WordPress solo mira la extension, asi que
+	 * aqui se comprueba que el contenido lo es de verdad y que no lleva nada
+	 * ejecutable: estructura minima de libro de Excel, sin vbaProject.bin,
+	 * sin objetos OLE embebidos y sin tipo de contenido "macroEnabled"
+	 * (un .xlsm renombrado a .xlsx). Nada se extrae a disco.
+	 *
+	 * @return true|\WP_Error
+	 */
+	private static function validar_xlsx( string $ruta ) {
+		$invalido = new \WP_Error( 'mdf_ca_documento_xlsx_invalido', 'El fichero no es un Excel (.xlsx) valido o contiene macros u objetos embebidos.' );
+
+		if ( ! class_exists( \ZipArchive::class ) ) {
+			return new \WP_Error( 'mdf_ca_documento_xlsx_sin_zip', 'El servidor no puede validar ficheros Excel. Contacta con desarrollo antes de seguir.' );
+		}
+
+		$zip = new \ZipArchive();
+
+		if ( true !== $zip->open( $ruta, \ZipArchive::RDONLY ) ) {
+			return $invalido;
+		}
+
+		try {
+			if ( $zip->numFiles < 1 || $zip->numFiles > self::XLSX_MAX_ENTRADAS ) {
+				return $invalido;
+			}
+
+			$nombres      = array();
+			$descomprimido = 0;
+
+			for ( $i = 0; $i < $zip->numFiles; $i++ ) {
+				$stat = $zip->statIndex( $i );
+
+				if ( false === $stat ) {
+					return $invalido;
+				}
+
+				$nombres[]      = strtolower( $stat['name'] );
+				$descomprimido += (int) $stat['size'];
+			}
+
+			if ( $descomprimido > self::XLSX_MAX_DESCOMPRIMIDO_BYTES ) {
+				return $invalido;
+			}
+
+			if ( ! in_array( '[content_types].xml', $nombres, true ) || ! in_array( 'xl/workbook.xml', $nombres, true ) ) {
+				return $invalido;
+			}
+
+			foreach ( $nombres as $nombre ) {
+				if ( str_ends_with( $nombre, 'vbaproject.bin' ) || str_starts_with( $nombre, 'xl/embeddings/' ) || str_contains( $nombre, '..' ) ) {
+					return $invalido;
+				}
+			}
+
+			$content_types = $zip->getFromName( '[Content_Types].xml' );
+
+			if ( false === $content_types ) {
+				return $invalido;
+			}
+
+			// El tipo del libro principal decide si es xlsx o xlsm. No se
+			// busca "macroEnabled" en todo el fichero: hay generadores
+			// legitimos (p. ej. SheetJS) que declaran un Default generico con
+			// ese texto sin que exista ninguna macro.
+			$xml = simplexml_load_string( $content_types, 'SimpleXMLElement', LIBXML_NONET );
+
+			if ( false === $xml ) {
+				return $invalido;
+			}
+
+			$tipo_libro = null;
+
+			foreach ( $xml->children() as $nodo ) {
+				if ( 'Override' === $nodo->getName() && '/xl/workbook.xml' === (string) $nodo['PartName'] ) {
+					$tipo_libro = (string) $nodo['ContentType'];
+				}
+			}
+
+			if ( 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml' !== $tipo_libro ) {
+				return $invalido;
+			}
+		} finally {
+			$zip->close();
 		}
 
 		return true;
