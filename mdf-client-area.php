@@ -70,3 +70,4 @@ add_action( 'plugins_loaded', array( 'MdfClientArea\\Shortcode_Listado_Documento
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Shortcode_Catalogo_Herramientas', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Shortcode_Si_Plan', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Shortcode_Nav_Area_Privada', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Menu_Perfil', 'register_hooks' ) );
