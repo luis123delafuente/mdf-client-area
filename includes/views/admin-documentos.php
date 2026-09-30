@@ -134,8 +134,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 								Permitir que la farmacia descargue el fichero
 							</label>
 							<p class="description">
-								Solo aplica a Excel. Sin marcar (por defecto), el cliente solo puede
-								verlo en el visor, con marca de agua, sin boton de descarga.
+								Solo aplica a Excel. El cliente siempre lo ve en el visor, con marca
+								de agua. Con la casilla marcada aparece ademas un boton "Descargar";
+								sin marcar (por defecto), no hay forma de descargarlo.
 							</p>
 						</td>
 					</tr>

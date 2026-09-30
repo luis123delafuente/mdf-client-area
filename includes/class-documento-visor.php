@@ -110,6 +110,12 @@ class Documento_Visor {
 		$visor_css_url = plugins_url( 'assets/css/documento-visor.css', MDF_CA_PLUGIN_FILE );
 		$visor_js_url  = plugins_url( 'assets/js/documento-visor.js', MDF_CA_PLUGIN_FILE );
 		$marca_agua    = self::get_marca_agua_texto();
+		// Boton de descarga solo si Permissions lo permite (hoy: Excel marcado
+		// como descargable). La decision no se repite aqui, se pregunta.
+		$puede_descargar = Permissions::puede_descargar_documento(
+			wp_get_current_user(),
+			( new Documento_Repository() )->find_by_id( $documento_id )
+		);
 
 		header( 'Content-Type: text/html; charset=UTF-8' );
 		?>
@@ -129,6 +135,9 @@ class Documento_Visor {
 			<select id="mdf-ca-visor-hoja" class="mdf-ca-visor__hoja" aria-label="Hoja" hidden></select>
 			<span id="mdf-ca-visor-pagina" class="mdf-ca-visor__pagina"></span>
 			<button id="mdf-ca-visor-siguiente" type="button" class="mdf-ca-visor__boton" disabled>Siguiente &rarr;</button>
+			<?php if ( $puede_descargar ) : ?>
+				<a id="mdf-ca-visor-descargar" class="mdf-ca-visor__boton mdf-ca-visor__boton--descargar" href="<?php echo esc_url( $endpoint_url ); ?>" hidden>Descargar</a>
+			<?php endif; ?>
 		</div>
 		<div id="mdf-ca-visor-lienzo" class="mdf-ca-visor__lienzo">
 			<canvas id="mdf-ca-visor-canvas" class="mdf-ca-visor__canvas"></canvas>
@@ -141,7 +150,8 @@ class Documento_Visor {
 			endpointUrl: <?php echo wp_json_encode( $endpoint_url ); ?>,
 			pdfjsBase: <?php echo wp_json_encode( $pdfjs_base ); ?>,
 			sheetjsUrl: <?php echo wp_json_encode( $sheetjs_url ); ?>,
-			marcaAgua: <?php echo wp_json_encode( $marca_agua ); ?>
+			marcaAgua: <?php echo wp_json_encode( $marca_agua ); ?>,
+			puedeDescargar: <?php echo wp_json_encode( $puede_descargar ); ?>
 		};
 	</script>
 	<script type="module" src="<?php echo esc_url( $visor_js_url ); ?>"></script>

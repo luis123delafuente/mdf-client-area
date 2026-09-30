@@ -115,3 +115,12 @@ body {
 .mdf-ca-visor__hoja[hidden] {
 	display: none;
 }
+
+a.mdf-ca-visor__boton {
+	display: inline-block;
+	text-decoration: none;
+}
+
+a.mdf-ca-visor__boton[hidden] {
+	display: none;
+}

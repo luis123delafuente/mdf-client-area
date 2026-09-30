@@ -47,6 +47,7 @@
 	var elSiguiente = document.getElementById( 'mdf-ca-visor-siguiente' );
 	var elPagina    = document.getElementById( 'mdf-ca-visor-pagina' );
 	var elHoja      = document.getElementById( 'mdf-ca-visor-hoja' );
+	var elDescargar = document.getElementById( 'mdf-ca-visor-descargar' ); // Solo existe si el servidor permite descargar.
 	var ctx         = elCanvas.getContext( '2d' );
 
 	/** @type {import('../vendor/pdfjs/pdf.min.mjs')|null} */
@@ -59,10 +60,17 @@
 	var bitmapImagen = null;
 
 	// Excel: libro de SheetJS ya parseado y la hoja que se esta mostrando.
-	var FILAS_POR_PAGINA = 40;
+	// Filas por "pagina" del Excel: tantas como quepan en un canvas seguro. Los
+	// navegadores limitan el tamano de un canvas (Chrome ~32.000 px de alto,
+	// Safari ~16 millones de pixeles de area), asi que se calcula por hoja a
+	// partir del ancho real y se topa en un maximo; casi todos los Excel
+	// caben enteros en una sola vista y solo los muy largos se paginan.
+	var MAX_FILAS_POR_PAGINA = 300;
+	var MAX_AREA_CANVAS      = 12000000;
 	var MAX_FILAS        = 2000;
 	var MAX_COLUMNAS     = 60;
 	var libroActual = null;
+	var estilosLibro = null; // { xfs[], rutasHojas[] } leidos del propio .xlsx; null si no se pudieron leer.
 	var hojaActual  = null; // { ws, filas, columnas, anchos[], anchoTotal }
 
 	iniciar();
@@ -233,12 +241,19 @@
 
 	function abrirExcel( buffer ) {
 		return cargarSheetJs().then( function () {
-			libroActual = window.XLSX.read( buffer, {
+			libroActual = window.XLSX.read( new Uint8Array( buffer ), {
 				type: 'array',
+				bookFiles: true, // Expone los ficheros internos del ZIP: de ahi se leen los estilos.
 				cellFormula: false,
 				cellStyles: true, // Necesario para leer anchos de columna (!cols).
 				sheetRows: MAX_FILAS + 1
 			} );
+
+			try {
+				estilosLibro = leerEstilosLibro();
+			} catch ( e ) {
+				estilosLibro = null; // Sin estilos se ve igual, solo que sin colores.
+			}
 
 			elHoja.innerHTML = '';
 			libroActual.SheetNames.forEach( function ( nombre ) {
@@ -248,6 +263,9 @@
 				elHoja.appendChild( opcion );
 			} );
 			elHoja.hidden = libroActual.SheetNames.length < 2;
+			if ( elDescargar ) {
+				elDescargar.hidden = false;
+			}
 			esImagenUnica = false;
 			elBarra.hidden = false;
 			ocultarEstado();
@@ -256,6 +274,228 @@
 		} ).catch( function () {
 			mostrarEstado( 'No se pudo procesar el Excel. Puede que el fichero este daniado.' );
 		} );
+	}
+
+	/* ---------- Estilos de Excel (colores, negrita, cursiva, alineacion) ----------
+	 * SheetJS Community no los expone, pero estan en el propio .xlsx: se leen
+	 * aqui de xl/styles.xml, del tema y de cada hoja. Es una aproximacion de
+	 * lo habitual (fondos, color de texto, negrita, cursiva, alineacion
+	 * horizontal y celdas combinadas); no cubre bordes, formato condicional,
+	 * degradados ni graficos. Cualquier fallo al leerlos deja el visor
+	 * funcionando sin estilos. */
+
+	// Paleta "indexed" estandar de Excel (indices 0-63).
+	var PALETA_INDEXADA = [
+		'000000', 'FFFFFF', 'FF0000', '00FF00', '0000FF', 'FFFF00', 'FF00FF', '00FFFF',
+		'000000', 'FFFFFF', 'FF0000', '00FF00', '0000FF', 'FFFF00', 'FF00FF', '00FFFF',
+		'800000', '008000', '000080', '808000', '800080', '008080', 'C0C0C0', '808080',
+		'9999FF', '993366', 'FFFFCC', 'CCFFFF', '660066', 'FF8080', '0066CC', 'CCCCFF',
+		'000080', 'FF00FF', 'FFFF00', '00FFFF', '800080', '800000', '008080', '0000FF',
+		'00CCFF', 'CCFFFF', 'CCFFCC', 'FFFF99', '99CCFF', 'FF99CC', 'CC99FF', 'FFCC99',
+		'3366FF', '33CCCC', '99CC00', 'FFCC00', 'FF9900', 'FF6600', '666699', '969696',
+		'003366', '339966', '003300', '333300', '993300', '993366', '333399', '333333'
+	];
+
+	// Indice de tema de Excel -> posicion dentro de <a:clrScheme> (Excel intercambia los dos primeros pares).
+	var ORDEN_TEMA = [ 1, 0, 3, 2, 4, 5, 6, 7, 8, 9, 10, 11 ];
+
+	function textoDeFichero( ruta ) {
+		var f = libroActual.files && libroActual.files[ ruta ];
+		return f && f.content ? new TextDecoder( 'utf-8' ).decode( f.content ) : null;
+	}
+
+	function parsearXml( texto ) {
+		return texto ? new DOMParser().parseFromString( texto, 'application/xml' ) : null;
+	}
+
+	function hijos( doc, nombre ) {
+		var padre = doc ? doc.getElementsByTagNameNS( '*', nombre )[ 0 ] : null;
+		return padre ? Array.prototype.slice.call( padre.children ) : [];
+	}
+
+	function hijo( nodo, nombre ) {
+		return nodo ? Array.prototype.find.call( nodo.children, function ( h ) { return h.localName === nombre; } ) || null : null;
+	}
+
+	function leerTema() {
+		var esquema = parsearXml( textoDeFichero( 'xl/theme/theme1.xml' ) );
+		var lista = hijos( esquema, 'clrScheme' ).map( function ( color ) {
+			var h = color.firstElementChild;
+			// sysClr (negro/blanco del sistema) trae val="windowText"; el color real esta en lastClr.
+			return h ? ( h.localName === 'sysClr' ? h.getAttribute( 'lastClr' ) : h.getAttribute( 'val' ) ) : null;
+		} );
+		return ORDEN_TEMA.map( function ( i ) { return lista[ i ] ? '#' + lista[ i ] : null; } );
+	}
+
+	function aplicarTinte( hex, tinte ) {
+		var r = parseInt( hex.slice( 1, 3 ), 16 ) / 255;
+		var g = parseInt( hex.slice( 3, 5 ), 16 ) / 255;
+		var b = parseInt( hex.slice( 5, 7 ), 16 ) / 255;
+		var max = Math.max( r, g, b ), min = Math.min( r, g, b );
+		var l = ( max + min ) / 2, h = 0, sat = 0;
+
+		if ( max !== min ) {
+			var d = max - min;
+			sat = l > 0.5 ? d / ( 2 - max - min ) : d / ( max + min );
+			h = max === r ? ( g - b ) / d + ( g < b ? 6 : 0 ) : ( max === g ? ( b - r ) / d + 2 : ( r - g ) / d + 4 );
+			h /= 6;
+		}
+
+		l = tinte < 0 ? l * ( 1 + tinte ) : l * ( 1 - tinte ) + tinte;
+
+		function canal( p, q, t ) {
+			if ( t < 0 ) { t += 1; }
+			if ( t > 1 ) { t -= 1; }
+			if ( t < 1 / 6 ) { return p + ( q - p ) * 6 * t; }
+			if ( t < 1 / 2 ) { return q; }
+			if ( t < 2 / 3 ) { return p + ( q - p ) * ( 2 / 3 - t ) * 6; }
+			return p;
+		}
+
+		var rr, gg, bb;
+		if ( sat === 0 ) {
+			rr = gg = bb = l;
+		} else {
+			var q = l < 0.5 ? l * ( 1 + sat ) : l + sat - l * sat;
+			var pp = 2 * l - q;
+			rr = canal( pp, q, h + 1 / 3 );
+			gg = canal( pp, q, h );
+			bb = canal( pp, q, h - 1 / 3 );
+		}
+
+		return '#' + [ rr, gg, bb ].map( function ( v ) {
+			var n = Math.max( 0, Math.min( 255, Math.round( v * 255 ) ) );
+			return ( n < 16 ? '0' : '' ) + n.toString( 16 );
+		} ).join( '' );
+	}
+
+	function resolverColor( nodo, tema ) {
+		if ( ! nodo ) {
+			return null;
+		}
+
+		var color = null;
+		if ( nodo.hasAttribute( 'rgb' ) ) {
+			color = '#' + nodo.getAttribute( 'rgb' ).slice( -6 );
+		} else if ( nodo.hasAttribute( 'theme' ) ) {
+			color = tema[ Number( nodo.getAttribute( 'theme' ) ) ] || null;
+		} else if ( nodo.hasAttribute( 'indexed' ) ) {
+			var indice = PALETA_INDEXADA[ Number( nodo.getAttribute( 'indexed' ) ) ];
+			color = indice ? '#' + indice : null;
+		}
+
+		if ( color && ! /^#[0-9a-f]{6}$/i.test( color ) ) {
+			return null; // Nunca se pasa al canvas un color que no sea #RRGGBB.
+		}
+
+		if ( color && nodo.hasAttribute( 'tint' ) ) {
+			color = aplicarTinte( color, parseFloat( nodo.getAttribute( 'tint' ) ) );
+		}
+
+		return color;
+	}
+
+	/** Estilos del libro: una entrada por <xf> de cellXfs, y la ruta del XML de cada hoja. */
+	function leerEstilosLibro() {
+		var tema = leerTema();
+		var doc = parsearXml( textoDeFichero( 'xl/styles.xml' ) );
+		if ( ! doc ) {
+			return null;
+		}
+
+		var fuentes = hijos( doc, 'fonts' ).map( function ( f ) {
+			var negrita = hijo( f, 'b' ), cursiva = hijo( f, 'i' );
+			return {
+				negrita: !! negrita && negrita.getAttribute( 'val' ) !== '0',
+				cursiva: !! cursiva && cursiva.getAttribute( 'val' ) !== '0',
+				color: resolverColor( hijo( f, 'color' ), tema )
+			};
+		} );
+
+		var rellenos = hijos( doc, 'fills' ).map( function ( f ) {
+			var patron = hijo( f, 'patternFill' );
+			return patron && patron.getAttribute( 'patternType' ) === 'solid' ? resolverColor( hijo( patron, 'fgColor' ), tema ) : null;
+		} );
+
+		var xfs = hijos( doc, 'cellXfs' ).map( function ( xf ) {
+			var fuente = fuentes[ Number( xf.getAttribute( 'fontId' ) || 0 ) ] || {};
+			var alineacion = hijo( xf, 'alignment' );
+			return {
+				fondo: rellenos[ Number( xf.getAttribute( 'fillId' ) || 0 ) ] || null,
+				color: fuente.color || null,
+				negrita: !! fuente.negrita,
+				cursiva: !! fuente.cursiva,
+				horizontal: alineacion ? alineacion.getAttribute( 'horizontal' ) : null
+			};
+		} );
+
+		// Hoja i (por orden en el libro) -> fichero XML, via workbook.xml + sus rels.
+		var rels = {};
+		hijos( parsearXml( textoDeFichero( 'xl/_rels/workbook.xml.rels' ) ), 'Relationships' ).forEach( function ( r ) {
+			rels[ r.getAttribute( 'Id' ) ] = r.getAttribute( 'Target' );
+		} );
+		var rutasHojas = hijos( parsearXml( textoDeFichero( 'xl/workbook.xml' ) ), 'sheets' ).map( function ( sh ) {
+			var destino = rels[ sh.getAttributeNS( 'http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id' ) ] || '';
+			return destino.charAt( 0 ) === '/' ? destino.slice( 1 ) : 'xl/' + destino;
+		} );
+
+		return { xfs: xfs, rutasHojas: rutasHojas };
+	}
+
+	/** Indice de estilo de cada celda de una hoja: { celdas: {"fila_col": xf}, filas: {fila: xf}, columnas: {col: xf} }. */
+	function leerEstilosHoja( indiceHoja ) {
+		if ( ! estilosLibro || ! estilosLibro.rutasHojas[ indiceHoja ] ) {
+			return null;
+		}
+
+		var xml = textoDeFichero( estilosLibro.rutasHojas[ indiceHoja ] );
+		if ( ! xml ) {
+			return null;
+		}
+
+		var xfs = estilosLibro.xfs;
+		var utils = window.XLSX.utils;
+		var resultado = { celdas: {}, filas: {}, columnas: {} };
+		var m, estilo;
+
+		var reCelda = /<c\b([^>]*)>/g;
+		while ( ( m = reCelda.exec( xml ) ) !== null ) {
+			var ref = /\br="([A-Z]+)(\d+)"/.exec( m[ 1 ] );
+			estilo = /\bs="(\d+)"/.exec( m[ 1 ] );
+			if ( ref && estilo && xfs[ Number( estilo[ 1 ] ) ] ) {
+				resultado.celdas[ ( Number( ref[ 2 ] ) - 1 ) + '_' + utils.decode_col( ref[ 1 ] ) ] = xfs[ Number( estilo[ 1 ] ) ];
+			}
+		}
+
+		var reFila = /<row\b([^>]*)>/g;
+		while ( ( m = reFila.exec( xml ) ) !== null ) {
+			var fila = /\br="(\d+)"/.exec( m[ 1 ] );
+			estilo = /\bs="(\d+)"/.exec( m[ 1 ] );
+			if ( fila && estilo && /customFormat="(1|true)"/.test( m[ 1 ] ) && xfs[ Number( estilo[ 1 ] ) ] ) {
+				resultado.filas[ Number( fila[ 1 ] ) - 1 ] = xfs[ Number( estilo[ 1 ] ) ];
+			}
+		}
+
+		var reCol = /<col\b([^>]*)>/g;
+		while ( ( m = reCol.exec( xml ) ) !== null ) {
+			var min = /\bmin="(\d+)"/.exec( m[ 1 ] );
+			var max = /\bmax="(\d+)"/.exec( m[ 1 ] );
+			estilo = /\bstyle="(\d+)"/.exec( m[ 1 ] );
+			if ( min && max && estilo && xfs[ Number( estilo[ 1 ] ) ] ) {
+				for ( var c = Number( min[ 1 ] ) - 1; c < Math.min( Number( max[ 1 ] ), MAX_COLUMNAS ); c++ ) {
+					resultado.columnas[ c ] = xfs[ Number( estilo[ 1 ] ) ];
+				}
+			}
+		}
+
+		return resultado;
+	}
+
+	function estiloDeCelda( h, fila, columna ) {
+		if ( ! h.estilos ) {
+			return null;
+		}
+		return h.estilos.celdas[ fila + '_' + columna ] || h.estilos.filas[ fila ] || h.estilos.columnas[ columna ] || null;
 	}
 
 	function seleccionarHoja( nombre ) {
@@ -274,8 +514,18 @@
 			anchoTotal += ancho;
 		}
 
-		hojaActual = { ws: ws, filas: filas, columnas: columnas, anchos: anchos, anchoTotal: anchoTotal };
-		totalPaginas = Math.max( 1, Math.ceil( filas / FILAS_POR_PAGINA ) );
+		var estilosHoja = null;
+		try {
+			estilosHoja = leerEstilosHoja( libroActual.SheetNames.indexOf( nombre ) );
+		} catch ( e ) {
+			estilosHoja = null;
+		}
+
+		hojaActual = { ws: ws, filas: filas, columnas: columnas, anchos: anchos, anchoTotal: anchoTotal, estilos: estilosHoja };
+		var anchoCanvas = Math.max( 800, 56 + anchoTotal );
+		var filasPagina = Math.max( 40, Math.min( MAX_FILAS_POR_PAGINA, Math.floor( ( MAX_AREA_CANVAS / anchoCanvas - 24 ) / 24 ) ) );
+		hojaActual.filasPagina = filasPagina;
+		totalPaginas = Math.max( 1, Math.ceil( filas / filasPagina ) );
 		paginaActual = 1;
 		elHoja.value = nombre;
 
@@ -284,8 +534,8 @@
 
 	function renderizarHojaActual() {
 		var h = hojaActual;
-		var inicio = ( paginaActual - 1 ) * FILAS_POR_PAGINA;
-		var fin = Math.min( inicio + FILAS_POR_PAGINA, h.filas );
+		var inicio = ( paginaActual - 1 ) * h.filasPagina;
+		var fin = Math.min( inicio + h.filasPagina, h.filas );
 		var altoCab = 24;
 		var altoFila = 24;
 		var anchoNum = 56;
@@ -318,36 +568,13 @@
 			x += h.anchos[ c ];
 		}
 
-		for ( var r = inicio; r < fin; r++ ) {
-			var y = altoCab + ( r - inicio ) * altoFila;
-			ctx.fillStyle = '#444444';
-			ctx.textAlign = 'center';
-			ctx.fillText( String( r + 1 ), anchoNum / 2, y + altoFila / 2 );
-
-			for ( var cc = 0; cc < h.columnas; cc++ ) {
-				var celda = h.ws ? h.ws[ utils.encode_cell( { r: r, c: cc } ) ] : null;
-				if ( ! celda || h.anchos[ cc ] === 0 ) {
-					continue;
-				}
-
-				var texto = celda.w !== undefined ? celda.w : ( celda.v !== undefined && celda.v !== null ? String( celda.v ) : '' );
-				if ( texto === '' ) {
-					continue;
-				}
-
-				var numerico = celda.t === 'n';
-				ctx.save();
-				ctx.beginPath();
-				ctx.rect( posiciones[ cc ], y, h.anchos[ cc ], altoFila );
-				ctx.clip();
-				ctx.fillStyle = '#111111';
-				ctx.textAlign = numerico ? 'right' : 'left';
-				ctx.fillText( texto, numerico ? posiciones[ cc ] + h.anchos[ cc ] - 6 : posiciones[ cc ] + 6, y + altoFila / 2 );
-				ctx.restore();
-			}
+		// Numeros de fila.
+		ctx.fillStyle = '#444444';
+		for ( var rn = inicio; rn < fin; rn++ ) {
+			ctx.fillText( String( rn + 1 ), anchoNum / 2, altoCab + ( rn - inicio ) * altoFila + altoFila / 2 );
 		}
 
-		// Cuadricula por encima, una sola pasada.
+		// Cuadricula primero: las celdas con fondo la tapan, como hace Excel.
 		ctx.beginPath();
 		for ( var i = 0; i <= fin - inicio; i++ ) {
 			ctx.moveTo( 0, altoCab + i * altoFila + 0.5 );
@@ -362,6 +589,76 @@
 			ctx.lineTo( posiciones[ k ] + h.anchos[ k ] + 0.5, elCanvas.height );
 		}
 		ctx.stroke();
+
+		// Celdas combinadas: la combinada se pinta como un unico rectangulo desde su celda superior izquierda.
+		var combinadas = {};
+		var cubiertas = {};
+		( ( h.ws && h.ws[ '!merges' ] ) || [] ).forEach( function ( mr ) {
+			combinadas[ mr.s.r + '_' + mr.s.c ] = mr;
+			for ( var fr = mr.s.r; fr <= mr.e.r; fr++ ) {
+				for ( var cr = mr.s.c; cr <= mr.e.c; cr++ ) {
+					if ( fr !== mr.s.r || cr !== mr.s.c ) {
+						cubiertas[ fr + '_' + cr ] = true;
+					}
+				}
+			}
+		} );
+
+		for ( var r = inicio; r < fin; r++ ) {
+			var y = altoCab + ( r - inicio ) * altoFila;
+
+			for ( var cc = 0; cc < h.columnas; cc++ ) {
+				if ( h.anchos[ cc ] === 0 || cubiertas[ r + '_' + cc ] ) {
+					continue;
+				}
+
+				var estilo = estiloDeCelda( h, r, cc );
+				var celda = h.ws ? h.ws[ utils.encode_cell( { r: r, c: cc } ) ] : null;
+				var ancho = h.anchos[ cc ];
+				var alto = altoFila;
+				var mr = combinadas[ r + '_' + cc ];
+
+				if ( mr ) {
+					ancho = 0;
+					for ( var cm = mr.s.c; cm <= Math.min( mr.e.c, h.columnas - 1 ); cm++ ) {
+						ancho += h.anchos[ cm ];
+					}
+					alto = ( Math.min( mr.e.r, fin - 1 ) - r + 1 ) * altoFila;
+				}
+
+				if ( estilo && estilo.fondo ) {
+					ctx.fillStyle = estilo.fondo;
+					ctx.fillRect( posiciones[ cc ] + 1, y + 1, ancho - 1, alto - 1 );
+				}
+
+				if ( ! celda ) {
+					continue;
+				}
+
+				var texto = celda.w !== undefined ? celda.w : ( celda.v !== undefined && celda.v !== null ? String( celda.v ) : '' );
+				if ( texto === '' ) {
+					continue;
+				}
+
+				var horizontal = estilo && estilo.horizontal && estilo.horizontal !== 'general' ? estilo.horizontal : ( celda.t === 'n' ? 'right' : 'left' );
+				var posX = posiciones[ cc ] + 6;
+				if ( horizontal === 'right' ) {
+					posX = posiciones[ cc ] + ancho - 6;
+				} else if ( horizontal === 'center' || horizontal === 'centerContinuous' ) {
+					posX = posiciones[ cc ] + ancho / 2;
+				}
+
+				ctx.save();
+				ctx.beginPath();
+				ctx.rect( posiciones[ cc ], y, ancho, alto );
+				ctx.clip();
+				ctx.font = ( estilo && estilo.cursiva ? 'italic ' : '' ) + ( estilo && estilo.negrita ? 'bold ' : '' ) + '13px sans-serif';
+				ctx.fillStyle = ( estilo && estilo.color ) || '#111111';
+				ctx.textAlign = horizontal === 'right' ? 'right' : ( horizontal === 'center' || horizontal === 'centerContinuous' ? 'center' : 'left' );
+				ctx.fillText( texto, posX, y + alto / 2 );
+				ctx.restore();
+			}
+		}
 
 		return Promise.resolve();
 	}
@@ -482,7 +779,7 @@
 	function actualizarControles() {
 		elAnterior.disabled = renderizando || paginaActual <= 1;
 		elSiguiente.disabled = renderizando || paginaActual >= totalPaginas;
-		elPagina.textContent = totalPaginas > 1 ? ( ( hojaActual ? 'Filas ' + ( ( paginaActual - 1 ) * FILAS_POR_PAGINA + 1 ) + '-' + Math.min( paginaActual * FILAS_POR_PAGINA, hojaActual.filas ) + ' (pagina ' : 'Pagina ' ) + paginaActual + ' de ' + totalPaginas + ( hojaActual ? ')' : '' ) ) : '';
+		elPagina.textContent = totalPaginas > 1 ? ( ( hojaActual ? 'Filas ' + ( ( paginaActual - 1 ) * hojaActual.filasPagina + 1 ) + '-' + Math.min( paginaActual * hojaActual.filasPagina, hojaActual.filas ) + ' (pagina ' : 'Pagina ' ) + paginaActual + ' de ' + totalPaginas + ( hojaActual ? ')' : '' ) ) : '';
 	}
 
 	function mostrarEstado( mensaje, elementoExtra ) {
