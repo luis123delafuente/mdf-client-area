@@ -50,7 +50,7 @@ class Farmacia_Service {
 	 * @return Farmacia|\WP_Error
 	 */
 	public function crear( string $cif, string $nombre, ?int $wp_user_id = null, ?int $plan_id = null ) {
-		$cif    = strtoupper( trim( $cif ) );
+		$cif    = Identificador_Fiscal_Validator::normalizar( $cif );
 		$nombre = trim( $nombre );
 
 		if ( ! Identificador_Fiscal_Validator::is_valid( $cif ) ) {

@@ -29,9 +29,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<?php endif; ?>
 
 	<p class="description">
-		Alta minima para el piloto: nombre, CIF/NIF y plan. Sin importador
-		ni formulario completo todavia (Fase 4). Tras crear la farmacia se
-		puede invitar de inmediato desde Invitaciones MDF.
+		Alta minima: nombre, CIF/NIF y plan. Para dar de alta o actualizar
+		muchas a la vez, usa
+		<a href="<?php echo esc_url( admin_url( 'admin.php?page=mdf-ca-importar-farmacias' ) ); ?>">Importar CSV</a>.
+		Tras crear la farmacia se puede invitar de inmediato desde Invitaciones MDF.
 	</p>
 
 	<h2>Nueva farmacia</h2>

@@ -40,6 +40,40 @@ class Farmacia_Repository {
 		return $row ? Farmacia::from_db_row( $row ) : null;
 	}
 
+	/**
+	 * Varias farmacias por CIF en una sola consulta, para el importador CSV
+	 * (Farmacia_Import_Service) en vez de una consulta por fila.
+	 *
+	 * @param string[] $cifs Ya normalizados.
+	 * @return array<string, Farmacia> Indexado por CIF.
+	 */
+	public function find_by_cifs( array $cifs ): array {
+		global $wpdb;
+
+		$cifs = array_values( array_unique( $cifs ) );
+
+		if ( ! $cifs ) {
+			return array();
+		}
+
+		$table        = DB_Schema::get_farmacias_table_name();
+		$placeholders = implode( ', ', array_fill( 0, count( $cifs ), '%s' ) );
+		$rows         = $wpdb->get_results(
+			// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders -- placeholders generados arriba, uno por CIF.
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE cif IN ({$placeholders})", $cifs )
+		);
+
+		$farmacias = array();
+
+		foreach ( $rows as $row ) {
+			$farmacia = Farmacia::from_db_row( $row );
+
+			$farmacias[ strtoupper( $farmacia->get_cif() ) ] = $farmacia;
+		}
+
+		return $farmacias;
+	}
+
 	public function find_by_id( int $id ): ?Farmacia {
 		global $wpdb;
 
@@ -143,6 +177,50 @@ class Farmacia_Repository {
 		);
 
 		return false !== $result;
+	}
+
+	/**
+	 * Actualiza solo nombre y plan: lo unico que el upsert del importador
+	 * puede cambiar de una farmacia existente. wp_user_id (y con el el
+	 * estado de invitacion) y los documentos no se tocan desde aqui.
+	 */
+	public function update_nombre_y_plan( int $farmacia_id, string $nombre, int $plan_id ): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+
+		$result = $wpdb->update(
+			$table,
+			array(
+				'nombre'  => $nombre,
+				'plan_id' => $plan_id,
+			),
+			array( 'id' => $farmacia_id ),
+			array( '%s', '%d' ),
+			array( '%d' )
+		);
+
+		return false !== $result;
+	}
+
+	/**
+	 * Si la tabla admite transacciones (InnoDB). Con MyISAM, START
+	 * TRANSACTION/ROLLBACK no fallan pero tampoco deshacen nada, asi que el
+	 * importador se niega a aplicar en vez de prometer un "todo o nada"
+	 * falso. Verificado InnoDB en local; en produccion se comprueba aqui en
+	 * cada aplicacion, sin depender de haberlo mirado a mano.
+	 */
+	public function es_transaccional(): bool {
+		global $wpdb;
+
+		$engine = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+				DB_Schema::get_farmacias_table_name()
+			)
+		);
+
+		return is_string( $engine ) && 0 === strcasecmp( $engine, 'InnoDB' );
 	}
 
 	/**

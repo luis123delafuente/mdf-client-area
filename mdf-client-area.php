@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.9.1' );
+define( 'MDF_CA_VERSION', '0.10.0' );
 define( 'MDF_CA_DB_VERSION', '1.5.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
@@ -58,6 +58,7 @@ add_action( 'init', array( 'MdfClientArea\\Activator', 'maybe_upgrade' ), 0 );
 
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Role_Restrictions', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Farmacias', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Importador_Farmacias', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Planes', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Catalogo', 'register_hooks' ) );

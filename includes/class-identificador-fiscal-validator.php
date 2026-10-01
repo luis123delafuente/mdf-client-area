@@ -29,6 +29,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Identificador_Fiscal_Validator {
 
+	/**
+	 * Forma canonica del identificador, la que se guarda en BD y sirve de
+	 * clave del upsert del importador CSV: mayusculas, sin espacios
+	 * (incluido el espacio duro que a veces pega Excel) ni guiones. "b-1234567 4"
+	 * y "B12345674" son la misma farmacia. Unico sitio donde se normaliza:
+	 * Farmacia_Service::crear() y Farmacia_Import_Service lo usan los dos.
+	 */
+	public static function normalizar( string $identificador ): string {
+		return strtoupper( (string) preg_replace( '/[\s\x{00A0}\-]+/u', '', $identificador ) );
+	}
+
 	public static function is_valid( string $identificador ): bool {
 		$identificador = strtoupper( trim( $identificador ) );
 

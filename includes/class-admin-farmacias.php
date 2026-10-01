@@ -20,7 +20,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Admin_Invitaciones: menu propio, capacidad 'manage_options'
  * (mdf_cliente nunca la tiene, y Role_Restrictions::bloquear_acceso_admin()
  * ya lo saca de todo wp-admin antes de llegar aqui), admin-post.php con
- * nonce. Sin edicion ni borrado de farmacias aqui: tambien Fase 4.
+ * nonce. Sin edicion ni borrado de farmacias aqui: tambien Fase 4. El alta
+ * masiva por CSV (Fase 4) vive en Admin_Importador_Farmacias, submenu de
+ * esta pantalla, sobre Farmacia_Import_Service.
  *
  * Tras crear una farmacia, se redirige directamente a Admin_Invitaciones
  * (no de vuelta a esta pantalla) para que invitarla sea el siguiente paso
