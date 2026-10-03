@@ -6,15 +6,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Alta MINIMA de farmacias para el piloto de Fase 3 (#250) -- decision de
- * alcance consciente, no un descuido: solo nombre, CIF y plan, sin
- * importador, sin CSV, sin simulacion previa de reglas. El alta manual
- * COMPLETA como formulario que alimenta la misma logica que el futuro
- * importador CSV es tarea explicita de Fase 4 (ver CLAUDE.md) y esta
- * clase no la sustituye -- solo desbloquea poder dar de alta 3-5 farmacias
- * piloto reales ahora mismo, reutilizando Farmacia_Service::crear() (la
- * misma logica que ya se uso para la farmacia de Fase 1 via la pagina de
- * seed temporal de la tarea #233, ya retirada del repositorio).
+ * Alta manual de farmacias (nombre, CIF/NIF y plan obligatorio). Desde
+ * Fase 4 pasa por Farmacia_Import_Service::crear_una(), el mismo servicio
+ * que el importador CSV: esta clase no valida nada ni llama a
+ * Farmacia_Service::crear(), solo traduce $_POST y muestra el resultado.
+ * Si el CIF/NIF ya existe, el formulario no actualiza (eso es del
+ * importador).
  *
  * Mismo patron que Admin_Planes, Admin_Documentos, Admin_Catalogo y
  * Admin_Invitaciones: menu propio, capacidad 'manage_options'
@@ -74,9 +71,9 @@ class Admin_Farmacias {
 
 		$nombre  = isset( $_POST['nombre'] ) ? sanitize_text_field( wp_unslash( $_POST['nombre'] ) ) : '';
 		$cif     = isset( $_POST['cif'] ) ? sanitize_text_field( wp_unslash( $_POST['cif'] ) ) : '';
-		$plan_id = isset( $_POST['plan_id'] ) && '' !== $_POST['plan_id'] ? (int) $_POST['plan_id'] : null;
+		$plan    = isset( $_POST['plan'] ) ? sanitize_text_field( wp_unslash( $_POST['plan'] ) ) : '';
 
-		$resultado = ( new Farmacia_Service() )->crear( $cif, $nombre, null, $plan_id );
+		$resultado = ( new Farmacia_Import_Service() )->crear_una( $cif, $nombre, $plan );
 
 		if ( is_wp_error( $resultado ) ) {
 			self::guardar_aviso( 'error', $resultado->get_error_message() );

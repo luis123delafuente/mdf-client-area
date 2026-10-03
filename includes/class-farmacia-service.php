@@ -25,6 +25,18 @@ class Farmacia_Service {
 	}
 
 	/**
+	 * Unico sitio con el texto del error de CIF/NIF duplicado: lo usan
+	 * crear() y Farmacia_Import_Service::crear_una() (alta manual), para
+	 * que el formulario siga dando el mismo mensaje de siempre.
+	 */
+	public static function error_duplicado( string $cif ): \WP_Error {
+		return new \WP_Error(
+			'mdf_ca_identificador_duplicado',
+			sprintf( 'Ya existe una farmacia registrada con el CIF/NIF "%s".', $cif )
+		);
+	}
+
+	/**
 	 * Da de alta una farmacia. wp_user_id es opcional desde #249: antes
 	 * era obligatorio pasar un usuario de WordPress ya existente, pero el
 	 * flujo de invitacion por token (Invitacion_Service) es ahora quien
@@ -82,10 +94,7 @@ class Farmacia_Service {
 		}
 
 		if ( $this->repository->find_by_cif( $cif ) ) {
-			return new \WP_Error(
-				'mdf_ca_identificador_duplicado',
-				sprintf( 'Ya existe una farmacia registrada con el CIF/NIF "%s".', $cif )
-			);
+			return self::error_duplicado( $cif );
 		}
 
 		$farmacia = $this->repository->insert( $cif, $nombre, $wp_user_id );

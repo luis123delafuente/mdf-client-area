@@ -162,6 +162,46 @@ class Farmacia_Import_Service {
 	}
 
 	/**
+	 * Alta manual de UNA farmacia (Admin_Farmacias): las mismas reglas que
+	 * el importador porque pasa por el mismo simular() y aplicar(), sin
+	 * paso intermedio de confirmacion. Solo crea: si el CIF/NIF ya existe
+	 * (resultado actualizar o sin_cambios) devuelve el error de duplicado
+	 * y no escribe nada -- actualizar es cosa del importador. Los motivos
+	 * de rechazo son los del servicio, tal cual.
+	 *
+	 * @return Farmacia|\WP_Error
+	 */
+	public function crear_una( string $cif, string $nombre, string $plan ) {
+		$filas     = array(
+			array(
+				'linea'  => 1,
+				'cif'    => $cif,
+				'nombre' => $nombre,
+				'plan'   => $plan,
+			),
+		);
+		$resultado = $this->simular( $filas )[0];
+
+		if ( self::ACCION_RECHAZADA === $resultado['accion'] ) {
+			return new \WP_Error( 'mdf_ca_alta_rechazada', implode( ' ', $resultado['motivos'] ) );
+		}
+
+		if ( self::ACCION_CREAR !== $resultado['accion'] ) {
+			return Farmacia_Service::error_duplicado( $resultado['cif'] );
+		}
+
+		$aplicado = $this->aplicar( $filas, self::huella( array( $resultado ) ) );
+
+		if ( is_wp_error( $aplicado ) ) {
+			return $aplicado;
+		}
+
+		$farmacia = $this->repository->find_by_cif( $resultado['cif'] );
+
+		return $farmacia ?? new \WP_Error( 'mdf_ca_error_bd', 'La farmacia no aparece tras crearla.' );
+	}
+
+	/**
 	 * Huella de una simulacion: cambia si cambia cualquier decision. La
 	 * pantalla la manda al confirmar para comprobar que lo que se va a
 	 * aplicar es exactamente lo que el administrador vio; si el formulario

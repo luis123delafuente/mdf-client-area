@@ -1,12 +1,10 @@
 <?php
 /**
  * Vista de la pantalla de backoffice "Farmacias MDF". Solo marcado: toda
- * la logica (validacion de CIF, duplicados, plan) vive en Admin_Farmacias
- * y Farmacia_Service, mismo criterio que el resto de pantallas de
- * backoffice del plugin.
+ * la logica (validacion de CIF, duplicados, plan) vive en
+ * Farmacia_Import_Service, el mismo servicio que el importador CSV.
  *
- * Alta minima para el piloto de Fase 3 (ver cabecera de Admin_Farmacias):
- * sin edicion ni borrado, sin importador -- eso es Fase 4.
+ * Alta manual sin edicion ni borrado (ver cabecera de Admin_Farmacias).
  *
  * @var \MdfClientArea\Plan[]     $planes
  * @var \MdfClientArea\Farmacia[] $farmacias
@@ -29,7 +27,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<?php endif; ?>
 
 	<p class="description">
-		Alta minima: nombre, CIF/NIF y plan. Para dar de alta o actualizar
+		Alta manual: nombre, CIF/NIF y plan (obligatorio). Para dar de alta o actualizar
 		muchas a la vez, usa
 		<a href="<?php echo esc_url( admin_url( 'admin.php?page=mdf-ca-importar-farmacias' ) ); ?>">Importar CSV</a>.
 		Tras crear la farmacia se puede invitar de inmediato desde Invitaciones MDF.
@@ -74,16 +72,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 				<tr>
 					<th scope="row"><label for="mdf-ca-farmacia-plan">Plan</label></th>
 					<td>
-						<select id="mdf-ca-farmacia-plan" name="plan_id">
-							<option value="">-- Sin plan --</option>
+						<select id="mdf-ca-farmacia-plan" name="plan" required>
+							<option value="">-- Elige un plan --</option>
 							<?php foreach ( $planes as $plan ) : ?>
-								<option value="<?php echo esc_attr( (string) $plan->get_id() ); ?>">
+								<option value="<?php echo esc_attr( $plan->get_slug() ); ?>">
 									<?php echo esc_html( $plan->get_nombre() ); ?>
 								</option>
 							<?php endforeach; ?>
 						</select>
 						<?php if ( ! $planes ) : ?>
-							<p class="description">Todavia no hay ningun plan creado. Puedes crear la farmacia sin plan y asignarlo despues desde Planes MDF.</p>
+							<p class="description">Todavia no hay ningun plan creado. Crea uno primero desde Planes MDF: el plan es obligatorio.</p>
 						<?php endif; ?>
 					</td>
 				</tr>
