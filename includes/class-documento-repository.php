@@ -24,6 +24,22 @@ class Documento_Repository {
 	}
 
 	/**
+	 * Documento ya guardado con este SHA-256 (solo los de la recepcion
+	 * automatica llevan hash). El UNIQUE de la columna garantiza uno como
+	 * maximo.
+	 */
+	public function find_by_hash( string $hash_sha256 ): ?Documento {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$row   = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE hash_sha256 = %s", $hash_sha256 )
+		);
+
+		return $row ? Documento::from_db_row( $row ) : null;
+	}
+
+	/**
 	 * Documentos de una farmacia, mas recientes primero. Usado por el
 	 * listado de front (#241): la consulta ya viene acotada a la farmacia,
 	 * asi que quien la consume no necesita repetir la comprobacion de
@@ -74,7 +90,8 @@ class Documento_Repository {
 		?int $tamano_bytes = null,
 		?string $tipo_documento = null,
 		bool $descargable = false,
-		bool $ya_notificado = false
+		bool $ya_notificado = false,
+		?string $hash_sha256 = null
 	): ?Documento {
 		global $wpdb;
 
@@ -110,6 +127,11 @@ class Documento_Repository {
 		if ( $ya_notificado ) {
 			$data['notificado_en'] = current_time( 'mysql', true );
 			$format[]              = '%s';
+		}
+
+		if ( null !== $hash_sha256 ) {
+			$data['hash_sha256'] = $hash_sha256;
+			$format[]            = '%s';
 		}
 
 		$result = $wpdb->insert( $table, $data, $format );

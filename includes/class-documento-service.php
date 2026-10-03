@@ -62,6 +62,8 @@ class Documento_Service {
 	}
 
 	/**
+	 * Subida desde el backoffice (Admin_Documentos).
+	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
 	 * @param bool $notificar false para subidas que no deben avisar a la
 	 *                        farmacia (p. ej. ingesta del historico). No
@@ -83,6 +85,46 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_tipo_invalido', 'Selecciona un tipo de documento valido.' );
 		}
 
+		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null );
+	}
+
+	/**
+	 * Factura recibida por la ruta REST de recepcion (#303). Mismo camino que
+	 * la subida de backoffice (validacion de fichero, nombre en disco
+	 * aleatorio, carpeta privada), con tres diferencias: solo PDF, tipo
+	 * "factura" siempre, y se guarda el SHA-256 del fichero (UNIQUE) para que
+	 * reenviar el mismo PDF no lo duplique. La farmacia ya viene cruzada por
+	 * Factura_Cruce_Service: aqui no se decide a quien pertenece.
+	 *
+	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
+	 * @return Documento|\WP_Error
+	 */
+	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, bool $notificar = true ) {
+		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
+			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Farmacia no valida.' );
+		}
+
+		$nombre = trim( $nombre );
+
+		if ( '' === $nombre ) {
+			return new \WP_Error( 'mdf_ca_documento_nombre_vacio', 'El nombre del documento no puede estar vacio.' );
+		}
+
+		if ( 1 !== preg_match( '/^[a-f0-9]{64}$/', $hash_sha256 ) ) {
+			return new \WP_Error( 'mdf_ca_documento_hash_invalido', 'Hash de fichero no valido.' );
+		}
+
+		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256 );
+	}
+
+	/**
+	 * Camino comun de subir() y subir_factura_recibida(): valida el fichero,
+	 * lo mueve a la carpeta privada con nombre aleatorio y registra la fila.
+	 *
+	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo
+	 * @return Documento|\WP_Error
+	 */
+	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256 ) {
 		$validacion_archivo = $this->validar_archivo( $archivo );
 
 		if ( is_wp_error( $validacion_archivo ) ) {
@@ -100,6 +142,18 @@ class Documento_Service {
 				'mdf_ca_documento_tipo_fichero_no_permitido',
 				'Tipo de fichero no permitido. Solo se aceptan PDF, JPG, PNG, WEBP y Excel (.xlsx).'
 			);
+		}
+
+		if ( $solo_pdf && 'pdf' !== $filetype['ext'] ) {
+			return new \WP_Error( 'mdf_ca_documento_tipo_fichero_no_permitido', 'Solo se acepta PDF.' );
+		}
+
+		// Para un PDF, WordPress da por bueno un binario cualquiera llamado
+		// ".pdf" si el contenido es "application/octet-stream": el contenido
+		// real tiene que ser exactamente un PDF. Si no se puede inspeccionar
+		// (sin la extension fileinfo), se rechaza.
+		if ( 'pdf' === $filetype['ext'] && 'application/pdf' !== self::mime_real( $archivo['tmp_name'] ) ) {
+			return new \WP_Error( 'mdf_ca_documento_pdf_invalido', 'El fichero no es un PDF valido.' );
 		}
 
 		if ( 'xlsx' === $filetype['ext'] ) {
@@ -136,7 +190,8 @@ class Documento_Service {
 			// Solo un Excel puede ser descargable; para el resto el flag se
 			// ignora (siempre visor), aunque llegue marcado.
 			$descargable && self::MIME_XLSX === $filetype['type'],
-			! $notificar
+			! $notificar,
+			$hash_sha256
 		);
 
 		if ( null === $documento ) {
@@ -147,6 +202,18 @@ class Documento_Service {
 		}
 
 		return $documento;
+	}
+
+	/** MIME real del contenido (fileinfo), o null si no se puede inspeccionar. */
+	private static function mime_real( string $ruta ): ?string {
+		if ( ! function_exists( 'finfo_open' ) ) {
+			return null;
+		}
+
+		$finfo = finfo_open( FILEINFO_MIME_TYPE );
+		$mime  = false === $finfo ? false : finfo_file( $finfo, $ruta );
+
+		return is_string( $mime ) ? $mime : null;
 	}
 
 	/**

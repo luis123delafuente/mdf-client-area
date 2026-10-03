@@ -35,6 +35,15 @@ class DB_Schema {
 		return $wpdb->prefix . 'mdf_ca_planes';
 	}
 
+	/**
+	 * Recuentos diarios de la recepcion automatica de documentos (#303),
+	 * por resultado. Solo numeros: nunca CIF, nombres ni importes.
+	 */
+	public static function get_recepcion_registro_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_recepcion_registro';
+	}
+
 	public static function get_catalogo_table_name() {
 		global $wpdb;
 		return $wpdb->prefix . 'mdf_ca_catalogo';
@@ -73,6 +82,7 @@ class DB_Schema {
 		$planes_table          = self::get_planes_table_name();
 		$catalogo_table        = self::get_catalogo_table_name();
 		$catalogo_planes_table = self::get_catalogo_planes_table_name();
+		$registro_table        = self::get_recepcion_registro_table_name();
 
 		// slug es el identificador estable para comparar visibilidad
 		// (Permissions::puede_ver_bloque_por_plan(), atributo "planes" de
@@ -119,6 +129,12 @@ class DB_Schema {
 		// que alguien lo marque expresamente al subirlo.
 		// notificado_en (Fase 4, UTC): NULL = documento aun no incluido en
 		// ningun aviso por email a la farmacia (Aviso_Documentos_Service).
+		// hash_sha256 (#303): SHA-256 del fichero, solo lo rellena la recepcion
+		// automatica, para que reenviar el mismo PDF no lo duplique. UNIQUE
+		// sobre la columna sola (varias NULL no chocan: los documentos de
+		// backoffice y los anteriores no tienen hash) y global, no por
+		// farmacia: asi el mismo PDF con el CIF de OTRA farmacia tambien se
+		// detecta y no se escribe.
 		// Nullable y sin backfill por dbDelta: la migracion que marca como
 		// notificados los documentos ya existentes vive en
 		// Activator::maybe_upgrade(), con su propia option. El indice
@@ -134,9 +150,18 @@ class DB_Schema {
 			descargable TINYINT(1) NOT NULL DEFAULT 0,
 			fecha_subida DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			notificado_en DATETIME NULL,
+			hash_sha256 CHAR(64) NULL,
 			PRIMARY KEY  (id),
 			KEY farmacia_id (farmacia_id),
-			KEY notificado_en (notificado_en,farmacia_id)
+			KEY notificado_en (notificado_en,farmacia_id),
+			UNIQUE KEY hash_sha256 (hash_sha256)
+		) {$charset_collate};";
+
+		$registro_sql = "CREATE TABLE {$registro_table} (
+			fecha DATE NOT NULL,
+			resultado VARCHAR(20) NOT NULL,
+			total INT UNSIGNED NOT NULL DEFAULT 0,
+			PRIMARY KEY  (fecha,resultado)
 		) {$charset_collate};";
 
 		// seccion y tipo son VARCHAR de lista fija (ver Catalogo_Secciones y
@@ -176,6 +201,6 @@ class DB_Schema {
 			KEY plan_id (plan_id)
 		) {$charset_collate};";
 
-		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql );
+		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql );
 	}
 }

@@ -55,6 +55,14 @@ class Activator {
 			update_option( 'mdf_ca_avisos_backfill_hecho', '1' );
 		}
 
+		// Rol del robot de recepcion (#303): activate() ya lo da de alta en
+		// instalaciones nuevas; aqui llega a las que ya estaban activas, una
+		// sola vez, sin tocar mdf_cliente.
+		if ( ! get_option( 'mdf_ca_roles_v2' ) ) {
+			Roles::register_robot();
+			update_option( 'mdf_ca_roles_v2', '1' );
+		}
+
 		if ( ! get_option( 'mdf_ca_planes_migrados' ) ) {
 			self::migrar_planes_desde_varchar();
 			update_option( 'mdf_ca_planes_migrados', '1' );

@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.13.0' );
-define( 'MDF_CA_DB_VERSION', '1.6.0' );
+define( 'MDF_CA_VERSION', '0.14.0' );
+define( 'MDF_CA_DB_VERSION', '1.7.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MDF_CA_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
@@ -62,6 +62,9 @@ add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Importador_Farmacias'
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Planes', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Avisos_Documentos', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Recepcion_Documentos', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Recepcion_Autenticacion', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Recepcion_Documentos_Endpoint', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Aviso_Documentos_Service', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Catalogo', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Invitaciones', 'register_hooks' ) );
