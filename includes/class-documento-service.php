@@ -63,9 +63,12 @@ class Documento_Service {
 
 	/**
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
+	 * @param bool $notificar false para subidas que no deben avisar a la
+	 *                        farmacia (p. ej. ingesta del historico). No
+	 *                        cambia la visibilidad: solo el aviso por email.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable = false ) {
+	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable = false, bool $notificar = true ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Selecciona una farmacia valida.' );
 		}
@@ -132,7 +135,8 @@ class Documento_Service {
 			$tipo_documento,
 			// Solo un Excel puede ser descargable; para el resto el flag se
 			// ignora (siempre visor), aunque llegue marcado.
-			$descargable && self::MIME_XLSX === $filetype['type']
+			$descargable && self::MIME_XLSX === $filetype['type'],
+			! $notificar
 		);
 
 		if ( null === $documento ) {

@@ -117,6 +117,12 @@ class DB_Schema {
 		// nunca se descargan, van al visor). NOT NULL DEFAULT 0: todo
 		// documento, incluidos los ya existentes, es no descargable salvo
 		// que alguien lo marque expresamente al subirlo.
+		// notificado_en (Fase 4, UTC): NULL = documento aun no incluido en
+		// ningun aviso por email a la farmacia (Aviso_Documentos_Service).
+		// Nullable y sin backfill por dbDelta: la migracion que marca como
+		// notificados los documentos ya existentes vive en
+		// Activator::maybe_upgrade(), con su propia option. El indice
+		// cubre la consulta de pendientes agrupados por farmacia.
 		$documentos_sql = "CREATE TABLE {$documentos_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			farmacia_id BIGINT UNSIGNED NOT NULL,
@@ -127,8 +133,10 @@ class DB_Schema {
 			tamano_bytes BIGINT UNSIGNED NULL,
 			descargable TINYINT(1) NOT NULL DEFAULT 0,
 			fecha_subida DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			notificado_en DATETIME NULL,
 			PRIMARY KEY  (id),
-			KEY farmacia_id (farmacia_id)
+			KEY farmacia_id (farmacia_id),
+			KEY notificado_en (notificado_en,farmacia_id)
 		) {$charset_collate};";
 
 		// seccion y tipo son VARCHAR de lista fija (ver Catalogo_Secciones y

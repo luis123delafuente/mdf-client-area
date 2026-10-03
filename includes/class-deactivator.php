@@ -24,5 +24,9 @@ class Deactivator {
 	 */
 	public static function deactivate() {
 		flush_rewrite_rules();
+
+		// El evento de avisos se vuelve a programar solo (en 'init') al
+		// reactivar.
+		Aviso_Documentos_Service::desprogramar();
 	}
 }

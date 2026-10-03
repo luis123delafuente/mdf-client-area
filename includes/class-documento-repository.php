@@ -73,7 +73,8 @@ class Documento_Repository {
 		?string $tipo_mime = null,
 		?int $tamano_bytes = null,
 		?string $tipo_documento = null,
-		bool $descargable = false
+		bool $descargable = false,
+		bool $ya_notificado = false
 	): ?Documento {
 		global $wpdb;
 
@@ -104,6 +105,13 @@ class Documento_Repository {
 		$data['descargable'] = $descargable ? 1 : 0;
 		$format[]            = '%d';
 
+		// Subida que no debe generar aviso (p. ej. ingesta del historico):
+		// nace ya marcada, y Aviso_Documentos_Service nunca la ve.
+		if ( $ya_notificado ) {
+			$data['notificado_en'] = current_time( 'mysql', true );
+			$format[]              = '%s';
+		}
+
 		$result = $wpdb->insert( $table, $data, $format );
 
 		if ( false === $result ) {
@@ -111,5 +119,71 @@ class Documento_Repository {
 		}
 
 		return $this->find_by_id( (int) $wpdb->insert_id );
+	}
+
+	/**
+	 * Documentos aun no incluidos en ningun aviso por email, solo con lo
+	 * que el aviso necesita (nunca nombre ni fichero).
+	 *
+	 * @return array<int, array{id: int, farmacia_id: int, tipo_documento: ?string}>
+	 */
+	public function find_pendientes_aviso(): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$rows  = $wpdb->get_results(
+			"SELECT id, farmacia_id, tipo_documento FROM {$table} WHERE notificado_en IS NULL ORDER BY farmacia_id, id",
+			ARRAY_A
+		);
+
+		return array_map(
+			static fn( array $row ): array => array(
+				'id'             => (int) $row['id'],
+				'farmacia_id'    => (int) $row['farmacia_id'],
+				'tipo_documento' => $row['tipo_documento'],
+			),
+			$rows ?: array()
+		);
+	}
+
+	/**
+	 * Marca como notificados exactamente estos ids. "AND notificado_en IS
+	 * NULL": nunca reescribe la fecha de uno ya marcado.
+	 *
+	 * @param int[] $ids
+	 * @return int|false Filas marcadas, o false si fallo la consulta.
+	 */
+	public function marcar_notificados( array $ids ) {
+		global $wpdb;
+
+		$ids = array_values( array_filter( array_map( 'intval', $ids ) ) );
+
+		if ( ! $ids ) {
+			return 0;
+		}
+
+		$table        = DB_Schema::get_documentos_table_name();
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+
+		return $wpdb->query(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba.
+				"UPDATE {$table} SET notificado_en = %s WHERE notificado_en IS NULL AND id IN ({$placeholders})",
+				array_merge( array( current_time( 'mysql', true ) ), $ids )
+			)
+		);
+	}
+
+	/**
+	 * Migracion de despliegue (Activator::maybe_upgrade()): todo documento
+	 * existente cuenta como ya notificado, con su propia fecha de subida,
+	 * para que activar los avisos no genere un aviso por lo ya subido.
+	 */
+	public function marcar_todos_notificados(): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return false !== $wpdb->query( "UPDATE {$table} SET notificado_en = fecha_subida WHERE notificado_en IS NULL" );
 	}
 }

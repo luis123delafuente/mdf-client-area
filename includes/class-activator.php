@@ -44,6 +44,17 @@ class Activator {
 			update_option( 'mdf_ca_db_version', MDF_CA_DB_VERSION );
 		}
 
+		// Avisos de documentos nuevos (Fase 4): los documentos que ya
+		// existen al desplegar cuentan como notificados, para que activar
+		// los avisos no envie nada por ellos. Va despues de create_tables()
+		// (que anade notificado_en) en esta misma peticion, y solo marca la
+		// option si el UPDATE ha ido bien (si la columna no existiera,
+		// fallaria y se reintentaria en la siguiente peticion).
+		if ( ! get_option( 'mdf_ca_avisos_backfill_hecho' )
+			&& ( new Documento_Repository() )->marcar_todos_notificados() ) {
+			update_option( 'mdf_ca_avisos_backfill_hecho', '1' );
+		}
+
 		if ( ! get_option( 'mdf_ca_planes_migrados' ) ) {
 			self::migrar_planes_desde_varchar();
 			update_option( 'mdf_ca_planes_migrados', '1' );

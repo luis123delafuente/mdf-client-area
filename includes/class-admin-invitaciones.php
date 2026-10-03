@@ -49,67 +49,12 @@ class Admin_Invitaciones {
 		$estados   = array();
 
 		foreach ( $farmacias as $farmacia ) {
-			$estados[ $farmacia->get_id() ] = self::resolver_estado( $farmacia );
+			$estados[ $farmacia->get_id() ] = Invitacion_Service::estado_cuenta( $farmacia );
 		}
 
 		$aviso = self::consumir_aviso();
 
 		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-invitaciones.php';
-	}
-
-	/**
-	 * Estado de invitacion de una farmacia, derivado por completo de datos
-	 * ya nativos de WordPress -- sin tabla propia:
-	 * - "sin_cuenta": la farmacia no tiene wp_user_id todavia.
-	 * - "usuario_roto": tiene wp_user_id pero el usuario ya no existe
-	 *   (caso limite improbable, p. ej. borrado a mano desde wp-admin).
-	 * - "pendiente": el usuario tiene una user_activation_key activa (la
-	 *   columna que WordPress rellena al generar un token y vacia al
-	 *   consumirlo, ver Invitacion_Service) -- invitacion enviada, todavia
-	 *   sin usar.
-	 * - "activa": tiene usuario y no hay ninguna key pendiente.
-	 *
-	 * @return array{estado: string, etiqueta: string, email: ?string, enviada_en: ?int}
-	 */
-	private static function resolver_estado( Farmacia $farmacia ): array {
-		if ( ! $farmacia->get_wp_user_id() ) {
-			return array(
-				'estado'     => 'sin_cuenta',
-				'etiqueta'   => 'Sin cuenta',
-				'email'      => null,
-				'enviada_en' => null,
-			);
-		}
-
-		$usuario = get_userdata( $farmacia->get_wp_user_id() );
-
-		if ( ! $usuario ) {
-			return array(
-				'estado'     => 'usuario_roto',
-				'etiqueta'   => 'Usuario vinculado no existe',
-				'email'      => null,
-				'enviada_en' => null,
-			);
-		}
-
-		$enviada_en_meta = get_user_meta( $usuario->ID, Invitacion_Service::META_INVITACION_ENVIADA, true );
-		$enviada_en      = $enviada_en_meta ? (int) $enviada_en_meta : null;
-
-		if ( '' !== (string) $usuario->user_activation_key ) {
-			return array(
-				'estado'     => 'pendiente',
-				'etiqueta'   => 'Invitacion pendiente',
-				'email'      => $usuario->user_email,
-				'enviada_en' => $enviada_en,
-			);
-		}
-
-		return array(
-			'estado'     => 'activa',
-			'etiqueta'   => 'Cuenta activa',
-			'email'      => $usuario->user_email,
-			'enviada_en' => $enviada_en,
-		);
 	}
 
 	public static function gestionar_enviar(): void {
