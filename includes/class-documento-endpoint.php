@@ -79,7 +79,11 @@ class Documento_Endpoint {
 	 * token fuera valido. Si el navegador no envia la cabecera (antiguo), se
 	 * ignora y decide solo el token: su ausencia no rompe nada.
 	 */
-	private static function es_peticion_del_visor( \WP_User $usuario, Documento $documento ): bool {
+	/**
+	 * Publico para que la vista previa del administrador (#304) aplique la
+	 * misma regla: token de un solo uso y nunca una navegacion directa.
+	 */
+	public static function es_peticion_del_visor( \WP_User $usuario, Documento $documento ): bool {
 		$destino = isset( $_SERVER['HTTP_SEC_FETCH_DEST'] ) ? strtolower( (string) $_SERVER['HTTP_SEC_FETCH_DEST'] ) : '';
 
 		if ( 'document' === $destino ) {
@@ -92,13 +96,18 @@ class Documento_Endpoint {
 		return Documento_Token::consumir( $token, (int) $usuario->ID, $documento->get_id() );
 	}
 
-	private static function responder_no_encontrado(): void {
+	public static function responder_no_encontrado(): void {
 		status_header( 404 );
 		nocache_headers();
 		wp_die( 'Documento no encontrado.', 'Documento no encontrado', array( 'response' => 404 ) );
 	}
 
-	private static function servir_fichero( Documento $documento, bool $puede_descargar ): void {
+	/**
+	 * Publico para la vista previa del administrador (#304). Lee solo de la
+	 * carpeta privada (realpath + prefijo) y no decide permisos: quien lo
+	 * llama ya los ha comprobado.
+	 */
+	public static function servir_fichero( Documento $documento, bool $puede_descargar ): void {
 		$carpeta_real = realpath( self::get_carpeta_documentos() );
 		$ruta_real    = $carpeta_real ? realpath( $carpeta_real . DIRECTORY_SEPARATOR . $documento->get_ruta_fichero() ) : false;
 

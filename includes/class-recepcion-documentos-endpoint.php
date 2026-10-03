@@ -33,9 +33,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Respuestas (JSON, nunca con CIF ni datos personales):
  *
- *   201 {"resultado":"aceptado","documento_id":N}
+ *   201 {"resultado":"aceptado","documento_id":N,"publicado":true|false}
  *       Estado "asignada": documento creado en la farmacia del CIF (tipo
  *       factura, no descargable, nombre en disco aleatorio, carpeta privada).
+ *       "publicado":false = pendiente de publicar: invisible para toda
+ *       farmacia hasta que un administrador lo publica en el backoffice. Es
+ *       lo normal mientras la option mdf_ca_recepcion_requiere_aprobacion
+ *       este activa (lo esta por defecto); apagada, nace publicado.
  *   200 {"resultado":"duplicado","documento_id":N}
  *       El mismo PDF (SHA-256) ya estaba guardado para esa farmacia.
  *   422 {"resultado":"excepcion","estado":"...","motivo":"..."}
@@ -185,12 +189,14 @@ class Recepcion_Documentos_Endpoint {
 		}
 
 		$etiqueta  = $cruce['importe_total_centimos'] < 0 ? 'Abono' : 'Factura';
+		$publicar  = ! Recepcion_Registro::requiere_aprobacion();
 		$documento = ( new Documento_Service() )->subir_factura_recibida(
 			(int) $cruce['farmacia_id'],
 			sprintf( '%s %s %s', $etiqueta, $cruce['serie'], $cruce['numero'] ),
 			$archivo,
 			$hash,
-			$notificar
+			$notificar,
+			$publicar
 		);
 
 		if ( is_wp_error( $documento ) ) {
@@ -211,6 +217,7 @@ class Recepcion_Documentos_Endpoint {
 			array(
 				'resultado'    => 'aceptado',
 				'documento_id' => $documento->get_id(),
+				'publicado'    => $documento->is_publicado(),
 			),
 			201
 		);

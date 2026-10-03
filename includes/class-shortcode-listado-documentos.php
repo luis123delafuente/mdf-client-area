@@ -36,7 +36,14 @@ class Shortcode_Listado_Documentos {
 			return self::render_estado_vacio();
 		}
 
-		$documentos = ( new Documento_Repository() )->find_by_farmacia_id( $farmacia->get_id() );
+		// La consulta ya viene acotada a la farmacia, pero quien decide que
+		// documentos se ven es Permissions (#304: un documento pendiente de
+		// publicar no se lista). No se filtra "publicado" en SQL para no
+		// tener un segundo sitio que decida visibilidad.
+		$documentos = Permissions::filtrar_documentos_visibles(
+			wp_get_current_user(),
+			( new Documento_Repository() )->find_by_farmacia_id( $farmacia->get_id() )
+		);
 
 		if ( ! $documentos ) {
 			return self::render_estado_vacio();

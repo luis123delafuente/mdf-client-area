@@ -8,6 +8,8 @@
  * @var bool                                         $encendida       Valor del interruptor de esta pantalla.
  * @var bool                                         $forzada_apagada
  * @var int                                          $tope
+ * @var bool                                         $requiere_aprobacion
+ * @var int                                          $pendientes_publicacion
  * @var int                                          $aceptados_hoy
  * @var array<string, array<string, int>>            $recuentos
  * @var array{tipo: string, mensaje: string}|null    $aviso
@@ -56,6 +58,27 @@ $columnas = array(
 						<input type="hidden" name="action" value="mdf_ca_recepcion_interruptor" />
 						<input type="hidden" name="activar" value="<?php echo $encendida ? '0' : '1'; ?>" />
 						<?php submit_button( $encendida ? 'Desactivar recepcion' : 'Activar recepcion', 'secondary', 'submit', false ); ?>
+					</form>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row">Aprobacion antes de publicar</th>
+				<td>
+					<strong><?php echo $requiere_aprobacion ? 'Activada' : 'Desactivada'; ?></strong>
+					<p class="description">
+						Activada (recomendado): los documentos recibidos quedan pendientes de publicar, invisibles para todas las farmacias,
+						hasta que un administrador los publica. Desactivada: se publican directamente.
+						<?php if ( $pendientes_publicacion > 0 ) : ?>
+							<a href="<?php echo esc_url( admin_url( 'admin.php?page=mdf-ca-publicacion-documentos' ) ); ?>">
+								Hay <?php echo esc_html( (string) $pendientes_publicacion ); ?> documentos pendientes de publicar.
+							</a>
+						<?php endif; ?>
+					</p>
+					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:.5em">
+						<?php wp_nonce_field( 'mdf_ca_recepcion_aprobacion' ); ?>
+						<input type="hidden" name="action" value="mdf_ca_recepcion_aprobacion" />
+						<input type="hidden" name="activar" value="<?php echo $requiere_aprobacion ? '0' : '1'; ?>" />
+						<?php submit_button( $requiere_aprobacion ? 'Desactivar aprobacion' : 'Activar aprobacion', 'secondary', 'submit', false ); ?>
 					</form>
 				</td>
 			</tr>

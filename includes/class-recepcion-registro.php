@@ -25,6 +25,13 @@ class Recepcion_Registro {
 	public const OPTION_ACTIVA = 'mdf_ca_recepcion_activa';
 	public const OPTION_TOPE   = 'mdf_ca_recepcion_tope_diario';
 
+	/**
+	 * Con ella activa, la recepcion crea los documentos pendientes de
+	 * publicar (#304). ACTIVADA por defecto: si la option no existe se trata
+	 * como activada.
+	 */
+	public const OPTION_REQUIERE_APROBACION = 'mdf_ca_recepcion_requiere_aprobacion';
+
 	/** Por defecto, holgado para la ingesta del historico por lotes. */
 	public const TOPE_POR_DEFECTO = 1000;
 	public const TOPE_MAXIMO      = 100000;
@@ -44,6 +51,14 @@ class Recepcion_Registro {
 
 	public static function set_activa( bool $activa ): void {
 		update_option( self::OPTION_ACTIVA, $activa ? '1' : '0', false );
+	}
+
+	public static function requiere_aprobacion(): bool {
+		return '0' !== (string) get_option( self::OPTION_REQUIERE_APROBACION, '1' );
+	}
+
+	public static function set_requiere_aprobacion( bool $requiere ): void {
+		update_option( self::OPTION_REQUIERE_APROBACION, $requiere ? '1' : '0', false );
 	}
 
 	public static function get_tope(): int {

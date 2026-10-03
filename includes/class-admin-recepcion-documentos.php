@@ -29,6 +29,7 @@ class Admin_Recepcion_Documentos {
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ), 11 );
 		add_action( 'admin_post_mdf_ca_recepcion_interruptor', array( __CLASS__, 'gestionar_interruptor' ) );
 		add_action( 'admin_post_mdf_ca_recepcion_tope', array( __CLASS__, 'gestionar_tope' ) );
+		add_action( 'admin_post_mdf_ca_recepcion_aprobacion', array( __CLASS__, 'gestionar_aprobacion' ) );
 		add_action( 'admin_post_mdf_ca_recepcion_crear_robot', array( __CLASS__, 'gestionar_crear_robot' ) );
 	}
 
@@ -52,6 +53,8 @@ class Admin_Recepcion_Documentos {
 		$encendida       = '1' === get_option( Recepcion_Registro::OPTION_ACTIVA, '0' );
 		$forzada_apagada = Recepcion_Registro::forzada_apagada_por_constante();
 		$tope            = Recepcion_Registro::get_tope();
+		$requiere_aprobacion    = Recepcion_Registro::requiere_aprobacion();
+		$pendientes_publicacion = ( new Documento_Repository() )->contar_pendientes_publicacion();
 		$aceptados_hoy   = Recepcion_Registro::total_hoy( Recepcion_Registro::ACEPTADO );
 		$recuentos       = Recepcion_Registro::recuentos_recientes( 14 );
 		$aviso           = self::consumir_aviso();
@@ -95,6 +98,30 @@ class Admin_Recepcion_Documentos {
 		} else {
 			self::guardar_aviso( 'success', $activar ? 'Recepcion automatica activada.' : 'Recepcion automatica desactivada. El endpoint rechaza todo y no escribe nada.' );
 		}
+
+		self::redirigir();
+	}
+
+	/**
+	 * Con la aprobacion activa (por defecto), los documentos recibidos nacen
+	 * pendientes de publicar (#304). Apagarla no publica los ya pendientes.
+	 */
+	public static function gestionar_aprobacion(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'No tienes permiso para realizar esta accion.' );
+		}
+
+		check_admin_referer( 'mdf_ca_recepcion_aprobacion' );
+
+		$activar = isset( $_POST['activar'] ) && '1' === $_POST['activar'];
+		Recepcion_Registro::set_requiere_aprobacion( $activar );
+
+		self::guardar_aviso(
+			$activar ? 'success' : 'warning',
+			$activar
+				? 'Aprobacion activada: los documentos recibidos quedan pendientes de publicar.'
+				: 'Aprobacion desactivada: los documentos recibidos a partir de ahora se publican directamente. Los que ya estan pendientes siguen pendientes.'
+		);
 
 		self::redirigir();
 	}

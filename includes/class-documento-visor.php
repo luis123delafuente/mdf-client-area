@@ -104,12 +104,8 @@ class Documento_Visor {
 	private static function renderizar( int $documento_id ): void {
 		nocache_headers();
 
-		$endpoint_url  = home_url( 'mdf-ca-documento/' . $documento_id . '/' );
-		$pdfjs_base    = plugins_url( 'assets/vendor/pdfjs', MDF_CA_PLUGIN_FILE );
-		$sheetjs_url   = plugins_url( 'assets/vendor/sheetjs/xlsx.mini.min.js', MDF_CA_PLUGIN_FILE );
-		$visor_css_url = plugins_url( 'assets/css/documento-visor.css', MDF_CA_PLUGIN_FILE );
-		$visor_js_url  = plugins_url( 'assets/js/documento-visor.js', MDF_CA_PLUGIN_FILE );
-		$marca_agua    = self::get_marca_agua_texto();
+		$endpoint_url = home_url( 'mdf-ca-documento/' . $documento_id . '/' );
+		$marca_agua   = self::get_marca_agua_texto();
 		// Boton de descarga solo si Permissions lo permite (hoy: Excel marcado
 		// como descargable). La decision no se repite aqui, se pregunta.
 		$documento       = ( new Documento_Repository() )->find_by_id( $documento_id );
@@ -125,6 +121,32 @@ class Documento_Visor {
 		if ( ! $puede_descargar && Permissions::puede_ver_documento( $usuario, $documento ) ) {
 			$token = Documento_Token::emitir( (int) $usuario->ID, $documento_id );
 		}
+
+		self::pintar( $endpoint_url, $token, $marca_agua, $puede_descargar );
+	}
+
+	/**
+	 * Vista previa para un administrador (#304): el mismo visor, pero con el
+	 * fichero servido por la accion de vista previa del backoffice, con su
+	 * propio token y marca de agua, y sin boton de descarga. Quien la llama
+	 * (Admin_Publicacion_Documentos) ya ha comprobado manage_options, nonce y
+	 * Permissions::puede_previsualizar_documento().
+	 */
+	public static function renderizar_vista_previa( string $endpoint_url, string $token, string $marca_agua ): void {
+		nocache_headers();
+
+		self::pintar( $endpoint_url, $token, $marca_agua, false );
+	}
+
+	/**
+	 * La pagina del visor, comun al visor de las farmacias y a la vista
+	 * previa del administrador. Solo marcado: no decide nada.
+	 */
+	private static function pintar( string $endpoint_url, string $token, string $marca_agua, bool $puede_descargar ): void {
+		$pdfjs_base    = plugins_url( 'assets/vendor/pdfjs', MDF_CA_PLUGIN_FILE );
+		$sheetjs_url   = plugins_url( 'assets/vendor/sheetjs/xlsx.mini.min.js', MDF_CA_PLUGIN_FILE );
+		$visor_css_url = plugins_url( 'assets/css/documento-visor.css', MDF_CA_PLUGIN_FILE );
+		$visor_js_url  = add_query_arg( 'ver', MDF_CA_VERSION, plugins_url( 'assets/js/documento-visor.js', MDF_CA_PLUGIN_FILE ) );
 
 		header( 'Content-Type: text/html; charset=UTF-8' );
 		?>

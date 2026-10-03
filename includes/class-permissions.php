@@ -31,6 +31,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Permissions {
 
+	/**
+	 * Un documento lo ve solo su farmacia titular y solo si esta publicado
+	 * (#304): uno pendiente de publicar es invisible para todas las farmacias
+	 * hasta que un administrador lo publica. Es el UNICO sitio que decide
+	 * esto: el visor, el endpoint y el listado de Documentacion preguntan
+	 * aqui, ninguno comprueba "publicado" por su cuenta.
+	 */
 	public static function puede_ver_documento( ?\WP_User $usuario, ?Documento $documento ): bool {
 		if ( ! self::usuario_autenticado( $usuario ) || ! $documento ) {
 			return false;
@@ -42,7 +49,48 @@ class Permissions {
 			return false;
 		}
 
-		return $farmacia->get_id() === $documento->get_farmacia_id();
+		return self::documento_visible_para_farmacia( $farmacia, $documento );
+	}
+
+	/**
+	 * De una lista de documentos, los que este usuario puede ver. Misma
+	 * regla que puede_ver_documento() (comparten documento_visible_para_
+	 * farmacia()), pero resolviendo la farmacia del usuario UNA vez: el
+	 * listado de Documentacion tiene cientos de documentos tras la ingesta
+	 * del historico y no debe hacer una consulta por cada uno.
+	 *
+	 * @param Documento[] $documentos
+	 * @return Documento[]
+	 */
+	public static function filtrar_documentos_visibles( ?\WP_User $usuario, array $documentos ): array {
+		if ( ! self::usuario_autenticado( $usuario ) ) {
+			return array();
+		}
+
+		$farmacia = self::farmacia_del_usuario( $usuario );
+
+		if ( ! $farmacia ) {
+			return array();
+		}
+
+		return array_values(
+			array_filter(
+				$documentos,
+				static fn( $documento ): bool => $documento instanceof Documento && self::documento_visible_para_farmacia( $farmacia, $documento )
+			)
+		);
+	}
+
+	/**
+	 * Vista previa de un documento para un administrador (#304), publicado o
+	 * no, antes de decidir publicarlo. Es el unico camino por el que alguien
+	 * que no es la farmacia titular puede leer un documento de cliente: solo
+	 * manage_options, y solo por las acciones de vista previa del backoffice
+	 * (con marca de agua, nonce y token de un solo uso), nunca por el visor
+	 * ni el endpoint de las farmacias.
+	 */
+	public static function puede_previsualizar_documento( ?\WP_User $usuario, ?Documento $documento ): bool {
+		return self::usuario_autenticado( $usuario ) && $documento && user_can( $usuario, 'manage_options' );
 	}
 
 	/**
@@ -115,6 +163,15 @@ class Permissions {
 		}
 
 		return in_array( $plan->get_slug(), $planes_permitidos, true );
+	}
+
+	/**
+	 * El predicado de visibilidad de un documento: misma farmacia y
+	 * publicado. Compartido por puede_ver_documento() y
+	 * filtrar_documentos_visibles() para que no puedan divergir.
+	 */
+	private static function documento_visible_para_farmacia( Farmacia $farmacia, Documento $documento ): bool {
+		return $farmacia->get_id() === $documento->get_farmacia_id() && $documento->is_publicado();
 	}
 
 	private static function usuario_autenticado( ?\WP_User $usuario ): bool {

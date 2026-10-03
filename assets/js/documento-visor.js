@@ -110,7 +110,7 @@
 		// documento no es descargable). Este es el unico fetch() al endpoint:
 		// PDF.js recibe los bytes por { data } y SheetJS se carga del plugin.
 		var url = config.token
-			? config.endpointUrl + '?' + encodeURIComponent( config.tokenParam ) + '=' + encodeURIComponent( config.token )
+			? config.endpointUrl + ( config.endpointUrl.indexOf( '?' ) === -1 ? '?' : '&' ) + encodeURIComponent( config.tokenParam ) + '=' + encodeURIComponent( config.token )
 			: config.endpointUrl;
 
 		fetch( url, { credentials: 'same-origin' } )

@@ -85,7 +85,8 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_tipo_invalido', 'Selecciona un tipo de documento valido.' );
 		}
 
-		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null );
+		// La subida de backoffice siempre publica.
+		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null, true );
 	}
 
 	/**
@@ -97,9 +98,12 @@ class Documento_Service {
 	 * Factura_Cruce_Service: aqui no se decide a quien pertenece.
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
+	 * @param bool $publicar false deja el documento pendiente de publicar
+	 *                       (invisible para toda farmacia hasta que un
+	 *                       administrador lo publica, #304).
 	 * @return Documento|\WP_Error
 	 */
-	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, bool $notificar = true ) {
+	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, bool $notificar = true, bool $publicar = true ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Farmacia no valida.' );
 		}
@@ -114,7 +118,7 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_hash_invalido', 'Hash de fichero no valido.' );
 		}
 
-		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256 );
+		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar );
 	}
 
 	/**
@@ -124,7 +128,7 @@ class Documento_Service {
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo
 	 * @return Documento|\WP_Error
 	 */
-	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256 ) {
+	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar ) {
 		$validacion_archivo = $this->validar_archivo( $archivo );
 
 		if ( is_wp_error( $validacion_archivo ) ) {
@@ -191,7 +195,8 @@ class Documento_Service {
 			// ignora (siempre visor), aunque llegue marcado.
 			$descargable && self::MIME_XLSX === $filetype['type'],
 			! $notificar,
-			$hash_sha256
+			$hash_sha256,
+			$publicar
 		);
 
 		if ( null === $documento ) {

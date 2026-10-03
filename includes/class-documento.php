@@ -29,6 +29,7 @@ class Documento {
 	private ?int $tamano_bytes;
 	private string $fecha_subida;
 	private bool $descargable;
+	private bool $publicado;
 
 	public function __construct(
 		int $id,
@@ -39,7 +40,8 @@ class Documento {
 		?string $tipo_mime,
 		?int $tamano_bytes,
 		string $fecha_subida,
-		bool $descargable = false
+		bool $descargable = false,
+		bool $publicado = true
 	) {
 		$this->id             = $id;
 		$this->farmacia_id    = $farmacia_id;
@@ -50,6 +52,7 @@ class Documento {
 		$this->tamano_bytes   = $tamano_bytes;
 		$this->fecha_subida   = $fecha_subida;
 		$this->descargable    = $descargable;
+		$this->publicado      = $publicado;
 	}
 
 	public static function from_db_row( object $row ): self {
@@ -62,7 +65,9 @@ class Documento {
 			$row->tipo_mime,
 			null !== $row->tamano_bytes ? (int) $row->tamano_bytes : null,
 			$row->fecha_subida,
-			! empty( $row->descargable )
+			! empty( $row->descargable ),
+			// Sin la columna (fila anterior a #304) cuenta como publicado.
+			! isset( $row->publicado ) || ! empty( $row->publicado )
 		);
 	}
 
@@ -100,5 +105,14 @@ class Documento {
 
 	public function get_fecha_subida(): string {
 		return $this->fecha_subida;
+	}
+
+	/**
+	 * Solo informa del estado: quien decide si un usuario puede ver el
+	 * documento es Permissions, ninguna otra capa debe usar esto para decidir
+	 * visibilidad.
+	 */
+	public function is_publicado(): bool {
+		return $this->publicado;
 	}
 }

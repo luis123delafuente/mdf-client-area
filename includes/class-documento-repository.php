@@ -91,7 +91,8 @@ class Documento_Repository {
 		?string $tipo_documento = null,
 		bool $descargable = false,
 		bool $ya_notificado = false,
-		?string $hash_sha256 = null
+		?string $hash_sha256 = null,
+		bool $publicado = true
 	): ?Documento {
 		global $wpdb;
 
@@ -134,6 +135,11 @@ class Documento_Repository {
 			$format[]            = '%s';
 		}
 
+		// Solo la recepcion automatica puede crear documentos pendientes de
+		// publicar; la subida de backoffice no pasa este parametro.
+		$data['publicado'] = $publicado ? 1 : 0;
+		$format[]          = '%d';
+
 		$result = $wpdb->insert( $table, $data, $format );
 
 		if ( false === $result ) {
@@ -145,7 +151,11 @@ class Documento_Repository {
 
 	/**
 	 * Documentos aun no incluidos en ningun aviso por email, solo con lo
-	 * que el aviso necesita (nunca nombre ni fichero).
+	 * que el aviso necesita (nunca nombre ni fichero). Los pendientes de
+	 * publicar quedan fuera (no se avisa de algo invisible) y siguen con
+	 * notificado_en NULL: al publicarse entran en el siguiente aviso. Es la
+	 * unica consulta, ademas de Permissions, que mira "publicado", y no
+	 * decide visibilidad: solo elige de que avisar.
 	 *
 	 * @return array<int, array{id: int, farmacia_id: int, tipo_documento: ?string}>
 	 */
@@ -154,7 +164,7 @@ class Documento_Repository {
 
 		$table = DB_Schema::get_documentos_table_name();
 		$rows  = $wpdb->get_results(
-			"SELECT id, farmacia_id, tipo_documento FROM {$table} WHERE notificado_en IS NULL ORDER BY farmacia_id, id",
+			"SELECT id, farmacia_id, tipo_documento FROM {$table} WHERE notificado_en IS NULL AND publicado = 1 ORDER BY farmacia_id, id",
 			ARRAY_A
 		);
 
@@ -207,5 +217,80 @@ class Documento_Repository {
 		$table = DB_Schema::get_documentos_table_name();
 
 		return false !== $wpdb->query( "UPDATE {$table} SET notificado_en = fecha_subida WHERE notificado_en IS NULL" );
+	}
+
+	// ------------------------------------------------------------------
+	// Publicacion (#304): solo para el backoffice. Ninguna decide visibilidad.
+	// ------------------------------------------------------------------
+
+	/**
+	 * Pendientes de publicar, agrupables por farmacia.
+	 *
+	 * @return Documento[]
+	 */
+	public function find_pendientes_publicacion(): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$rows  = $wpdb->get_results( "SELECT * FROM {$table} WHERE publicado = 0 ORDER BY farmacia_id, fecha_subida, id" );
+
+		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );
+	}
+
+	/**
+	 * Los ultimos publicados que llegaron por la recepcion automatica (los
+	 * unicos con hash), para poder despublicar uno si se detecta un error.
+	 *
+	 * @return Documento[]
+	 */
+	public function find_publicados_recibidos( int $limite = 50 ): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE publicado = 1 AND hash_sha256 IS NOT NULL ORDER BY id DESC LIMIT %d", max( 1, $limite ) )
+		);
+
+		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );
+	}
+
+	public function contar_pendientes_publicacion(): int {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE publicado = 0" );
+	}
+
+	/**
+	 * Publica o despublica un documento. Devuelve las filas realmente
+	 * cambiadas (0 si ya estaba en ese estado o no existe), o false si fallo
+	 * la consulta.
+	 *
+	 * @return int|false
+	 */
+	public function set_publicado( int $id, bool $publicado ) {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return $wpdb->query(
+			$wpdb->prepare( "UPDATE {$table} SET publicado = %d WHERE id = %d AND publicado = %d", $publicado ? 1 : 0, $id, $publicado ? 0 : 1 )
+		);
+	}
+
+	/**
+	 * Publica todos los pendientes de UNA farmacia. Devuelve cuantos publico.
+	 *
+	 * @return int|false
+	 */
+	public function publicar_todos_de_farmacia( int $farmacia_id ) {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return $wpdb->query(
+			$wpdb->prepare( "UPDATE {$table} SET publicado = 1 WHERE farmacia_id = %d AND publicado = 0", $farmacia_id )
+		);
 	}
 }

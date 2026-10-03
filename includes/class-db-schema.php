@@ -135,6 +135,12 @@ class DB_Schema {
 		// backoffice y los anteriores no tienen hash) y global, no por
 		// farmacia: asi el mismo PDF con el CIF de OTRA farmacia tambien se
 		// detecta y no se escribe.
+		// publicado (#304): 0 = pendiente de publicar. Un documento no publicado
+		// es invisible para toda farmacia hasta que un administrador lo
+		// publica (Permissions::puede_ver_documento() es el unico punto que
+		// lo decide). NOT NULL DEFAULT 1: todo lo existente y todo lo subido
+		// desde el backoffice sigue visible; solo la recepcion automatica
+		// crea documentos con 0 (si la option de aprobacion esta activa).
 		// Nullable y sin backfill por dbDelta: la migracion que marca como
 		// notificados los documentos ya existentes vive en
 		// Activator::maybe_upgrade(), con su propia option. El indice
@@ -151,9 +157,11 @@ class DB_Schema {
 			fecha_subida DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			notificado_en DATETIME NULL,
 			hash_sha256 CHAR(64) NULL,
+			publicado TINYINT(1) NOT NULL DEFAULT 1,
 			PRIMARY KEY  (id),
 			KEY farmacia_id (farmacia_id),
 			KEY notificado_en (notificado_en,farmacia_id),
+			KEY publicado (publicado,farmacia_id),
 			UNIQUE KEY hash_sha256 (hash_sha256)
 		) {$charset_collate};";
 
