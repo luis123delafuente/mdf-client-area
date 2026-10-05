@@ -30,6 +30,7 @@ class Documento {
 	private string $fecha_subida;
 	private bool $descargable;
 	private bool $publicado;
+	private ?string $fecha_documento;
 
 	public function __construct(
 		int $id,
@@ -41,7 +42,8 @@ class Documento {
 		?int $tamano_bytes,
 		string $fecha_subida,
 		bool $descargable = false,
-		bool $publicado = true
+		bool $publicado = true,
+		?string $fecha_documento = null
 	) {
 		$this->id             = $id;
 		$this->farmacia_id    = $farmacia_id;
@@ -53,6 +55,7 @@ class Documento {
 		$this->fecha_subida   = $fecha_subida;
 		$this->descargable    = $descargable;
 		$this->publicado      = $publicado;
+		$this->fecha_documento = $fecha_documento;
 	}
 
 	public static function from_db_row( object $row ): self {
@@ -67,7 +70,8 @@ class Documento {
 			$row->fecha_subida,
 			! empty( $row->descargable ),
 			// Sin la columna (fila anterior a #304) cuenta como publicado.
-			! isset( $row->publicado ) || ! empty( $row->publicado )
+			! isset( $row->publicado ) || ! empty( $row->publicado ),
+			! empty( $row->fecha_documento ) ? (string) $row->fecha_documento : null
 		);
 	}
 
@@ -105,6 +109,21 @@ class Documento {
 
 	public function get_fecha_subida(): string {
 		return $this->fecha_subida;
+	}
+
+	/**
+	 * Fecha del documento (la de la factura, no la de subida), 'Y-m-d', o
+	 * null si no tiene. Nunca se usa la fecha de subida como sustituto.
+	 */
+	public function get_fecha_documento(): ?string {
+		return $this->fecha_documento;
+	}
+
+	/** Fecha del documento como dd/mm/aaaa para las pantallas de backoffice, o un guion. */
+	public static function formatear_fecha_corta( ?string $fecha ): string {
+		$d = null === $fecha ? false : \DateTimeImmutable::createFromFormat( '!Y-m-d', $fecha );
+
+		return $d ? $d->format( 'd/m/Y' ) : '—';
 	}
 
 	/**

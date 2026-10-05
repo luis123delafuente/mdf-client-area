@@ -49,6 +49,10 @@ class Documento_Service {
 
 	public const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
+	/** Rango razonable de la fecha del documento: desde esta fecha hasta hoy mas el margen. */
+	private const FECHA_DOCUMENTO_MINIMA     = '2000-01-01';
+	private const FECHA_DOCUMENTO_MARGEN_DIAS = 31;
+
 	/** Limites anti zip-bomb para validar_xlsx(): nunca se descomprime nada, solo se suman los tamanos declarados. */
 	private const XLSX_MAX_ENTRADAS          = 2000;
 	private const XLSX_MAX_DESCOMPRIMIDO_BYTES = 200 * 1024 * 1024;
@@ -62,15 +66,38 @@ class Documento_Service {
 	}
 
 	/**
+	 * Fecha del documento valida: 'Y-m-d' estricto (2026-02-30 no vale) y dentro
+	 * de un rango razonable (del 2000-01-01 a hoy mas 31 dias, en la zona
+	 * horaria de WordPress). Es el UNICO sitio que lo decide: lo usan el
+	 * guardado (backoffice y recepcion) y la revalidacion de
+	 * Factura_Cruce_Service.
+	 */
+	public static function fecha_documento_valida( string $fecha ): bool {
+		$zona = wp_timezone();
+		$d    = \DateTimeImmutable::createFromFormat( '!Y-m-d', $fecha, $zona );
+
+		if ( ! $d || $d->format( 'Y-m-d' ) !== $fecha ) {
+			return false;
+		}
+
+		$minima = new \DateTimeImmutable( self::FECHA_DOCUMENTO_MINIMA, $zona );
+		$maxima = ( new \DateTimeImmutable( 'today', $zona ) )->modify( '+' . self::FECHA_DOCUMENTO_MARGEN_DIAS . ' days' );
+
+		return $d >= $minima && $d <= $maxima;
+	}
+
+	/**
 	 * Subida desde el backoffice (Admin_Documentos).
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
 	 * @param bool $notificar false para subidas que no deben avisar a la
 	 *                        farmacia (p. ej. ingesta del historico). No
 	 *                        cambia la visibilidad: solo el aviso por email.
+	 * @param string|null $fecha_documento 'Y-m-d'. Obligatoria para las
+	 *                        facturas, opcional en el resto.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable = false, bool $notificar = true ) {
+	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable = false, bool $notificar = true, ?string $fecha_documento = null ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Selecciona una farmacia valida.' );
 		}
@@ -86,7 +113,7 @@ class Documento_Service {
 		}
 
 		// La subida de backoffice siempre publica.
-		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null, true );
+		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null, true, $fecha_documento );
 	}
 
 	/**
@@ -101,9 +128,12 @@ class Documento_Service {
 	 * @param bool $publicar false deja el documento pendiente de publicar
 	 *                       (invisible para toda farmacia hasta que un
 	 *                       administrador lo publica, #304).
+	 * @param string|null $fecha_documento La fecha de la factura YA revalidada
+	 *                       por Factura_Cruce_Service (nunca la declarada sin
+	 *                       validar). Obligatoria: guardar() la exige.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, bool $notificar = true, bool $publicar = true ) {
+	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, bool $notificar = true, bool $publicar = true, ?string $fecha_documento = null ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Farmacia no valida.' );
 		}
@@ -118,7 +148,7 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_hash_invalido', 'Hash de fichero no valido.' );
 		}
 
-		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar );
+		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar, $fecha_documento );
 	}
 
 	/**
@@ -128,7 +158,17 @@ class Documento_Service {
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo
 	 * @return Documento|\WP_Error
 	 */
-	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar ) {
+	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento ) {
+		// Antes de tocar el fichero: si viene fecha, tiene que ser valida, y
+		// una factura no se guarda sin ella (la de subida nunca la sustituye).
+		if ( null !== $fecha_documento && ! self::fecha_documento_valida( $fecha_documento ) ) {
+			return new \WP_Error( 'mdf_ca_documento_fecha_invalida', 'Fecha del documento no valida (formato o fuera de rango).' );
+		}
+
+		if ( 'factura' === $tipo_documento && null === $fecha_documento ) {
+			return new \WP_Error( 'mdf_ca_documento_fecha_obligatoria', 'La fecha del documento es obligatoria para las facturas.' );
+		}
+
 		$validacion_archivo = $this->validar_archivo( $archivo );
 
 		if ( is_wp_error( $validacion_archivo ) ) {
@@ -196,7 +236,8 @@ class Documento_Service {
 			$descargable && self::MIME_XLSX === $filetype['type'],
 			! $notificar,
 			$hash_sha256,
-			$publicar
+			$publicar,
+			$fecha_documento
 		);
 
 		if ( null === $documento ) {

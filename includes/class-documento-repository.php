@@ -92,7 +92,8 @@ class Documento_Repository {
 		bool $descargable = false,
 		bool $ya_notificado = false,
 		?string $hash_sha256 = null,
-		bool $publicado = true
+		bool $publicado = true,
+		?string $fecha_documento = null
 	): ?Documento {
 		global $wpdb;
 
@@ -133,6 +134,11 @@ class Documento_Repository {
 		if ( null !== $hash_sha256 ) {
 			$data['hash_sha256'] = $hash_sha256;
 			$format[]            = '%s';
+		}
+
+		if ( null !== $fecha_documento ) {
+			$data['fecha_documento'] = $fecha_documento;
+			$format[]                = '%s';
 		}
 
 		// Solo la recepcion automatica puede crear documentos pendientes de

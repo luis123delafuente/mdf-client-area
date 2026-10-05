@@ -25,6 +25,20 @@ class Documento_Tipos {
 		'otro'        => 'Otro',
 	);
 
+	/**
+	 * Orden fijo de los grupos del listado de Documentacion y su etiqueta en
+	 * plural. Facturas primero (lo mas voluminoso y lo que mas se consulta);
+	 * "otro" cierra y recoge tambien los documentos sin tipo o con uno
+	 * desconocido (ver clave_para_recuento()).
+	 */
+	private const GRUPOS_LISTADO = array(
+		'factura'     => 'Facturas',
+		'contrato'    => 'Contratos',
+		'presupuesto' => 'Presupuestos',
+		'entregable'  => 'Entregables',
+		'otro'        => 'Otros',
+	);
+
 	/** Singular y plural en minusculas, para el desglose del aviso por email. */
 	private const RECUENTO = array(
 		'contrato'    => array( 'contrato', 'contratos' ),
@@ -48,6 +62,13 @@ class Documento_Tipos {
 		$formas = self::RECUENTO[ $clave ] ?? self::RECUENTO['otro'];
 
 		return $cantidad . ' ' . ( 1 === $cantidad ? $formas[0] : $formas[1] );
+	}
+
+	/**
+	 * @return array<string, string> clave => etiqueta en plural, en el orden del listado
+	 */
+	public static function get_grupos_listado(): array {
+		return self::GRUPOS_LISTADO;
 	}
 
 	/**

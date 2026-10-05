@@ -101,7 +101,13 @@ class Admin_Documentos {
 		// Checkbox HTML: solo llega si esta marcado. Sin marcar => false (por defecto no descargable).
 		$descargable = ! empty( $_POST['descargable'] );
 
-		$resultado = ( new Documento_Service() )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable );
+		// Fecha del documento (la de la factura, no la de subida): vacia = null.
+		// Obligatoria para las facturas y valida (formato y rango): lo decide
+		// Documento_Service en servidor, no el navegador.
+		$fecha_documento = isset( $_POST['fecha_documento'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['fecha_documento'] ) ) ) : '';
+		$fecha_documento = '' === $fecha_documento ? null : $fecha_documento;
+
+		$resultado = ( new Documento_Service() )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, true, $fecha_documento );
 
 		if ( is_wp_error( $resultado ) ) {
 			self::guardar_aviso( 'error', $resultado->get_error_message() );

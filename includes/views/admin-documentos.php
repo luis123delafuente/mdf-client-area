@@ -114,6 +114,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 						</td>
 					</tr>
 					<tr>
+						<th scope="row"><label for="mdf-ca-documento-fecha">Fecha del documento</label></th>
+						<td>
+							<input type="date" id="mdf-ca-documento-fecha" name="fecha_documento" min="2000-01-01" />
+							<p class="description">Obligatoria para las facturas (es la fecha de la factura, no la de subida); opcional en el resto. Con ella el cliente ve las facturas agrupadas por mes.</p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><label for="mdf-ca-documento-fichero">Fichero</label></th>
 						<td>
 							<input
@@ -160,6 +167,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<th>Tipo</th>
 					<th>Tamano</th>
 					<th>Descarga</th>
+					<th>Fecha documento</th>
 					<th>Subido</th>
 				</tr>
 			</thead>
@@ -180,6 +188,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 							<?php echo $documento->get_tamano_bytes() ? esc_html( size_format( $documento->get_tamano_bytes() ) ) : '-'; ?>
 						</td>
 						<td><?php echo Documento_Service::MIME_XLSX === $documento->get_tipo_mime() ? ( $documento->is_descargable() ? 'Si' : 'No' ) : '-'; ?></td>
+						<td><?php echo esc_html( Documento::formatear_fecha_corta( $documento->get_fecha_documento() ) ); ?></td>
 						<td><?php echo esc_html( $documento->get_fecha_subida() ); ?></td>
 					</tr>
 				<?php endforeach; ?>

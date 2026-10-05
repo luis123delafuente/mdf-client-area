@@ -141,6 +141,13 @@ class DB_Schema {
 		// lo decide). NOT NULL DEFAULT 1: todo lo existente y todo lo subido
 		// desde el backoffice sigue visible; solo la recepcion automatica
 		// crea documentos con 0 (si la option de aprobacion esta activa).
+		// fecha_documento (#fecha): la fecha DEL DOCUMENTO (p. ej. la de la
+		// factura), no la de subida. NULL en todo lo anterior y en lo que no
+		// tiene una (un contrato, p. ej.). Sin indice propio: el listado de
+		// Documentacion hace una sola consulta por farmacia_id (ya cubierta
+		// por KEY farmacia_id) y agrupa y ordena en memoria; solo tendria
+		// sentido (farmacia_id, fecha_documento) si algun dia se pagina o se
+		// filtra por mes en SQL.
 		// Nullable y sin backfill por dbDelta: la migracion que marca como
 		// notificados los documentos ya existentes vive en
 		// Activator::maybe_upgrade(), con su propia option. El indice
@@ -158,6 +165,7 @@ class DB_Schema {
 			notificado_en DATETIME NULL,
 			hash_sha256 CHAR(64) NULL,
 			publicado TINYINT(1) NOT NULL DEFAULT 1,
+			fecha_documento DATE NULL,
 			PRIMARY KEY  (id),
 			KEY farmacia_id (farmacia_id),
 			KEY notificado_en (notificado_en,farmacia_id),

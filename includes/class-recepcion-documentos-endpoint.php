@@ -196,7 +196,8 @@ class Recepcion_Documentos_Endpoint {
 			$archivo,
 			$hash,
 			$notificar,
-			$publicar
+			$publicar,
+			$cruce['fecha'] // revalidada por Factura_Cruce_Service, nunca la declarada
 		);
 
 		if ( is_wp_error( $documento ) ) {

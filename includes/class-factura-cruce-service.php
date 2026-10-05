@@ -96,13 +96,13 @@ class Factura_Cruce_Service {
 
 		if ( null === $cruce['serie'] || ! preg_match( '/^[A-Z]$/', $cruce['serie'] )
 			|| null === $cruce['numero'] || ! preg_match( '/^\d+$/', $cruce['numero'] )
-			|| ! $fecha || $fecha->format( 'Y-m-d' ) !== $cruce['fecha']
+			|| ! $fecha || $fecha->format( 'Y-m-d' ) !== $cruce['fecha'] || ! Documento_Service::fecha_documento_valida( $cruce['fecha'] )
 			|| null === $cruce['importe_total_centimos'] ) {
 			return array_merge(
 				$cruce,
 				array(
 					'estado' => self::FORMATO_INESPERADO,
-					'motivo' => 'Faltan el numero, la fecha o el importe de la factura, o no tienen el formato esperado.',
+					'motivo' => 'Faltan el numero, la fecha o el importe de la factura, o no tienen el formato o el rango esperado.',
 				)
 			);
 		}

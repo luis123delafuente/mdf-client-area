@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.15.0' );
-define( 'MDF_CA_DB_VERSION', '1.8.0' );
+define( 'MDF_CA_VERSION', '0.16.0' );
+define( 'MDF_CA_DB_VERSION', '1.9.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MDF_CA_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );

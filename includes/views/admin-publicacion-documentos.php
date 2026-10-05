@@ -61,7 +61,8 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 				<thead>
 					<tr>
 						<th>Documento</th>
-						<th style="width:12em">Tipo</th>
+						<th style="width:10em">Tipo</th>
+						<th style="width:9em">Fecha documento</th>
 						<th style="width:12em">Recibido</th>
 						<th style="width:14em">Acciones</th>
 					</tr>
@@ -71,6 +72,7 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 						<tr>
 							<td><?php echo esc_html( $documento->get_nombre() ); ?></td>
 							<td><?php echo esc_html( Documento_Tipos::get_etiqueta( $documento->get_tipo_documento() ) ); ?></td>
+							<td><?php echo esc_html( Documento::formatear_fecha_corta( $documento->get_fecha_documento() ) ); ?></td>
 							<td><?php echo esc_html( $documento->get_fecha_subida() ); ?></td>
 							<td>
 								<a class="button" target="_blank" rel="noopener" href="<?php echo esc_url( Admin_Publicacion_Documentos::url_vista_previa( $documento->get_id() ) ); ?>">Ver</a>
@@ -100,6 +102,7 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 					<th>Documento</th>
 					<th>Farmacia</th>
 					<th style="width:10em">Tipo</th>
+					<th style="width:9em">Fecha documento</th>
 					<th style="width:12em">Recibido</th>
 					<th style="width:14em">Acciones</th>
 				</tr>
@@ -110,6 +113,7 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 						<td><?php echo esc_html( $documento->get_nombre() ); ?></td>
 						<td><?php echo esc_html( $nombre_farmacia( $documento->get_farmacia_id() ) ); ?></td>
 						<td><?php echo esc_html( Documento_Tipos::get_etiqueta( $documento->get_tipo_documento() ) ); ?></td>
+						<td><?php echo esc_html( Documento::formatear_fecha_corta( $documento->get_fecha_documento() ) ); ?></td>
 						<td><?php echo esc_html( $documento->get_fecha_subida() ); ?></td>
 						<td>
 							<a class="button" target="_blank" rel="noopener" href="<?php echo esc_url( Admin_Publicacion_Documentos::url_vista_previa( $documento->get_id() ) ); ?>">Ver</a>
