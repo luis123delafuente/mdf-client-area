@@ -27,6 +27,7 @@ $columnas = array(
 	Recepcion_Registro::DUPLICADO => 'Duplicados',
 	Recepcion_Registro::EXCEPCION => 'Excepciones',
 	Recepcion_Registro::RECHAZADO => 'Rechazados',
+	Recepcion_Registro::PUBLICADO_BLOQUE => 'Publicados en bloque',
 );
 ?>
 <div class="wrap">

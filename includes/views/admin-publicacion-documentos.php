@@ -8,6 +8,7 @@
  * @var array<int, \MdfClientArea\Farmacia>     $farmacias_por_id
  * @var \MdfClientArea\Documento[]              $recientes
  * @var int                                     $total_pendientes
+ * @var string                                  $nonce_preparar
  * @var array{tipo: string, mensaje: string}|null $aviso
  */
 
@@ -39,6 +40,17 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 	</p>
 
 	<h2>Pendientes de publicar (<?php echo esc_html( (string) $total_pendientes ); ?>)</h2>
+
+	<?php if ( $total_pendientes > 0 ) : ?>
+		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin:1em 0">
+			<?php wp_nonce_field( $nonce_preparar ); ?>
+			<input type="hidden" name="action" value="mdf_ca_publicacion_bloque_preparar" />
+			<?php submit_button( 'Publicar todos los pendientes…', 'primary', 'submit', false ); ?>
+			<span class="description" style="margin-left:.5em">
+				Antes verás cuántos documentos y farmacias se publicarán, y podrás acotar por tipo y por fecha de recepción. No se publica nada hasta que confirmes.
+			</span>
+		</form>
+	<?php endif; ?>
 
 	<?php if ( ! $pendientes_por_farmacia ) : ?>
 		<p>No hay ningun documento pendiente de publicar.</p>

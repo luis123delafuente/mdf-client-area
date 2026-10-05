@@ -12,6 +12,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Documento_Repository {
 
+	/** Ids por UPDATE en la publicacion en bloque (#316). */
+	private const TANDA_PUBLICACION = 500;
+
 	public function find_by_id( int $id ): ?Documento {
 		global $wpdb;
 
@@ -315,6 +318,110 @@ class Documento_Repository {
 		return $wpdb->query(
 			$wpdb->prepare( "UPDATE {$table} SET publicado = %d WHERE id = %d AND publicado = %d", $publicado ? 1 : 0, $id, $publicado ? 0 : 1 )
 		);
+	}
+
+	/**
+	 * Pendientes de publicar candidatos a la publicacion en bloque (#316),
+	 * solo con lo que hace falta para contar y publicar (nunca nombre ni
+	 * fichero). "existe" = su farmacia sigue en la tabla de farmacias.
+	 *
+	 * @param string|null $tipo  Clave de Documento_Tipos, o null para todos (tambien sin tipo).
+	 * @param string|null $desde 'Y-m-d', fecha de recepcion (fecha_subida) inclusive.
+	 * @param string|null $hasta 'Y-m-d', inclusive.
+	 * @return array<int, array{id: int, farmacia_id: int, existe: bool, fecha_subida: string}>|null
+	 *         null si fallo la consulta.
+	 */
+	public function find_pendientes_para_bloque( ?string $tipo, ?string $desde, ?string $hasta ): ?array {
+		global $wpdb;
+
+		$table     = DB_Schema::get_documentos_table_name();
+		$farmacias = DB_Schema::get_farmacias_table_name();
+		$where     = array( 'd.publicado = 0' );
+		$args      = array();
+
+		if ( null !== $tipo ) {
+			$where[] = 'd.tipo_documento = %s';
+			$args[]  = $tipo;
+		}
+
+		if ( null !== $desde ) {
+			$where[] = 'd.fecha_subida >= %s';
+			$args[]  = $desde . ' 00:00:00';
+		}
+
+		if ( null !== $hasta ) {
+			// Hasta inclusive: todo lo anterior al dia siguiente.
+			$where[] = 'd.fecha_subida < %s';
+			$args[]  = gmdate( 'Y-m-d', strtotime( $hasta . ' 00:00:00 UTC' ) + DAY_IN_SECONDS ) . ' 00:00:00';
+		}
+
+		$sql = "SELECT d.id, d.farmacia_id, d.fecha_subida, f.id IS NOT NULL AS existe
+			FROM {$table} d LEFT JOIN {$farmacias} f ON f.id = d.farmacia_id
+			WHERE " . implode( ' AND ', $where ) . ' ORDER BY d.id';
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- condiciones fijas de arriba, valores por placeholders.
+		$rows = $wpdb->get_results( $args ? $wpdb->prepare( $sql, $args ) : $sql, ARRAY_A );
+
+		if ( null === $rows || '' !== $wpdb->last_error ) {
+			return null;
+		}
+
+		return array_map(
+			static fn( array $row ): array => array(
+				'id'           => (int) $row['id'],
+				'farmacia_id'  => (int) $row['farmacia_id'],
+				'existe'       => (bool) (int) $row['existe'],
+				'fecha_subida' => (string) $row['fecha_subida'],
+			),
+			$rows
+		);
+	}
+
+	/**
+	 * Publica EXACTAMENTE estos ids (#316), solo los que sigan pendientes
+	 * (publicado = 0): repetirlo no cambia nada. Por tandas, dentro de una
+	 * transaccion: o se publican todos o ninguno. Quien llama comprueba
+	 * antes que la tabla es InnoDB (DB_Schema::tabla_es_innodb()).
+	 *
+	 * @param int[] $ids
+	 * @return int|false Filas realmente publicadas, o false si fallo (rollback).
+	 */
+	public function publicar_ids( array $ids ) {
+		global $wpdb;
+
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
+
+		if ( ! $ids ) {
+			return 0;
+		}
+
+		$table      = DB_Schema::get_documentos_table_name();
+		$publicados = 0;
+
+		$wpdb->query( 'START TRANSACTION' );
+
+		foreach ( array_chunk( $ids, self::TANDA_PUBLICACION ) as $tanda ) {
+			$placeholders = implode( ',', array_fill( 0, count( $tanda ), '%d' ) );
+			$cambiados    = $wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba.
+					"UPDATE {$table} SET publicado = 1 WHERE publicado = 0 AND id IN ({$placeholders})",
+					$tanda
+				)
+			);
+
+			if ( false === $cambiados ) {
+				$wpdb->query( 'ROLLBACK' );
+
+				return false;
+			}
+
+			$publicados += (int) $cambiados;
+		}
+
+		$wpdb->query( 'COMMIT' );
+
+		return $publicados;
 	}
 
 	/**

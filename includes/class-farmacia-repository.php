@@ -211,16 +211,7 @@ class Farmacia_Repository {
 	 * cada aplicacion, sin depender de haberlo mirado a mano.
 	 */
 	public function es_transaccional(): bool {
-		global $wpdb;
-
-		$engine = $wpdb->get_var(
-			$wpdb->prepare(
-				'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
-				DB_Schema::get_farmacias_table_name()
-			)
-		);
-
-		return is_string( $engine ) && 0 === strcasecmp( $engine, 'InnoDB' );
+		return DB_Schema::tabla_es_innodb( DB_Schema::get_farmacias_table_name() );
 	}
 
 	/**

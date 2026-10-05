@@ -19,6 +19,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   uno en uno.
  * - Registro: una fila por dia y resultado (aceptado, duplicado, rechazado,
  *   excepcion) con el total. Solo se registran peticiones ya autenticadas.
+ *   publicado_bloque (#316) suma los documentos publicados con "Publicar
+ *   todos los pendientes" ese dia: es el ultimo paso del mismo circuito y
+ *   tampoco lleva datos fiscales ni identificadores.
  */
 class Recepcion_Registro {
 
@@ -40,6 +43,8 @@ class Recepcion_Registro {
 	public const DUPLICADO = 'duplicado';
 	public const RECHAZADO = 'rechazado';
 	public const EXCEPCION = 'excepcion';
+
+	public const PUBLICADO_BLOQUE = 'publicado_bloque';
 
 	public static function forzada_apagada_por_constante(): bool {
 		return defined( 'MDF_CA_RECEPCION_DESACTIVADA' ) && MDF_CA_RECEPCION_DESACTIVADA;
@@ -91,11 +96,11 @@ class Recepcion_Registro {
 		);
 	}
 
-	/** Suma uno al recuento de hoy, de forma atomica. */
-	public static function registrar( string $resultado ): void {
+	/** Suma $cantidad (por defecto 1) al recuento de hoy de $resultado, de forma atomica. */
+	public static function registrar( string $resultado, int $cantidad = 1 ): void {
 		global $wpdb;
 
-		if ( ! in_array( $resultado, array( self::ACEPTADO, self::DUPLICADO, self::RECHAZADO, self::EXCEPCION ), true ) ) {
+		if ( $cantidad < 1 || ! in_array( $resultado, array( self::ACEPTADO, self::DUPLICADO, self::RECHAZADO, self::EXCEPCION, self::PUBLICADO_BLOQUE ), true ) ) {
 			return;
 		}
 
@@ -103,9 +108,11 @@ class Recepcion_Registro {
 
 		$wpdb->query(
 			$wpdb->prepare(
-				"INSERT INTO {$table} (fecha, resultado, total) VALUES (%s, %s, 1) ON DUPLICATE KEY UPDATE total = total + 1",
+				"INSERT INTO {$table} (fecha, resultado, total) VALUES (%s, %s, %d) ON DUPLICATE KEY UPDATE total = total + %d",
 				wp_date( 'Y-m-d' ),
-				$resultado
+				$resultado,
+				$cantidad,
+				$cantidad
 			)
 		);
 	}

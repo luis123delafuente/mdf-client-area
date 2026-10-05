@@ -30,6 +30,25 @@ class DB_Schema {
 		return $wpdb->prefix . 'mdf_ca_documentos';
 	}
 
+	/**
+	 * Si una tabla propia admite transacciones (InnoDB). Con MyISAM, START
+	 * TRANSACTION/ROLLBACK no fallan pero tampoco deshacen nada: quien
+	 * promete un "todo o nada" (importador, publicacion en bloque) lo
+	 * comprueba aqui en cada aplicacion en vez de darlo por supuesto.
+	 */
+	public static function tabla_es_innodb( string $tabla ): bool {
+		global $wpdb;
+
+		$engine = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+				$tabla
+			)
+		);
+
+		return is_string( $engine ) && 0 === strcasecmp( $engine, 'InnoDB' );
+	}
+
 	public static function get_planes_table_name() {
 		global $wpdb;
 		return $wpdb->prefix . 'mdf_ca_planes';

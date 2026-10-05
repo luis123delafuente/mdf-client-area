@@ -17,7 +17,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * estado, y quien decide quien ve un documento sigue siendo Permissions.
  *
  * Acciones: publicar un documento, publicar todos los de una farmacia (solo
- * esa), despublicar un documento ya publicado, y la VISTA PREVIA para el
+ * esa), publicar todos los pendientes de una vez (#316, en dos pasos: ver
+ * abajo), despublicar un documento ya publicado, y la VISTA PREVIA para el
  * administrador, que es el unico camino por el que alguien que no es la
  * farmacia titular lee un documento de cliente:
  * - mdf_ca_vista_previa (GET): manage_options + nonce por documento +
@@ -30,6 +31,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  * endpoint de las farmacias) no cambian: un administrador sigue sin ver por
  * ellas un documento pendiente.
  *
+ * Publicar todos los pendientes (#316), mismo patron que el importador CSV:
+ * 1. Preparar (POST): Publicacion_Bloque_Service::calcular() con los filtros
+ *    (tipo y fecha de recepcion) y, en un transient ligado al usuario
+ *    (mdf_ca_publicar_bloque_{user_id}_{id aleatorio}, 15 min), los filtros,
+ *    la huella del conjunto y los recuentos. La pantalla de confirmacion se
+ *    pinta desde ese transient; el formulario solo lleva el id opaco.
+ * 2. Aplicar (POST): el transient se consume (de dos envios, solo aplica
+ *    uno) y el servicio recalcula con los filtros GUARDADOS y solo publica
+ *    si la huella coincide. Si no coincide, se prepara una confirmacion
+ *    nueva y se vuelve a ella sin haber escrito nada.
+ *
  * Sin logs: ni datos fiscales ni nombres.
  */
 class Admin_Publicacion_Documentos {
@@ -41,12 +53,21 @@ class Admin_Publicacion_Documentos {
 	/** Publicados recientes que se listan para poder despublicar. */
 	private const LIMITE_RECIENTES = 50;
 
+	private const BLOQUE_KEY_PREFIX     = 'mdf_ca_publicar_bloque_';
+	private const BLOQUE_TTL            = 15 * MINUTE_IN_SECONDS;
+	private const NONCE_BLOQUE_PREPARAR = 'mdf_ca_publicacion_bloque_preparar';
+	private const NONCE_BLOQUE_APLICAR  = 'mdf_ca_publicacion_bloque_aplicar';
+	private const NONCE_BLOQUE_CANCELAR = 'mdf_ca_publicacion_bloque_cancelar';
+
 	public static function register_hooks(): void {
 		// Prioridad 11: el menu padre lo registra Admin_Documentos en la 10.
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ), 11 );
 		add_action( 'admin_post_mdf_ca_publicar_documento', array( __CLASS__, 'gestionar_publicar' ) );
 		add_action( 'admin_post_mdf_ca_publicar_farmacia', array( __CLASS__, 'gestionar_publicar_farmacia' ) );
 		add_action( 'admin_post_mdf_ca_despublicar_documento', array( __CLASS__, 'gestionar_despublicar' ) );
+		add_action( 'admin_post_mdf_ca_publicacion_bloque_preparar', array( __CLASS__, 'gestionar_bloque_preparar' ) );
+		add_action( 'admin_post_mdf_ca_publicacion_bloque_aplicar', array( __CLASS__, 'gestionar_bloque_aplicar' ) );
+		add_action( 'admin_post_mdf_ca_publicacion_bloque_cancelar', array( __CLASS__, 'gestionar_bloque_cancelar' ) );
 		add_action( 'admin_post_mdf_ca_vista_previa', array( __CLASS__, 'gestionar_vista_previa' ) );
 		add_action( 'admin_post_mdf_ca_vista_previa_fichero', array( __CLASS__, 'gestionar_vista_previa_fichero' ) );
 	}
@@ -67,6 +88,27 @@ class Admin_Publicacion_Documentos {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
+		// Paso de confirmacion de "Publicar todos los pendientes".
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- solo lectura; el id resuelve en un transient del propio usuario.
+		$bloque_id = self::bloque_id_de( $_GET['bloque'] ?? '' );
+		$bloque    = $bloque_id ? self::leer_bloque( $bloque_id ) : null;
+
+		if ( $bloque ) {
+			$aviso          = self::consumir_aviso();
+			$tipos          = Documento_Tipos::get_opciones();
+			$nonce_preparar = self::NONCE_BLOQUE_PREPARAR;
+			$nonce_aplicar  = self::NONCE_BLOQUE_APLICAR;
+			$nonce_cancelar = self::NONCE_BLOQUE_CANCELAR;
+			$url_volver     = admin_url( 'admin.php?page=' . self::MENU_SLUG );
+
+			require MDF_CA_PLUGIN_DIR . 'includes/views/admin-publicacion-bloque.php';
+			return;
+		}
+
+		if ( $bloque_id ) {
+			self::guardar_aviso( 'warning', 'La confirmación ha caducado o ya se aplicó. Vuelve a pulsar «Publicar todos los pendientes».' );
+		}
+
 		$repositorio = new Documento_Repository();
 
 		$farmacias_por_id = array();
@@ -84,6 +126,7 @@ class Admin_Publicacion_Documentos {
 		$recientes        = $repositorio->find_publicados_recibidos( self::LIMITE_RECIENTES );
 		$total_pendientes = $repositorio->contar_pendientes_publicacion();
 		$aviso            = self::consumir_aviso();
+		$nonce_preparar   = self::NONCE_BLOQUE_PREPARAR;
 
 		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-publicacion-documentos.php';
 	}
@@ -166,6 +209,112 @@ class Admin_Publicacion_Documentos {
 		self::redirigir();
 	}
 
+	/**
+	 * Paso 1 de "Publicar todos los pendientes": calcula el conjunto con los
+	 * filtros y lleva a la pantalla de confirmacion. No publica nada.
+	 */
+	public static function gestionar_bloque_preparar(): void {
+		self::exigir_capacidad();
+
+		check_admin_referer( self::NONCE_BLOQUE_PREPARAR );
+
+		// Un "Recalcular" desde una confirmacion sustituye la anterior.
+		$anterior = self::bloque_id_de( $_POST['bloque'] ?? '' );
+
+		$filtros = Publicacion_Bloque_Service::normalizar_filtros(
+			isset( $_POST['tipo'] ) ? sanitize_text_field( wp_unslash( $_POST['tipo'] ) ) : '',
+			isset( $_POST['desde'] ) ? sanitize_text_field( wp_unslash( $_POST['desde'] ) ) : '',
+			isset( $_POST['hasta'] ) ? sanitize_text_field( wp_unslash( $_POST['hasta'] ) ) : ''
+		);
+
+		if ( is_wp_error( $filtros ) ) {
+			self::guardar_aviso( 'error', $filtros->get_error_message() );
+			self::redirigir( $anterior && self::leer_bloque( $anterior ) ? array( 'bloque' => $anterior ) : array() );
+		}
+
+		$conjunto = ( new Publicacion_Bloque_Service() )->calcular( $filtros );
+
+		if ( is_wp_error( $conjunto ) ) {
+			self::guardar_aviso( 'error', $conjunto->get_error_message() );
+			self::redirigir();
+		}
+
+		if ( $anterior ) {
+			delete_transient( self::clave_bloque( $anterior ) );
+		}
+
+		self::redirigir( array( 'bloque' => self::guardar_bloque( $filtros, $conjunto ) ) );
+	}
+
+	/**
+	 * Paso 2: publica exactamente lo confirmado (ver la cabecera). Lo que se
+	 * publica sale del recalculo en servidor, nunca del formulario.
+	 */
+	public static function gestionar_bloque_aplicar(): void {
+		self::exigir_capacidad();
+
+		check_admin_referer( self::NONCE_BLOQUE_APLICAR );
+
+		$bloque_id = self::bloque_id_de( $_POST['bloque'] ?? '' );
+		$bloque    = $bloque_id ? self::consumir_bloque( $bloque_id ) : null;
+
+		if ( ! $bloque ) {
+			self::guardar_aviso( 'warning', 'La confirmación ha caducado o ya se aplicó. No se ha publicado nada más.' );
+			self::redirigir();
+		}
+
+		$servicio  = new Publicacion_Bloque_Service();
+		$resultado = $servicio->aplicar( $bloque['filtros'], $bloque['huella'] );
+
+		if ( is_wp_error( $resultado ) ) {
+			if ( Publicacion_Bloque_Service::ERROR_CAMBIADO === $resultado->get_error_code() ) {
+				$conjunto = $servicio->calcular( $bloque['filtros'] );
+
+				if ( ! is_wp_error( $conjunto ) ) {
+					self::guardar_aviso( 'warning', $resultado->get_error_message() );
+					self::redirigir( array( 'bloque' => self::guardar_bloque( $bloque['filtros'], $conjunto ) ) );
+				}
+			}
+
+			// Nada se ha escrito: se repone la confirmacion para reintentar.
+			self::reponer_bloque( $bloque_id, $bloque );
+			self::guardar_aviso( 'error', $resultado->get_error_message() );
+			self::redirigir( array( 'bloque' => $bloque_id ) );
+		}
+
+		$mensaje = sprintf(
+			'Publicados %s de %s.',
+			self::plural( $resultado['publicados'], 'documento', 'documentos' ),
+			self::plural( $resultado['farmacias'], 'farmacia', 'farmacias' )
+		);
+
+		if ( $resultado['excluidos'] > 0 ) {
+			$mensaje .= sprintf( ' Excluidos: %d (su farmacia ya no existe; siguen pendientes).', $resultado['excluidos'] );
+		}
+
+		if ( $resultado['ya_publicados'] > 0 ) {
+			$mensaje .= sprintf( ' Ya estaban publicados: %d.', $resultado['ya_publicados'] );
+		}
+
+		self::guardar_aviso( $resultado['publicados'] > 0 ? 'success' : 'warning', $mensaje );
+		self::redirigir();
+	}
+
+	public static function gestionar_bloque_cancelar(): void {
+		self::exigir_capacidad();
+
+		check_admin_referer( self::NONCE_BLOQUE_CANCELAR );
+
+		$bloque_id = self::bloque_id_de( $_POST['bloque'] ?? '' );
+
+		if ( $bloque_id ) {
+			self::consumir_bloque( $bloque_id );
+		}
+
+		self::guardar_aviso( 'success', 'Publicación cancelada. No se ha publicado nada.' );
+		self::redirigir();
+	}
+
 	/** Pagina de vista previa: el visor con marca de agua de administrador. */
 	public static function gestionar_vista_previa(): void {
 		self::exigir_capacidad();
@@ -219,9 +368,89 @@ class Admin_Publicacion_Documentos {
 		}
 	}
 
-	private static function redirigir(): void {
-		wp_safe_redirect( admin_url( 'admin.php?page=' . self::MENU_SLUG ) );
+	/** @param array<string, string> $args_extra */
+	private static function redirigir( array $args_extra = array() ): void {
+		wp_safe_redirect( add_query_arg( $args_extra, admin_url( 'admin.php?page=' . self::MENU_SLUG ) ) );
 		exit;
+	}
+
+	// ------------------------------------------------------------------
+	// Confirmaciones de "Publicar todos los pendientes" (#316)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Id de confirmacion saneado, o '' si no tiene la forma que genera
+	 * guardar_bloque() (20 alfanumericos).
+	 *
+	 * @param mixed $valor
+	 */
+	private static function bloque_id_de( $valor ): string {
+		$valor = is_string( $valor ) ? wp_unslash( $valor ) : '';
+
+		return 1 === preg_match( '/^[A-Za-z0-9]{20}$/', $valor ) ? $valor : '';
+	}
+
+	/** La clave incluye el usuario actual: un id ajeno nunca resuelve. */
+	private static function clave_bloque( string $bloque_id ): string {
+		return self::BLOQUE_KEY_PREFIX . get_current_user_id() . '_' . $bloque_id;
+	}
+
+	/**
+	 * Guarda lo que se va a ensenar en la confirmacion (sin los ids: al
+	 * aplicar se recalculan y se comparan por la huella). Devuelve el id.
+	 *
+	 * @param array{tipo: ?string, desde: ?string, hasta: ?string} $filtros
+	 * @param array<string, mixed>                                 $conjunto Salida de Publicacion_Bloque_Service::calcular().
+	 */
+	private static function guardar_bloque( array $filtros, array $conjunto ): string {
+		$bloque_id = wp_generate_password( 20, false, false );
+
+		self::reponer_bloque(
+			$bloque_id,
+			array(
+				'filtros'        => $filtros,
+				'huella'         => $conjunto['huella'],
+				'documentos'     => $conjunto['documentos'],
+				'farmacias'      => $conjunto['farmacias'],
+				'excluidos'      => $conjunto['excluidos'],
+				'recibido_desde' => $conjunto['recibido_desde'],
+				'recibido_hasta' => $conjunto['recibido_hasta'],
+			)
+		);
+
+		return $bloque_id;
+	}
+
+	/** @param array<string, mixed> $bloque */
+	private static function reponer_bloque( string $bloque_id, array $bloque ): void {
+		set_transient( self::clave_bloque( $bloque_id ), $bloque, self::BLOQUE_TTL );
+	}
+
+	/** @return array<string, mixed>|null */
+	private static function leer_bloque( string $bloque_id ): ?array {
+		$bloque = get_transient( self::clave_bloque( $bloque_id ) );
+
+		return is_array( $bloque ) && isset( $bloque['filtros'], $bloque['huella'] ) ? $bloque : null;
+	}
+
+	/**
+	 * Lee y borra. Solo devuelve la confirmacion quien consigue borrarla: de
+	 * dos envios simultaneos, solo uno llega a aplicar.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	private static function consumir_bloque( string $bloque_id ): ?array {
+		$bloque = self::leer_bloque( $bloque_id );
+
+		if ( ! $bloque || ! delete_transient( self::clave_bloque( $bloque_id ) ) ) {
+			return null;
+		}
+
+		return $bloque;
+	}
+
+	private static function plural( int $n, string $singular, string $plural ): string {
+		return sprintf( '%d %s', $n, 1 === $n ? $singular : $plural );
 	}
 
 	private static function guardar_aviso( string $tipo, string $mensaje ): void {
