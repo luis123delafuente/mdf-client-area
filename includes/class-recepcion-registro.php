@@ -21,7 +21,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   excepcion) con el total. Solo se registran peticiones ya autenticadas.
  *   publicado_bloque (#316) suma los documentos publicados con "Publicar
  *   todos los pendientes" ese dia: es el ultimo paso del mismo circuito y
- *   tampoco lleva datos fiscales ni identificadores.
+ *   tampoco lleva datos fiscales ni identificadores. despublicado_lote
+ *   (#317) suma los documentos despublicados al deshacer un lote.
  */
 class Recepcion_Registro {
 
@@ -44,7 +45,8 @@ class Recepcion_Registro {
 	public const RECHAZADO = 'rechazado';
 	public const EXCEPCION = 'excepcion';
 
-	public const PUBLICADO_BLOQUE = 'publicado_bloque';
+	public const PUBLICADO_BLOQUE  = 'publicado_bloque';
+	public const DESPUBLICADO_LOTE = 'despublicado_lote';
 
 	public static function forzada_apagada_por_constante(): bool {
 		return defined( 'MDF_CA_RECEPCION_DESACTIVADA' ) && MDF_CA_RECEPCION_DESACTIVADA;
@@ -100,7 +102,7 @@ class Recepcion_Registro {
 	public static function registrar( string $resultado, int $cantidad = 1 ): void {
 		global $wpdb;
 
-		if ( $cantidad < 1 || ! in_array( $resultado, array( self::ACEPTADO, self::DUPLICADO, self::RECHAZADO, self::EXCEPCION, self::PUBLICADO_BLOQUE ), true ) ) {
+		if ( $cantidad < 1 || ! in_array( $resultado, array( self::ACEPTADO, self::DUPLICADO, self::RECHAZADO, self::EXCEPCION, self::PUBLICADO_BLOQUE, self::DESPUBLICADO_LOTE ), true ) ) {
 			return;
 		}
 

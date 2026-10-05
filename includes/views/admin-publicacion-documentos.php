@@ -9,6 +9,8 @@
  * @var \MdfClientArea\Documento[]              $recientes
  * @var int                                     $total_pendientes
  * @var string                                  $nonce_preparar
+ * @var string                                  $nonce_deshacer
+ * @var array<int, array<string, mixed>>        $historial
  * @var array{tipo: string, mensaje: string}|null $aviso
  */
 
@@ -136,6 +138,61 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 								<input type="hidden" name="documento_id" value="<?php echo esc_attr( (string) $documento->get_id() ); ?>" />
 								<?php submit_button( 'Despublicar', 'secondary', 'submit', false ); ?>
 							</form>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+	<?php endif; ?>
+
+	<h2>Lotes publicados en bloque</h2>
+	<p class="description">
+		Cada «Publicar todos los pendientes» crea un lote que se puede deshacer aquí. Los documentos publicados uno a uno,
+		por farmacia o antes de la versión 0.19.0 no pertenecen a ningún lote y no se pueden deshacer en bloque: se
+		despublican uno a uno arriba. Deshacer no retira lo que las farmacias ya hayan visto o descargado.
+	</p>
+
+	<?php if ( ! $historial ) : ?>
+		<p>Todavía no se ha publicado ningún lote.</p>
+	<?php else : ?>
+		<table class="wp-list-table widefat fixed striped">
+			<thead>
+				<tr>
+					<th style="width:9em">Fecha</th>
+					<th>Publicado por</th>
+					<th>Filtros</th>
+					<th style="width:7em">Documentos</th>
+					<th style="width:8em">Siguen publicados</th>
+					<th>Estado</th>
+					<th style="width:11em">Acciones</th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $historial as $lote ) : ?>
+					<tr>
+						<td><?php echo esc_html( $lote['fecha'] ); ?></td>
+						<td><?php echo esc_html( $lote['quien'] ); ?></td>
+						<td><?php echo esc_html( $lote['filtros'] ); ?></td>
+						<td><?php echo esc_html( (string) $lote['documentos'] ); ?></td>
+						<td><?php echo esc_html( (string) $lote['siguen'] ); ?></td>
+						<td>
+							<?php
+							echo esc_html(
+								$lote['deshecho']
+									? sprintf( 'Deshecho el %s por %s (%d despublicados)', $lote['deshecho_en'], $lote['deshecho_por'], $lote['despublicados'] )
+									: 'Aplicado'
+							);
+							?>
+						</td>
+						<td>
+							<?php if ( ! $lote['deshecho'] && $lote['siguen'] > 0 ) : ?>
+								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+									<?php wp_nonce_field( $nonce_deshacer ); ?>
+									<input type="hidden" name="action" value="mdf_ca_despublicar_lote_preparar" />
+									<input type="hidden" name="lote_id" value="<?php echo esc_attr( (string) $lote['id'] ); ?>" />
+									<?php submit_button( 'Despublicar lote…', 'secondary', 'submit', false ); ?>
+								</form>
+							<?php endif; ?>
 						</td>
 					</tr>
 				<?php endforeach; ?>

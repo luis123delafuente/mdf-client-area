@@ -42,6 +42,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  *    si la huella coincide. Si no coincide, se prepara una confirmacion
  *    nueva y se vuelve a ella sin haber escrito nada.
  *
+ * Despublicar lote (#317), mismo patron de dos pasos: preparar cuenta lo que
+ * sigue publicado por el lote (Despublicacion_Lote_Service::calcular()) y lo
+ * guarda en un transient del usuario (mdf_ca_despublicar_lote_{user_id}_{id},
+ * 15 min); aplicar lo consume, recalcula y solo escribe si la huella
+ * coincide. El historial de lotes se pinta al final de la pantalla.
+ *
  * Sin logs: ni datos fiscales ni nombres.
  */
 class Admin_Publicacion_Documentos {
@@ -53,11 +59,19 @@ class Admin_Publicacion_Documentos {
 	/** Publicados recientes que se listan para poder despublicar. */
 	private const LIMITE_RECIENTES = 50;
 
+	private const CONFIRMACION_TTL      = 15 * MINUTE_IN_SECONDS;
 	private const BLOQUE_KEY_PREFIX     = 'mdf_ca_publicar_bloque_';
-	private const BLOQUE_TTL            = 15 * MINUTE_IN_SECONDS;
 	private const NONCE_BLOQUE_PREPARAR = 'mdf_ca_publicacion_bloque_preparar';
 	private const NONCE_BLOQUE_APLICAR  = 'mdf_ca_publicacion_bloque_aplicar';
 	private const NONCE_BLOQUE_CANCELAR = 'mdf_ca_publicacion_bloque_cancelar';
+
+	private const DESHACER_KEY_PREFIX     = 'mdf_ca_despublicar_lote_';
+	private const NONCE_DESHACER_PREPARAR = 'mdf_ca_despublicar_lote_preparar';
+	private const NONCE_DESHACER_APLICAR  = 'mdf_ca_despublicar_lote_aplicar';
+	private const NONCE_DESHACER_CANCELAR = 'mdf_ca_despublicar_lote_cancelar';
+
+	/** Lotes que se listan en el historial. */
+	private const LIMITE_LOTES = 20;
 
 	public static function register_hooks(): void {
 		// Prioridad 11: el menu padre lo registra Admin_Documentos en la 10.
@@ -68,6 +82,9 @@ class Admin_Publicacion_Documentos {
 		add_action( 'admin_post_mdf_ca_publicacion_bloque_preparar', array( __CLASS__, 'gestionar_bloque_preparar' ) );
 		add_action( 'admin_post_mdf_ca_publicacion_bloque_aplicar', array( __CLASS__, 'gestionar_bloque_aplicar' ) );
 		add_action( 'admin_post_mdf_ca_publicacion_bloque_cancelar', array( __CLASS__, 'gestionar_bloque_cancelar' ) );
+		add_action( 'admin_post_mdf_ca_despublicar_lote_preparar', array( __CLASS__, 'gestionar_deshacer_preparar' ) );
+		add_action( 'admin_post_mdf_ca_despublicar_lote_aplicar', array( __CLASS__, 'gestionar_deshacer_aplicar' ) );
+		add_action( 'admin_post_mdf_ca_despublicar_lote_cancelar', array( __CLASS__, 'gestionar_deshacer_cancelar' ) );
 		add_action( 'admin_post_mdf_ca_vista_previa', array( __CLASS__, 'gestionar_vista_previa' ) );
 		add_action( 'admin_post_mdf_ca_vista_previa_fichero', array( __CLASS__, 'gestionar_vista_previa_fichero' ) );
 	}
@@ -90,8 +107,8 @@ class Admin_Publicacion_Documentos {
 
 		// Paso de confirmacion de "Publicar todos los pendientes".
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- solo lectura; el id resuelve en un transient del propio usuario.
-		$bloque_id = self::bloque_id_de( $_GET['bloque'] ?? '' );
-		$bloque    = $bloque_id ? self::leer_bloque( $bloque_id ) : null;
+		$bloque_id = self::confirmacion_id_de( $_GET['bloque'] ?? '' );
+		$bloque    = $bloque_id ? self::leer_confirmacion( self::BLOQUE_KEY_PREFIX, $bloque_id ) : null;
 
 		if ( $bloque ) {
 			$aviso          = self::consumir_aviso();
@@ -107,6 +124,28 @@ class Admin_Publicacion_Documentos {
 
 		if ( $bloque_id ) {
 			self::guardar_aviso( 'warning', 'La confirmación ha caducado o ya se aplicó. Vuelve a pulsar «Publicar todos los pendientes».' );
+		}
+
+		// Paso de confirmacion de "Despublicar lote".
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- solo lectura; el id resuelve en un transient del propio usuario.
+		$deshacer_id = self::confirmacion_id_de( $_GET['deshacer'] ?? '' );
+		$deshacer    = $deshacer_id ? self::leer_confirmacion( self::DESHACER_KEY_PREFIX, $deshacer_id ) : null;
+
+		if ( $deshacer ) {
+			$aviso          = self::consumir_aviso();
+			$lote           = ( new Publicacion_Lote_Repository() )->find_by_id( (int) $deshacer['lote_id'] );
+			$nonce_aplicar  = self::NONCE_DESHACER_APLICAR;
+			$nonce_cancelar = self::NONCE_DESHACER_CANCELAR;
+			$url_volver     = admin_url( 'admin.php?page=' . self::MENU_SLUG );
+			$quien          = $lote ? self::nombre_usuario( (int) $lote->creado_por ) : '';
+			$fecha_lote     = $lote ? self::fecha_local( (string) $lote->creado_en ) : '';
+
+			require MDF_CA_PLUGIN_DIR . 'includes/views/admin-despublicacion-lote.php';
+			return;
+		}
+
+		if ( $deshacer_id ) {
+			self::guardar_aviso( 'warning', 'La confirmación ha caducado o ya se aplicó. Vuelve a pulsar «Despublicar lote» en el historial.' );
 		}
 
 		$repositorio = new Documento_Repository();
@@ -127,6 +166,27 @@ class Admin_Publicacion_Documentos {
 		$total_pendientes = $repositorio->contar_pendientes_publicacion();
 		$aviso            = self::consumir_aviso();
 		$nonce_preparar   = self::NONCE_BLOQUE_PREPARAR;
+		$nonce_deshacer   = self::NONCE_DESHACER_PREPARAR;
+
+		// Historial de lotes (#317): recuentos y quien, sin datos fiscales.
+		$lotes           = ( new Publicacion_Lote_Repository() )->find_recientes( self::LIMITE_LOTES );
+		$siguen_por_lote = $repositorio->contar_publicados_por_lote( array_map( static fn( $l ): int => (int) $l->id, $lotes ) );
+		$historial       = array();
+
+		foreach ( $lotes as $lote ) {
+			$historial[] = array(
+				'id'            => (int) $lote->id,
+				'fecha'         => self::fecha_local( (string) $lote->creado_en ),
+				'quien'         => self::nombre_usuario( (int) $lote->creado_por ),
+				'filtros'       => self::describir_filtros( (string) $lote->filtros ),
+				'documentos'    => (int) $lote->documentos,
+				'siguen'        => $siguen_por_lote[ (int) $lote->id ] ?? 0,
+				'deshecho'      => Publicacion_Lote_Repository::ESTADO_DESHECHO === $lote->estado,
+				'deshecho_en'   => $lote->deshecho_en ? self::fecha_local( (string) $lote->deshecho_en ) : '',
+				'deshecho_por'  => $lote->deshecho_por ? self::nombre_usuario( (int) $lote->deshecho_por ) : '',
+				'despublicados' => (int) $lote->despublicados,
+			);
+		}
 
 		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-publicacion-documentos.php';
 	}
@@ -219,7 +279,7 @@ class Admin_Publicacion_Documentos {
 		check_admin_referer( self::NONCE_BLOQUE_PREPARAR );
 
 		// Un "Recalcular" desde una confirmacion sustituye la anterior.
-		$anterior = self::bloque_id_de( $_POST['bloque'] ?? '' );
+		$anterior = self::confirmacion_id_de( $_POST['bloque'] ?? '' );
 
 		$filtros = Publicacion_Bloque_Service::normalizar_filtros(
 			isset( $_POST['tipo'] ) ? sanitize_text_field( wp_unslash( $_POST['tipo'] ) ) : '',
@@ -229,7 +289,7 @@ class Admin_Publicacion_Documentos {
 
 		if ( is_wp_error( $filtros ) ) {
 			self::guardar_aviso( 'error', $filtros->get_error_message() );
-			self::redirigir( $anterior && self::leer_bloque( $anterior ) ? array( 'bloque' => $anterior ) : array() );
+			self::redirigir( $anterior && self::leer_confirmacion( self::BLOQUE_KEY_PREFIX, $anterior ) ? array( 'bloque' => $anterior ) : array() );
 		}
 
 		$conjunto = ( new Publicacion_Bloque_Service() )->calcular( $filtros );
@@ -240,7 +300,7 @@ class Admin_Publicacion_Documentos {
 		}
 
 		if ( $anterior ) {
-			delete_transient( self::clave_bloque( $anterior ) );
+			delete_transient( self::clave_confirmacion( self::BLOQUE_KEY_PREFIX, $anterior ) );
 		}
 
 		self::redirigir( array( 'bloque' => self::guardar_bloque( $filtros, $conjunto ) ) );
@@ -255,8 +315,8 @@ class Admin_Publicacion_Documentos {
 
 		check_admin_referer( self::NONCE_BLOQUE_APLICAR );
 
-		$bloque_id = self::bloque_id_de( $_POST['bloque'] ?? '' );
-		$bloque    = $bloque_id ? self::consumir_bloque( $bloque_id ) : null;
+		$bloque_id = self::confirmacion_id_de( $_POST['bloque'] ?? '' );
+		$bloque    = $bloque_id ? self::consumir_confirmacion( self::BLOQUE_KEY_PREFIX, $bloque_id ) : null;
 
 		if ( ! $bloque ) {
 			self::guardar_aviso( 'warning', 'La confirmación ha caducado o ya se aplicó. No se ha publicado nada más.' );
@@ -264,7 +324,7 @@ class Admin_Publicacion_Documentos {
 		}
 
 		$servicio  = new Publicacion_Bloque_Service();
-		$resultado = $servicio->aplicar( $bloque['filtros'], $bloque['huella'] );
+		$resultado = $servicio->aplicar( $bloque['filtros'], $bloque['huella'], get_current_user_id() );
 
 		if ( is_wp_error( $resultado ) ) {
 			if ( Publicacion_Bloque_Service::ERROR_CAMBIADO === $resultado->get_error_code() ) {
@@ -277,7 +337,7 @@ class Admin_Publicacion_Documentos {
 			}
 
 			// Nada se ha escrito: se repone la confirmacion para reintentar.
-			self::reponer_bloque( $bloque_id, $bloque );
+			self::reponer_confirmacion( self::BLOQUE_KEY_PREFIX, $bloque_id, $bloque );
 			self::guardar_aviso( 'error', $resultado->get_error_message() );
 			self::redirigir( array( 'bloque' => $bloque_id ) );
 		}
@@ -305,13 +365,101 @@ class Admin_Publicacion_Documentos {
 
 		check_admin_referer( self::NONCE_BLOQUE_CANCELAR );
 
-		$bloque_id = self::bloque_id_de( $_POST['bloque'] ?? '' );
+		$bloque_id = self::confirmacion_id_de( $_POST['bloque'] ?? '' );
 
 		if ( $bloque_id ) {
-			self::consumir_bloque( $bloque_id );
+			self::consumir_confirmacion( self::BLOQUE_KEY_PREFIX, $bloque_id );
 		}
 
 		self::guardar_aviso( 'success', 'Publicación cancelada. No se ha publicado nada.' );
+		self::redirigir();
+	}
+
+	/**
+	 * Paso 1 de "Despublicar lote" (#317): cuenta lo que sigue publicado por
+	 * el lote y lleva a la confirmacion. No cambia nada.
+	 */
+	public static function gestionar_deshacer_preparar(): void {
+		self::exigir_capacidad();
+
+		check_admin_referer( self::NONCE_DESHACER_PREPARAR );
+
+		$lote_id  = isset( $_POST['lote_id'] ) ? (int) $_POST['lote_id'] : 0;
+		$conjunto = $lote_id > 0 ? ( new Despublicacion_Lote_Service() )->calcular( $lote_id ) : new \WP_Error( 'mdf_ca_despublicacion_lote_no_existe', 'El lote no existe.' );
+
+		if ( is_wp_error( $conjunto ) ) {
+			self::guardar_aviso( 'error', $conjunto->get_error_message() );
+			self::redirigir();
+		}
+
+		self::redirigir( array( 'deshacer' => self::guardar_deshacer( $conjunto ) ) );
+	}
+
+	/**
+	 * Paso 2: despublica exactamente lo confirmado. Lo que se despublica sale
+	 * del recalculo en servidor, nunca del formulario.
+	 */
+	public static function gestionar_deshacer_aplicar(): void {
+		self::exigir_capacidad();
+
+		check_admin_referer( self::NONCE_DESHACER_APLICAR );
+
+		$deshacer_id = self::confirmacion_id_de( $_POST['deshacer'] ?? '' );
+		$deshacer    = $deshacer_id ? self::consumir_confirmacion( self::DESHACER_KEY_PREFIX, $deshacer_id ) : null;
+
+		if ( ! $deshacer ) {
+			self::guardar_aviso( 'warning', 'La confirmación ha caducado o ya se aplicó. No se ha cambiado nada más.' );
+			self::redirigir();
+		}
+
+		$servicio  = new Despublicacion_Lote_Service();
+		$lote_id   = (int) $deshacer['lote_id'];
+		$resultado = $servicio->aplicar( $lote_id, (string) $deshacer['huella'], get_current_user_id() );
+
+		if ( is_wp_error( $resultado ) ) {
+			if ( Despublicacion_Lote_Service::ERROR_CAMBIADO === $resultado->get_error_code() ) {
+				$conjunto = $servicio->calcular( $lote_id );
+
+				if ( ! is_wp_error( $conjunto ) ) {
+					self::guardar_aviso( 'warning', $resultado->get_error_message() );
+					self::redirigir( array( 'deshacer' => self::guardar_deshacer( $conjunto ) ) );
+				}
+			}
+
+			// Un lote ya deshecho no se repone: no queda nada que confirmar.
+			if ( 'mdf_ca_despublicacion_lote_deshecho' !== $resultado->get_error_code() ) {
+				self::reponer_confirmacion( self::DESHACER_KEY_PREFIX, $deshacer_id, $deshacer );
+				self::guardar_aviso( 'error', $resultado->get_error_message() );
+				self::redirigir( array( 'deshacer' => $deshacer_id ) );
+			}
+
+			self::guardar_aviso( 'warning', $resultado->get_error_message() );
+			self::redirigir();
+		}
+
+		self::guardar_aviso(
+			$resultado['despublicados'] > 0 ? 'success' : 'warning',
+			sprintf(
+				'Lote deshecho: despublicados %s de %s. Sus farmacias ya no los ven (lo que ya vieron o descargaron no se puede retirar).',
+				self::plural( $resultado['despublicados'], 'documento', 'documentos' ),
+				self::plural( $resultado['farmacias'], 'farmacia', 'farmacias' )
+			)
+		);
+		self::redirigir();
+	}
+
+	public static function gestionar_deshacer_cancelar(): void {
+		self::exigir_capacidad();
+
+		check_admin_referer( self::NONCE_DESHACER_CANCELAR );
+
+		$deshacer_id = self::confirmacion_id_de( $_POST['deshacer'] ?? '' );
+
+		if ( $deshacer_id ) {
+			self::consumir_confirmacion( self::DESHACER_KEY_PREFIX, $deshacer_id );
+		}
+
+		self::guardar_aviso( 'success', 'Despublicación del lote cancelada. No se ha cambiado nada.' );
 		self::redirigir();
 	}
 
@@ -375,38 +523,78 @@ class Admin_Publicacion_Documentos {
 	}
 
 	// ------------------------------------------------------------------
-	// Confirmaciones de "Publicar todos los pendientes" (#316)
+	// Confirmaciones de dos pasos: "Publicar todos los pendientes" (#316) y
+	// "Despublicar lote" (#317). Mismo mecanismo, distinto prefijo.
 	// ------------------------------------------------------------------
 
 	/**
 	 * Id de confirmacion saneado, o '' si no tiene la forma que genera
-	 * guardar_bloque() (20 alfanumericos).
+	 * nueva_confirmacion() (20 alfanumericos).
 	 *
 	 * @param mixed $valor
 	 */
-	private static function bloque_id_de( $valor ): string {
+	private static function confirmacion_id_de( $valor ): string {
 		$valor = is_string( $valor ) ? wp_unslash( $valor ) : '';
 
 		return 1 === preg_match( '/^[A-Za-z0-9]{20}$/', $valor ) ? $valor : '';
 	}
 
 	/** La clave incluye el usuario actual: un id ajeno nunca resuelve. */
-	private static function clave_bloque( string $bloque_id ): string {
-		return self::BLOQUE_KEY_PREFIX . get_current_user_id() . '_' . $bloque_id;
+	private static function clave_confirmacion( string $prefijo, string $id ): string {
+		return $prefijo . get_current_user_id() . '_' . $id;
 	}
 
 	/**
-	 * Guarda lo que se va a ensenar en la confirmacion (sin los ids: al
+	 * Guarda lo que se va a ensenar en una confirmacion (nunca los ids: al
 	 * aplicar se recalculan y se comparan por la huella). Devuelve el id.
+	 *
+	 * @param array<string, mixed> $datos Debe llevar 'huella'.
+	 */
+	private static function nueva_confirmacion( string $prefijo, array $datos ): string {
+		$id = wp_generate_password( 20, false, false );
+
+		self::reponer_confirmacion( $prefijo, $id, $datos );
+
+		return $id;
+	}
+
+	/** @param array<string, mixed> $datos */
+	private static function reponer_confirmacion( string $prefijo, string $id, array $datos ): void {
+		set_transient( self::clave_confirmacion( $prefijo, $id ), $datos, self::CONFIRMACION_TTL );
+	}
+
+	/** @return array<string, mixed>|null */
+	private static function leer_confirmacion( string $prefijo, string $id ): ?array {
+		$datos = get_transient( self::clave_confirmacion( $prefijo, $id ) );
+
+		return is_array( $datos ) && isset( $datos['huella'] ) ? $datos : null;
+	}
+
+	/**
+	 * Lee y borra. Solo devuelve la confirmacion quien consigue borrarla: de
+	 * dos envios simultaneos, solo uno llega a aplicar.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	private static function consumir_confirmacion( string $prefijo, string $id ): ?array {
+		$datos = self::leer_confirmacion( $prefijo, $id );
+
+		if ( ! $datos || ! delete_transient( self::clave_confirmacion( $prefijo, $id ) ) ) {
+			return null;
+		}
+
+		return $datos;
+	}
+
+	/**
+	 * Confirmacion de "Publicar todos los pendientes".
 	 *
 	 * @param array{tipo: ?string, desde: ?string, hasta: ?string} $filtros
 	 * @param array<string, mixed>                                 $conjunto Salida de Publicacion_Bloque_Service::calcular().
 	 */
 	private static function guardar_bloque( array $filtros, array $conjunto ): string {
-		$bloque_id = wp_generate_password( 20, false, false );
-
-		self::reponer_bloque(
-			$bloque_id,
+		return self::nueva_confirmacion(
+			self::BLOQUE_KEY_PREFIX,
 			array(
 				'filtros'        => $filtros,
 				'huella'         => $conjunto['huella'],
@@ -417,36 +605,59 @@ class Admin_Publicacion_Documentos {
 				'recibido_hasta' => $conjunto['recibido_hasta'],
 			)
 		);
-
-		return $bloque_id;
-	}
-
-	/** @param array<string, mixed> $bloque */
-	private static function reponer_bloque( string $bloque_id, array $bloque ): void {
-		set_transient( self::clave_bloque( $bloque_id ), $bloque, self::BLOQUE_TTL );
-	}
-
-	/** @return array<string, mixed>|null */
-	private static function leer_bloque( string $bloque_id ): ?array {
-		$bloque = get_transient( self::clave_bloque( $bloque_id ) );
-
-		return is_array( $bloque ) && isset( $bloque['filtros'], $bloque['huella'] ) ? $bloque : null;
 	}
 
 	/**
-	 * Lee y borra. Solo devuelve la confirmacion quien consigue borrarla: de
-	 * dos envios simultaneos, solo uno llega a aplicar.
+	 * Confirmacion de "Despublicar lote".
 	 *
-	 * @return array<string, mixed>|null
+	 * @param array<string, mixed> $conjunto Salida de Despublicacion_Lote_Service::calcular().
 	 */
-	private static function consumir_bloque( string $bloque_id ): ?array {
-		$bloque = self::leer_bloque( $bloque_id );
+	private static function guardar_deshacer( array $conjunto ): string {
+		return self::nueva_confirmacion(
+			self::DESHACER_KEY_PREFIX,
+			array(
+				'lote_id'         => $conjunto['lote_id'],
+				'huella'          => $conjunto['huella'],
+				'documentos'      => $conjunto['documentos'],
+				'farmacias'       => $conjunto['farmacias'],
+				'documentos_lote' => $conjunto['documentos_lote'],
+			)
+		);
+	}
 
-		if ( ! $bloque || ! delete_transient( self::clave_bloque( $bloque_id ) ) ) {
-			return null;
+	/** Nombre visible de un usuario, o que ya no existe. Nunca su email. */
+	private static function nombre_usuario( int $usuario_id ): string {
+		$usuario = get_userdata( $usuario_id );
+
+		return $usuario ? $usuario->display_name : sprintf( 'usuario borrado (ID %d)', $usuario_id );
+	}
+
+	/** Fecha UTC de la base de datos como dd/mm/aaaa hh:mm en la zona de WordPress. */
+	private static function fecha_local( string $utc ): string {
+		$marca = strtotime( $utc . ' UTC' );
+
+		return false === $marca ? '' : wp_date( 'd/m/Y H:i', $marca );
+	}
+
+	/** Filtros de un lote (JSON guardado) en una linea legible. */
+	private static function describir_filtros( string $json ): string {
+		$filtros = json_decode( $json, true );
+
+		if ( ! is_array( $filtros ) ) {
+			return '';
 		}
 
-		return $bloque;
+		$partes = array( empty( $filtros['tipo'] ) ? 'Todos los tipos' : Documento_Tipos::get_etiqueta( (string) $filtros['tipo'] ) );
+
+		if ( ! empty( $filtros['desde'] ) || ! empty( $filtros['hasta'] ) ) {
+			$partes[] = sprintf(
+				'recibidos %s – %s',
+				empty( $filtros['desde'] ) ? '…' : Documento::formatear_fecha_corta( (string) $filtros['desde'] ),
+				empty( $filtros['hasta'] ) ? '…' : Documento::formatear_fecha_corta( (string) $filtros['hasta'] )
+			);
+		}
+
+		return implode( ', ', $partes );
 	}
 
 	private static function plural( int $n, string $singular, string $plural ): string {

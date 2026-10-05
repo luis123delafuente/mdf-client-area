@@ -20,6 +20,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  *    huella: no se escribe nada y hay que volver a confirmar. Uno que llegue
  *    despues del recalculo no esta en la lista y no se publica.
  *
+ * Cada publicacion en bloque crea un LOTE (#317, Publicacion_Lote_Repository)
+ * con quien, cuando, cuantos y con que filtros, y deja su id en los
+ * documentos que publica, en la MISMA transaccion: o se crea el lote y se
+ * publican los documentos, o no ocurre nada. Un lote se puede deshacer
+ * despues (Despublicacion_Lote_Service).
+ *
  * Solo cambia publicado de 0 a 1. No decide visibilidad (eso sigue siendo
  * Permissions) ni toca los avisos: lo publicado pasa a ser candidato al
  * aviso diario como cualquier otro documento publicado.
@@ -32,9 +38,11 @@ class Publicacion_Bloque_Service {
 	public const ERROR_CAMBIADO = 'mdf_ca_publicacion_bloque_cambiada';
 
 	private Documento_Repository $repository;
+	private Publicacion_Lote_Repository $lotes;
 
-	public function __construct( ?Documento_Repository $repository = null ) {
+	public function __construct( ?Documento_Repository $repository = null, ?Publicacion_Lote_Repository $lotes = null ) {
 		$this->repository = $repository ?? new Documento_Repository();
+		$this->lotes      = $lotes ?? new Publicacion_Lote_Repository();
 	}
 
 	/**
@@ -124,13 +132,17 @@ class Publicacion_Bloque_Service {
 	 * el de la huella, no escribe nada (ERROR_CAMBIADO).
 	 *
 	 * @param array{tipo: ?string, desde: ?string, hasta: ?string} $filtros
-	 * @return array{publicados: int, farmacias: int, excluidos: int, ya_publicados: int}|\WP_Error
+	 * @param int $usuario_id Quien publica (queda en el lote).
+	 * @return array{publicados: int, farmacias: int, excluidos: int, ya_publicados: int, lote_id: ?int}|\WP_Error
 	 */
-	public function aplicar( array $filtros, string $huella_confirmada ) {
-		if ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() ) ) {
+	public function aplicar( array $filtros, string $huella_confirmada, int $usuario_id ) {
+		global $wpdb;
+
+		if ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() )
+			|| ! DB_Schema::tabla_es_innodb( DB_Schema::get_publicacion_lotes_table_name() ) ) {
 			return new \WP_Error(
 				'mdf_ca_publicacion_bloque_sin_transacciones',
-				'La tabla de documentos no admite transacciones (no es InnoDB). No se ha publicado nada.'
+				'Las tablas de documentos o de lotes no admiten transacciones (no son InnoDB). No se ha publicado nada.'
 			);
 		}
 
@@ -147,21 +159,51 @@ class Publicacion_Bloque_Service {
 			);
 		}
 
-		$publicados = $this->repository->publicar_ids( $actual['ids'] );
+		$resumen = array(
+			'publicados'    => 0,
+			'farmacias'     => $actual['farmacias'],
+			'excluidos'     => $actual['excluidos'],
+			'ya_publicados' => 0,
+			'lote_id'       => null,
+		);
 
-		if ( false === $publicados ) {
-			return new \WP_Error( 'mdf_ca_publicacion_bloque_error_bd', 'No se pudieron publicar los documentos. No se ha publicado ninguno.' );
+		if ( ! $actual['ids'] ) {
+			return $resumen;
 		}
+
+		// Lote y documentos, juntos o nada: sin lote huerfano ni documentos
+		// publicados sin lote.
+		$error = new \WP_Error( 'mdf_ca_publicacion_bloque_error_bd', 'No se pudieron publicar los documentos. No se ha publicado ninguno.' );
+
+		$wpdb->query( 'START TRANSACTION' );
+
+		$lote_id    = $this->lotes->crear( $usuario_id, $filtros );
+		$publicados = false === $lote_id ? false : $this->repository->publicar_ids( $actual['ids'], $lote_id );
+
+		if ( false === $publicados || ! $this->lotes->actualizar_documentos( (int) $lote_id, $publicados ) ) {
+			$wpdb->query( 'ROLLBACK' );
+
+			return $error;
+		}
+
+		// Todos se publicaron por otra via en el ultimo instante: ningun lote vacio.
+		if ( 0 === $publicados ) {
+			$wpdb->query( 'ROLLBACK' );
+			$resumen['ya_publicados'] = $actual['documentos'];
+
+			return $resumen;
+		}
+
+		$wpdb->query( 'COMMIT' );
 
 		Recepcion_Registro::registrar( Recepcion_Registro::PUBLICADO_BLOQUE, $publicados );
 
-		return array(
-			'publicados'    => $publicados,
-			'farmacias'     => $actual['farmacias'],
-			'excluidos'     => $actual['excluidos'],
-			// Publicados uno a uno en el instante entre el recalculo y el UPDATE.
-			'ya_publicados' => $actual['documentos'] - $publicados,
-		);
+		$resumen['publicados'] = $publicados;
+		$resumen['lote_id']    = (int) $lote_id;
+		// Publicados uno a uno en el instante entre el recalculo y el UPDATE.
+		$resumen['ya_publicados'] = $actual['documentos'] - $publicados;
+
+		return $resumen;
 	}
 
 	/** @param int[] $ids Ordenados. */

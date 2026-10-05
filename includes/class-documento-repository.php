@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Documento_Repository {
 
-	/** Ids por UPDATE en la publicacion en bloque (#316). */
+	/** Ids por UPDATE en la publicacion en bloque (#316) y al deshacer un lote (#317). */
 	private const TANDA_PUBLICACION = 500;
 
 	public function find_by_id( int $id ): ?Documento {
@@ -316,7 +316,9 @@ class Documento_Repository {
 		$table = DB_Schema::get_documentos_table_name();
 
 		return $wpdb->query(
-			$wpdb->prepare( "UPDATE {$table} SET publicado = %d WHERE id = %d AND publicado = %d", $publicado ? 1 : 0, $id, $publicado ? 0 : 1 )
+			// Cualquier cambio fuera de un lote le quita el lote (#317): deshacer
+			// ese lote ya no debe tocar este documento.
+			$wpdb->prepare( "UPDATE {$table} SET publicado = %d, publicacion_lote_id = NULL WHERE id = %d AND publicado = %d", $publicado ? 1 : 0, $id, $publicado ? 0 : 1 )
 		);
 	}
 
@@ -379,49 +381,125 @@ class Documento_Repository {
 
 	/**
 	 * Publica EXACTAMENTE estos ids (#316), solo los que sigan pendientes
-	 * (publicado = 0): repetirlo no cambia nada. Por tandas, dentro de una
-	 * transaccion: o se publican todos o ninguno. Quien llama comprueba
-	 * antes que la tabla es InnoDB (DB_Schema::tabla_es_innodb()).
+	 * (publicado = 0): repetirlo no cambia nada. Les asigna el lote que los
+	 * publica (#317). Por tandas y SIN transaccion propia: la abre quien
+	 * llama (Publicacion_Bloque_Service), porque el lote y los documentos
+	 * cambian juntos.
 	 *
 	 * @param int[] $ids
-	 * @return int|false Filas realmente publicadas, o false si fallo (rollback).
+	 * @return int|false Filas realmente publicadas, o false si fallo una tanda.
 	 */
-	public function publicar_ids( array $ids ) {
+	public function publicar_ids( array $ids, int $lote_id ) {
+		return $this->actualizar_por_tandas( 'SET publicado = 1, publicacion_lote_id = %d WHERE publicado = 0', array( $lote_id ), $ids );
+	}
+
+	/**
+	 * Despublica EXACTAMENTE estos ids del lote (#317), solo si siguen
+	 * publicados por ese lote, y les quita el lote. Sin transaccion propia
+	 * (la abre Despublicacion_Lote_Service).
+	 *
+	 * @param int[] $ids
+	 * @return int|false Filas realmente despublicadas, o false si fallo una tanda.
+	 */
+	public function despublicar_ids_de_lote( array $ids, int $lote_id ) {
+		return $this->actualizar_por_tandas( 'SET publicado = 0, publicacion_lote_id = NULL WHERE publicado = 1 AND publicacion_lote_id = %d', array( $lote_id ), $ids );
+	}
+
+	/**
+	 * Documentos que siguen publicados por este lote (solo id y farmacia).
+	 *
+	 * @return array<int, array{id: int, farmacia_id: int}>|null null si fallo la consulta.
+	 */
+	public function find_publicados_de_lote( int $lote_id ): ?array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare( "SELECT id, farmacia_id FROM {$table} WHERE publicacion_lote_id = %d AND publicado = 1 ORDER BY id", $lote_id ),
+			ARRAY_A
+		);
+
+		if ( null === $rows || '' !== $wpdb->last_error ) {
+			return null;
+		}
+
+		return array_map(
+			static fn( array $row ): array => array(
+				'id'          => (int) $row['id'],
+				'farmacia_id' => (int) $row['farmacia_id'],
+			),
+			$rows
+		);
+	}
+
+	/**
+	 * Cuantos documentos siguen publicados por cada lote, en una consulta.
+	 *
+	 * @param int[] $lote_ids
+	 * @return array<int, int> lote_id => publicados (los lotes sin ninguno no aparecen).
+	 */
+	public function contar_publicados_por_lote( array $lote_ids ): array {
+		global $wpdb;
+
+		$lote_ids = array_values( array_filter( array_map( 'intval', $lote_ids ) ) );
+
+		if ( ! $lote_ids ) {
+			return array();
+		}
+
+		$table        = DB_Schema::get_documentos_table_name();
+		$placeholders = implode( ',', array_fill( 0, count( $lote_ids ), '%d' ) );
+		$rows         = $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba.
+				"SELECT publicacion_lote_id AS lote, COUNT(*) AS total FROM {$table} WHERE publicado = 1 AND publicacion_lote_id IN ({$placeholders}) GROUP BY publicacion_lote_id",
+				$lote_ids
+			),
+			ARRAY_A
+		);
+
+		$recuentos = array();
+
+		foreach ( $rows ?: array() as $row ) {
+			$recuentos[ (int) $row['lote'] ] = (int) $row['total'];
+		}
+
+		return $recuentos;
+	}
+
+	/**
+	 * "UPDATE documentos {$set_where} AND id IN (...)" por tandas de ids.
+	 *
+	 * @param array<int, int|string> $args Valores de los placeholders de $set_where.
+	 * @param int[]                  $ids
+	 * @return int|false Filas cambiadas en total, o false si fallo una tanda.
+	 */
+	private function actualizar_por_tandas( string $set_where, array $args, array $ids ) {
 		global $wpdb;
 
 		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
 
-		if ( ! $ids ) {
-			return 0;
-		}
-
-		$table      = DB_Schema::get_documentos_table_name();
-		$publicados = 0;
-
-		$wpdb->query( 'START TRANSACTION' );
+		$table     = DB_Schema::get_documentos_table_name();
+		$cambiados = 0;
 
 		foreach ( array_chunk( $ids, self::TANDA_PUBLICACION ) as $tanda ) {
 			$placeholders = implode( ',', array_fill( 0, count( $tanda ), '%d' ) );
-			$cambiados    = $wpdb->query(
+			$filas        = $wpdb->query(
 				$wpdb->prepare(
-					// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba.
-					"UPDATE {$table} SET publicado = 1 WHERE publicado = 0 AND id IN ({$placeholders})",
-					$tanda
+					// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $set_where es fijo de esta clase; placeholders generados arriba.
+					"UPDATE {$table} {$set_where} AND id IN ({$placeholders})",
+					array_merge( $args, $tanda )
 				)
 			);
 
-			if ( false === $cambiados ) {
-				$wpdb->query( 'ROLLBACK' );
-
+			if ( false === $filas ) {
 				return false;
 			}
 
-			$publicados += (int) $cambiados;
+			$cambiados += (int) $filas;
 		}
 
-		$wpdb->query( 'COMMIT' );
-
-		return $publicados;
+		return $cambiados;
 	}
 
 	/**
@@ -435,7 +513,7 @@ class Documento_Repository {
 		$table = DB_Schema::get_documentos_table_name();
 
 		return $wpdb->query(
-			$wpdb->prepare( "UPDATE {$table} SET publicado = 1 WHERE farmacia_id = %d AND publicado = 0", $farmacia_id )
+			$wpdb->prepare( "UPDATE {$table} SET publicado = 1, publicacion_lote_id = NULL WHERE farmacia_id = %d AND publicado = 0", $farmacia_id )
 		);
 	}
 }

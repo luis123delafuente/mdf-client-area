@@ -63,6 +63,16 @@ class DB_Schema {
 		return $wpdb->prefix . 'mdf_ca_recepcion_registro';
 	}
 
+	/**
+	 * Lotes de "Publicar todos los pendientes" (#317): quien y cuando
+	 * publico, cuantos documentos, con que filtros, y si se deshizo, quien y
+	 * cuando. Sin datos fiscales.
+	 */
+	public static function get_publicacion_lotes_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_publicacion_lotes';
+	}
+
 	public static function get_catalogo_table_name() {
 		global $wpdb;
 		return $wpdb->prefix . 'mdf_ca_catalogo';
@@ -102,6 +112,7 @@ class DB_Schema {
 		$catalogo_table        = self::get_catalogo_table_name();
 		$catalogo_planes_table = self::get_catalogo_planes_table_name();
 		$registro_table        = self::get_recepcion_registro_table_name();
+		$lotes_table           = self::get_publicacion_lotes_table_name();
 
 		// slug es el identificador estable para comparar visibilidad
 		// (Permissions::puede_ver_bloque_por_plan(), atributo "planes" de
@@ -178,6 +189,14 @@ class DB_Schema {
 		// no por farmacia, por el mismo motivo que el hash. factura_serie es
 		// mas ancha que las 3 letras que se aceptan hoy para no tener que
 		// cambiar el esquema si se amplia.
+		// publicacion_lote_id (#317): el lote de "Publicar todos los
+		// pendientes" que publico el documento, SOLO mientras siga publicado
+		// desde entonces. Deshacer el lote y cualquier otro cambio de estado
+		// (publicar o despublicar uno, publicar los de una farmacia) lo ponen
+		// a NULL: asi deshacer un lote nunca toca un documento que alguien ha
+		// vuelto a publicar o despublicar despues por otra via. NULL en todo
+		// lo anterior (sin backfill: no se puede deshacer en bloque). Sin FK,
+		// como el resto. El indice cubre "publicados de este lote".
 		// Nullable y sin backfill por dbDelta: la migracion que marca como
 		// notificados los documentos ya existentes vive en
 		// Activator::maybe_upgrade(), con su propia option. El indice
@@ -199,12 +218,33 @@ class DB_Schema {
 			emisor_cif VARCHAR(9) NULL,
 			factura_serie VARCHAR(10) NULL,
 			factura_numero VARCHAR(20) NULL,
+			publicacion_lote_id BIGINT UNSIGNED NULL,
 			PRIMARY KEY  (id),
 			KEY farmacia_id (farmacia_id),
 			KEY notificado_en (notificado_en,farmacia_id),
 			KEY publicado (publicado,farmacia_id),
+			KEY publicacion_lote (publicacion_lote_id,publicado),
 			UNIQUE KEY hash_sha256 (hash_sha256),
 			UNIQUE KEY factura (emisor_cif,factura_serie,factura_numero)
+		) {$charset_collate};";
+
+		// Lotes de publicacion en bloque (#317). creado_en y deshecho_en en
+		// UTC. documentos = publicados al crear el lote (lo que siga
+		// publicado se cuenta en vivo en documentos.publicacion_lote_id).
+		// filtros = JSON de los filtros ya saneados. estado: aplicado o
+		// deshecho. Sin FK a usuarios: un usuario borrado se muestra como tal.
+		$lotes_sql = "CREATE TABLE {$lotes_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			creado_por BIGINT UNSIGNED NOT NULL,
+			creado_en DATETIME NOT NULL,
+			documentos INT UNSIGNED NOT NULL DEFAULT 0,
+			filtros VARCHAR(255) NULL,
+			estado VARCHAR(20) NOT NULL DEFAULT 'aplicado',
+			deshecho_por BIGINT UNSIGNED NULL,
+			deshecho_en DATETIME NULL,
+			despublicados INT UNSIGNED NULL,
+			PRIMARY KEY  (id),
+			KEY creado_en (creado_en)
 		) {$charset_collate};";
 
 		$registro_sql = "CREATE TABLE {$registro_table} (
@@ -251,6 +291,6 @@ class DB_Schema {
 			KEY plan_id (plan_id)
 		) {$charset_collate};";
 
-		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql );
+		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql, $lotes_sql );
 	}
 }
