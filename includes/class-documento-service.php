@@ -59,10 +59,12 @@ class Documento_Service {
 
 	private Documento_Repository $repository;
 	private Farmacia_Repository $farmacia_repository;
+	private Publicacion_Evento_Repository $eventos;
 
-	public function __construct( ?Documento_Repository $repository = null, ?Farmacia_Repository $farmacia_repository = null ) {
+	public function __construct( ?Documento_Repository $repository = null, ?Farmacia_Repository $farmacia_repository = null, ?Publicacion_Evento_Repository $eventos = null ) {
 		$this->repository          = $repository ?? new Documento_Repository();
 		$this->farmacia_repository = $farmacia_repository ?? new Farmacia_Repository();
+		$this->eventos             = $eventos ?? new Publicacion_Evento_Repository();
 	}
 
 	/**
@@ -231,6 +233,19 @@ class Documento_Service {
 			);
 		}
 
+		// Un documento que nace publicado deja su evento de publicacion en la
+		// misma transaccion que el INSERT (#318): hace falta InnoDB. Se
+		// comprueba antes de tocar el disco. Uno que nace pendiente (la
+		// recepcion con aprobacion, el caso por defecto) no escribe evento.
+		if ( $publicar
+			&& ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() )
+				|| ! DB_Schema::tabla_es_innodb( DB_Schema::get_publicacion_eventos_table_name() ) ) ) {
+			return new \WP_Error(
+				'mdf_ca_publicacion_sin_transacciones',
+				'Las tablas de documentos o de eventos no admiten transacciones (no son InnoDB). No se ha guardado nada.'
+			);
+		}
+
 		$nombre_fichero = self::generar_nombre_fichero( $farmacia_id, $filetype['ext'] );
 		$ruta_destino   = $carpeta . DIRECTORY_SEPARATOR . $nombre_fichero;
 
@@ -245,6 +260,10 @@ class Documento_Service {
 		global $wpdb;
 		$silenciar = null !== $factura;
 		$errores   = $silenciar ? $wpdb->suppress_errors( true ) : null;
+
+		if ( $publicar ) {
+			$wpdb->query( 'START TRANSACTION' );
+		}
 
 		try {
 			$documento = $this->repository->insert(
@@ -270,12 +289,36 @@ class Documento_Service {
 		}
 
 		if ( null === $documento ) {
+			if ( $publicar ) {
+				$wpdb->query( 'ROLLBACK' );
+			}
+
 			wp_delete_file( $ruta_destino );
 
 			return new \WP_Error(
 				'mdf_ca_error_bd',
 				$silenciar ? 'No se pudo registrar el documento.' : sprintf( 'No se pudo registrar el documento: %s', $wpdb->last_error )
 			);
+		}
+
+		if ( $publicar ) {
+			// Quien lo publica al crearlo: el robot (recepcion sin aprobacion) o
+			// el administrador (subida de backoffice).
+			$evento = $this->eventos->insertar_para(
+				array( $documento->get_id() => null ),
+				Publicacion_Evento_Repository::ACCION_PUBLICADO,
+				null !== $factura ? Publicacion_Evento_Repository::ORIGEN_RECEPCION : Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE,
+				get_current_user_id()
+			);
+
+			if ( false === $evento ) {
+				$wpdb->query( 'ROLLBACK' );
+				wp_delete_file( $ruta_destino );
+
+				return new \WP_Error( 'mdf_ca_error_bd', 'No se pudo registrar el documento.' );
+			}
+
+			$wpdb->query( 'COMMIT' );
 		}
 
 		return $documento;

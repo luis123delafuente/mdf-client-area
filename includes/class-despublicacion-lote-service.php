@@ -20,6 +20,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  *    deshecho si seguia aplicado; si otro deshacer gano la carrera, no
  *    escribe nada.
  *
+ * Los eventos de publicacion (#318, origen "deshacer_lote", un evento
+ * "despublicado" por documento, con el lote) se escriben en esa misma
+ * transaccion.
+ *
  * Solo cambia publicado de 1 a 0 (Permissions sigue decidiendo quien ve
  * que) y no toca notificado_en: un documento ya avisado que se vuelve a
  * publicar no se avisa dos veces. Deshacer no retira lo que la farmacia ya
@@ -83,10 +87,11 @@ class Despublicacion_Lote_Service {
 		global $wpdb;
 
 		if ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() )
-			|| ! DB_Schema::tabla_es_innodb( DB_Schema::get_publicacion_lotes_table_name() ) ) {
+			|| ! DB_Schema::tabla_es_innodb( DB_Schema::get_publicacion_lotes_table_name() )
+			|| ! DB_Schema::tabla_es_innodb( DB_Schema::get_publicacion_eventos_table_name() ) ) {
 			return new \WP_Error(
 				'mdf_ca_despublicacion_lote_sin_transacciones',
-				'Las tablas de documentos o de lotes no admiten transacciones (no son InnoDB). No se ha cambiado nada.'
+				'Las tablas de documentos, de lotes o de eventos no admiten transacciones (no son InnoDB). No se ha cambiado nada.'
 			);
 		}
 
@@ -105,7 +110,7 @@ class Despublicacion_Lote_Service {
 
 		$wpdb->query( 'START TRANSACTION' );
 
-		$despublicados = $this->repository->despublicar_ids_de_lote( $actual['ids'], $lote_id );
+		$despublicados = $this->repository->despublicar_ids_de_lote( $actual['ids'], $lote_id, $usuario_id );
 		$marcado       = false === $despublicados ? false : $this->lotes->marcar_deshecho( $lote_id, $usuario_id, $despublicados );
 
 		if ( false === $marcado ) {

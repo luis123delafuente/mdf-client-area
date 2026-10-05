@@ -39,14 +39,21 @@ class DB_Schema {
 	public static function tabla_es_innodb( string $tabla ): bool {
 		global $wpdb;
 
-		$engine = $wpdb->get_var(
-			$wpdb->prepare(
-				'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
-				$tabla
-			)
-		);
+		// Una consulta por tabla y peticion: el motor no cambia durante una peticion.
+		static $motores = array();
 
-		return is_string( $engine ) && 0 === strcasecmp( $engine, 'InnoDB' );
+		if ( ! isset( $motores[ $tabla ] ) ) {
+			$engine = $wpdb->get_var(
+				$wpdb->prepare(
+					'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+					$tabla
+				)
+			);
+
+			$motores[ $tabla ] = is_string( $engine ) && 0 === strcasecmp( $engine, 'InnoDB' );
+		}
+
+		return $motores[ $tabla ];
 	}
 
 	public static function get_planes_table_name() {
@@ -71,6 +78,18 @@ class DB_Schema {
 	public static function get_publicacion_lotes_table_name() {
 		global $wpdb;
 		return $wpdb->prefix . 'mdf_ca_publicacion_lotes';
+	}
+
+	/**
+	 * Eventos de publicacion de documentos (#318): libro de SOLO AÑADIR de
+	 * quien publico o despublico cada documento y cuando. Ningun camino de
+	 * codigo hace UPDATE ni DELETE sobre esta tabla (ver
+	 * Publicacion_Evento_Repository). Solo ids de usuario, fecha, accion,
+	 * origen y lote: sin IP, user agent ni datos fiscales.
+	 */
+	public static function get_publicacion_eventos_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_publicacion_eventos';
 	}
 
 	public static function get_catalogo_table_name() {
@@ -113,6 +132,7 @@ class DB_Schema {
 		$catalogo_planes_table = self::get_catalogo_planes_table_name();
 		$registro_table        = self::get_recepcion_registro_table_name();
 		$lotes_table           = self::get_publicacion_lotes_table_name();
+		$eventos_table         = self::get_publicacion_eventos_table_name();
 
 		// slug es el identificador estable para comparar visibilidad
 		// (Permissions::puede_ver_bloque_por_plan(), atributo "planes" de
@@ -247,6 +267,27 @@ class DB_Schema {
 			KEY creado_en (creado_en)
 		) {$charset_collate};";
 
+		// Eventos de publicacion (#318), de solo anadir. accion: publicado |
+		// despublicado. origen: individual, por_farmacia, bloque,
+		// deshacer_lote, recepcion o subida_backoffice. usuario_id NULL si no
+		// hay usuario (nunca ocurre hoy: el robot y los administradores son
+		// usuarios). fecha en UTC. lote_id: el lote que publica, el que se
+		// deshace o, al despublicar uno a uno, el que habia publicado el
+		// documento (documentos.publicacion_lote_id se pone a NULL, el evento
+		// conserva ese dato). Sin FK, como el resto. El indice sirve el
+		// historial de un documento.
+		$eventos_sql = "CREATE TABLE {$eventos_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			documento_id BIGINT UNSIGNED NOT NULL,
+			accion VARCHAR(12) NOT NULL,
+			origen VARCHAR(20) NOT NULL,
+			usuario_id BIGINT UNSIGNED NULL,
+			fecha DATETIME NOT NULL,
+			lote_id BIGINT UNSIGNED NULL,
+			PRIMARY KEY  (id),
+			KEY documento (documento_id,fecha)
+		) {$charset_collate};";
+
 		$registro_sql = "CREATE TABLE {$registro_table} (
 			fecha DATE NOT NULL,
 			resultado VARCHAR(20) NOT NULL,
@@ -291,6 +332,6 @@ class DB_Schema {
 			KEY plan_id (plan_id)
 		) {$charset_collate};";
 
-		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql, $lotes_sql );
+		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql, $lotes_sql, $eventos_sql );
 	}
 }

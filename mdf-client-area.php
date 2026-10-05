@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.19.0' );
-define( 'MDF_CA_DB_VERSION', '1.11.0' );
+define( 'MDF_CA_VERSION', '0.20.0' );
+define( 'MDF_CA_DB_VERSION', '1.12.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MDF_CA_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
@@ -64,6 +64,7 @@ add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Documentos', 'registe
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Avisos_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Recepcion_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Publicacion_Documentos', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Documentos_Publicados', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Recepcion_Autenticacion', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Recepcion_Documentos_Endpoint', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Aviso_Documentos_Service', 'register_hooks' ) );

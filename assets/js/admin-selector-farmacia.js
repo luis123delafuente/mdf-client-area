@@ -5,6 +5,10 @@
  * cualquier orden). El filtro de tipo de entidad acota la lista. Solo es
  * comodidad de interfaz: el servidor sigue validando farmacia_id en
  * Documento_Service.
+ *
+ * Con el atributo data-mdf-ca-opcional en el contenedor (p. ej. el buscador
+ * de "Documentos publicados") elegir farmacia no es obligatorio: se puede
+ * enviar sin ninguna, y al vaciar el cuadro se quita la seleccion.
  */
 ( function () {
 	'use strict';
@@ -40,6 +44,17 @@
 		var visibles = [];
 		var activa = -1;
 		var form = input.form;
+		var opcional = contenedor.hasAttribute( 'data-mdf-ca-opcional' );
+
+		// En modo opcional la farmacia puede venir ya elegida desde el servidor
+		// (campo oculto con id y cuadro con su nombre): se recupera de la lista.
+		if ( opcional && campoId.value ) {
+			farmacias.forEach( function ( f ) {
+				if ( String( f.id ) === campoId.value ) {
+					seleccionada = f;
+				}
+			} );
+		}
 
 		function filtrar( consulta ) {
 			var terminos = normalizar( consulta ).split( /\s+/ ).filter( Boolean );
@@ -206,8 +221,23 @@
 			input.focus();
 		} );
 
+		// Modo opcional: vaciar el cuadro quita la seleccion.
+		if ( opcional ) {
+			input.addEventListener( 'input', function () {
+				if ( input.value === '' ) {
+					seleccionada = null;
+					campoId.value = '';
+				}
+			} );
+		}
+
 		if ( form ) {
 			form.addEventListener( 'submit', function ( e ) {
+				if ( opcional && ! input.value ) {
+					campoId.value = '';
+					return;
+				}
+
 				if ( ! campoId.value ) {
 					e.preventDefault();
 					input.setCustomValidity( 'Selecciona una farmacia de la lista.' );

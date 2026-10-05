@@ -15,6 +15,13 @@ class Documento_Repository {
 	/** Ids por UPDATE en la publicacion en bloque (#316) y al deshacer un lote (#317). */
 	private const TANDA_PUBLICACION = 500;
 
+	private Publicacion_Evento_Repository $eventos;
+
+	/** El repositorio de eventos es inyectable para poder probar un fallo a mitad de un cambio. */
+	public function __construct( ?Publicacion_Evento_Repository $eventos = null ) {
+		$this->eventos = $eventos ?? new Publicacion_Evento_Repository();
+	}
+
 	public function find_by_id( int $id ): ?Documento {
 		global $wpdb;
 
@@ -278,48 +285,12 @@ class Documento_Repository {
 		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );
 	}
 
-	/**
-	 * Los ultimos publicados que llegaron por la recepcion automatica (los
-	 * unicos con hash), para poder despublicar uno si se detecta un error.
-	 *
-	 * @return Documento[]
-	 */
-	public function find_publicados_recibidos( int $limite = 50 ): array {
-		global $wpdb;
-
-		$table = DB_Schema::get_documentos_table_name();
-		$rows  = $wpdb->get_results(
-			$wpdb->prepare( "SELECT * FROM {$table} WHERE publicado = 1 AND hash_sha256 IS NOT NULL ORDER BY id DESC LIMIT %d", max( 1, $limite ) )
-		);
-
-		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );
-	}
-
 	public function contar_pendientes_publicacion(): int {
 		global $wpdb;
 
 		$table = DB_Schema::get_documentos_table_name();
 
 		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE publicado = 0" );
-	}
-
-	/**
-	 * Publica o despublica un documento. Devuelve las filas realmente
-	 * cambiadas (0 si ya estaba en ese estado o no existe), o false si fallo
-	 * la consulta.
-	 *
-	 * @return int|false
-	 */
-	public function set_publicado( int $id, bool $publicado ) {
-		global $wpdb;
-
-		$table = DB_Schema::get_documentos_table_name();
-
-		return $wpdb->query(
-			// Cualquier cambio fuera de un lote le quita el lote (#317): deshacer
-			// ese lote ya no debe tocar este documento.
-			$wpdb->prepare( "UPDATE {$table} SET publicado = %d, publicacion_lote_id = NULL WHERE id = %d AND publicado = %d", $publicado ? 1 : 0, $id, $publicado ? 0 : 1 )
-		);
 	}
 
 	/**
@@ -380,29 +351,130 @@ class Documento_Repository {
 	}
 
 	/**
-	 * Publica EXACTAMENTE estos ids (#316), solo los que sigan pendientes
-	 * (publicado = 0): repetirlo no cambia nada. Les asigna el lote que los
-	 * publica (#317). Por tandas y SIN transaccion propia: la abre quien
-	 * llama (Publicacion_Bloque_Service), porque el lote y los documentos
-	 * cambian juntos.
+	 * Punto UNICO que cambia publicado (#318): ningun otro UPDATE del plugin
+	 * toca esa columna. Cambia EXACTAMENTE estas filas, solo si siguen en el
+	 * estado de origen, y deja su evento en la misma transaccion. La
+	 * transaccion la abre quien llama (el lote, o Documento_Publicacion_
+	 * Service): si algo falla devuelve false y quien llama hace ROLLBACK, asi
+	 * que no queda ni un cambio de estado sin evento ni un evento sin cambio.
+	 *
+	 * Por tandas: SELECT ... FOR UPDATE bloquea y devuelve las filas que de
+	 * verdad cambian (las que otra via ya cambio no cuentan ni dejan evento),
+	 * UPDATE de esas filas y un INSERT multifila de sus eventos.
+	 *
+	 * Reglas de publicacion_lote_id (#317): publicar asigna el lote nuevo (o
+	 * NULL fuera de un lote); despublicar, por cualquier via, lo pone a NULL.
+	 * El evento guarda el lote implicado: el que publica, o el que habia
+	 * publicado el documento al despublicarlo.
+	 *
+	 * @param int[]    $ids
+	 * @param bool     $publicar       true: pendiente -> publicado. false: publicado -> pendiente.
+	 * @param int|null $lote_id_nuevo  Al publicar, el lote que lo publica (null: sin lote).
+	 * @param int|null $lote_id_filtro Al despublicar, solo los publicados por este lote (deshacer).
+	 * @return int|false Filas cambiadas, o false si fallo algo (hay que revertir).
+	 */
+	public function cambiar_estado( array $ids, bool $publicar, string $origen, ?int $usuario_id, ?int $lote_id_nuevo = null, ?int $lote_id_filtro = null ) {
+		global $wpdb;
+
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
+
+		$table  = DB_Schema::get_documentos_table_name();
+		$accion = $publicar ? Publicacion_Evento_Repository::ACCION_PUBLICADO : Publicacion_Evento_Repository::ACCION_DESPUBLICADO;
+		$desde  = $publicar ? 0 : 1;
+		$total  = 0;
+
+		foreach ( array_chunk( $ids, self::TANDA_PUBLICACION ) as $tanda ) {
+			$placeholders = implode( ',', array_fill( 0, count( $tanda ), '%d' ) );
+			$filtro_lote  = ! $publicar && null !== $lote_id_filtro ? ' AND publicacion_lote_id = %d' : '';
+
+			$bloqueadas = $wpdb->get_results(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba; condiciones fijas.
+					"SELECT id, publicacion_lote_id FROM {$table} WHERE publicado = %d AND id IN ({$placeholders}){$filtro_lote} ORDER BY id FOR UPDATE",
+					array_merge( array( $desde ), $tanda, '' !== $filtro_lote ? array( $lote_id_filtro ) : array() )
+				),
+				ARRAY_A
+			);
+
+			if ( null === $bloqueadas || '' !== $wpdb->last_error ) {
+				return false;
+			}
+
+			if ( ! $bloqueadas ) {
+				continue;
+			}
+
+			$cambian = array_map( static fn( array $fila ): int => (int) $fila['id'], $bloqueadas );
+			$ph2     = implode( ',', array_fill( 0, count( $cambian ), '%d' ) );
+			$set     = $publicar
+				? ( null === $lote_id_nuevo ? 'publicado = 1, publicacion_lote_id = NULL' : 'publicado = 1, publicacion_lote_id = %d' )
+				: 'publicado = 0, publicacion_lote_id = NULL';
+
+			$filas = $wpdb->query(
+				$wpdb->prepare(
+					// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $set fijo de esta clase; placeholders generados arriba.
+					"UPDATE {$table} SET {$set} WHERE publicado = %d AND id IN ({$ph2})",
+					array_merge( $publicar && null !== $lote_id_nuevo ? array( $lote_id_nuevo ) : array(), array( $desde ), $cambian )
+				)
+			);
+
+			// Bloqueadas por FOR UPDATE: tienen que cambiar todas.
+			if ( false === $filas || (int) $filas !== count( $cambian ) ) {
+				return false;
+			}
+
+			$eventos = array();
+
+			foreach ( $bloqueadas as $fila ) {
+				$previo                        = null === $fila['publicacion_lote_id'] ? null : (int) $fila['publicacion_lote_id'];
+				$eventos[ (int) $fila['id'] ] = $publicar ? $lote_id_nuevo : $previo;
+			}
+
+			if ( false === $this->eventos->insertar_para( $eventos, $accion, $origen, $usuario_id ) ) {
+				return false;
+			}
+
+			$total += count( $cambian );
+		}
+
+		return $total;
+	}
+
+	/**
+	 * Publica EXACTAMENTE estos ids en un lote (#316, #317). Transaccion de
+	 * quien llama (ver cambiar_estado()).
 	 *
 	 * @param int[] $ids
-	 * @return int|false Filas realmente publicadas, o false si fallo una tanda.
+	 * @return int|false
 	 */
-	public function publicar_ids( array $ids, int $lote_id ) {
-		return $this->actualizar_por_tandas( 'SET publicado = 1, publicacion_lote_id = %d WHERE publicado = 0', array( $lote_id ), $ids );
+	public function publicar_ids( array $ids, int $lote_id, ?int $usuario_id ) {
+		return $this->cambiar_estado( $ids, true, Publicacion_Evento_Repository::ORIGEN_BLOQUE, $usuario_id, $lote_id );
 	}
 
 	/**
 	 * Despublica EXACTAMENTE estos ids del lote (#317), solo si siguen
-	 * publicados por ese lote, y les quita el lote. Sin transaccion propia
-	 * (la abre Despublicacion_Lote_Service).
+	 * publicados por ese lote. Transaccion de quien llama.
 	 *
 	 * @param int[] $ids
-	 * @return int|false Filas realmente despublicadas, o false si fallo una tanda.
+	 * @return int|false
 	 */
-	public function despublicar_ids_de_lote( array $ids, int $lote_id ) {
-		return $this->actualizar_por_tandas( 'SET publicado = 0, publicacion_lote_id = NULL WHERE publicado = 1 AND publicacion_lote_id = %d', array( $lote_id ), $ids );
+	public function despublicar_ids_de_lote( array $ids, int $lote_id, ?int $usuario_id ) {
+		return $this->cambiar_estado( $ids, false, Publicacion_Evento_Repository::ORIGEN_DESHACER_LOTE, $usuario_id, null, $lote_id );
+	}
+
+	/**
+	 * Ids de los pendientes de UNA farmacia (para publicar los de la
+	 * farmacia). Solo ids: cambiar_estado() vuelve a comprobar el estado.
+	 *
+	 * @return int[]|null null si fallo la consulta.
+	 */
+	public function find_ids_pendientes_de_farmacia( int $farmacia_id ): ?array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$ids   = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE farmacia_id = %d AND publicado = 0 ORDER BY id", $farmacia_id ) );
+
+		return '' !== $wpdb->last_error ? null : array_map( 'intval', $ids );
 	}
 
 	/**
@@ -467,53 +539,64 @@ class Documento_Repository {
 		return $recuentos;
 	}
 
+	// ------------------------------------------------------------------
+	// Buscador de documentos publicados (#318): paginado en SQL.
+	// ------------------------------------------------------------------
+
 	/**
-	 * "UPDATE documentos {$set_where} AND id IN (...)" por tandas de ids.
+	 * Condiciones y argumentos del buscador de publicados. $nombre se busca
+	 * como texto literal (esc_like): % y _ no son comodines.
 	 *
-	 * @param array<int, int|string> $args Valores de los placeholders de $set_where.
-	 * @param int[]                  $ids
-	 * @return int|false Filas cambiadas en total, o false si fallo una tanda.
+	 * @return array{0: string, 1: array<int, int|string>}
 	 */
-	private function actualizar_por_tandas( string $set_where, array $args, array $ids ) {
+	private function condiciones_publicados( ?int $farmacia_id, string $nombre ): array {
 		global $wpdb;
 
-		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
+		$where = array( 'publicado = 1' );
+		$args  = array();
 
-		$table     = DB_Schema::get_documentos_table_name();
-		$cambiados = 0;
-
-		foreach ( array_chunk( $ids, self::TANDA_PUBLICACION ) as $tanda ) {
-			$placeholders = implode( ',', array_fill( 0, count( $tanda ), '%d' ) );
-			$filas        = $wpdb->query(
-				$wpdb->prepare(
-					// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- $set_where es fijo de esta clase; placeholders generados arriba.
-					"UPDATE {$table} {$set_where} AND id IN ({$placeholders})",
-					array_merge( $args, $tanda )
-				)
-			);
-
-			if ( false === $filas ) {
-				return false;
-			}
-
-			$cambiados += (int) $filas;
+		if ( null !== $farmacia_id && $farmacia_id > 0 ) {
+			$where[] = 'farmacia_id = %d';
+			$args[]  = $farmacia_id;
 		}
 
-		return $cambiados;
+		if ( '' !== $nombre ) {
+			$where[] = 'nombre LIKE %s';
+			$args[]  = '%' . $wpdb->esc_like( $nombre ) . '%';
+		}
+
+		return array( implode( ' AND ', $where ), $args );
+	}
+
+	public function contar_publicados( ?int $farmacia_id, string $nombre ): int {
+		global $wpdb;
+
+		$table                = DB_Schema::get_documentos_table_name();
+		list( $where, $args ) = $this->condiciones_publicados( $farmacia_id, $nombre );
+		$sql                  = "SELECT COUNT(*) FROM {$table} WHERE {$where}";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- condiciones fijas, valores por placeholders.
+		return (int) $wpdb->get_var( $args ? $wpdb->prepare( $sql, $args ) : $sql );
 	}
 
 	/**
-	 * Publica todos los pendientes de UNA farmacia. Devuelve cuantos publico.
+	 * Una pagina de publicados, los mas recientes primero.
 	 *
-	 * @return int|false
+	 * @return Documento[]
 	 */
-	public function publicar_todos_de_farmacia( int $farmacia_id ) {
+	public function buscar_publicados( ?int $farmacia_id, string $nombre, int $limite, int $desplazamiento ): array {
 		global $wpdb;
 
-		$table = DB_Schema::get_documentos_table_name();
+		$table                = DB_Schema::get_documentos_table_name();
+		list( $where, $args ) = $this->condiciones_publicados( $farmacia_id, $nombre );
+		$args[]               = max( 1, $limite );
+		$args[]               = max( 0, $desplazamiento );
 
-		return $wpdb->query(
-			$wpdb->prepare( "UPDATE {$table} SET publicado = 1, publicacion_lote_id = NULL WHERE farmacia_id = %d AND publicado = 0", $farmacia_id )
+		$rows = $wpdb->get_results(
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- condiciones fijas, valores por placeholders.
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE {$where} ORDER BY id DESC LIMIT %d OFFSET %d", $args )
 		);
+
+		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );
 	}
 }

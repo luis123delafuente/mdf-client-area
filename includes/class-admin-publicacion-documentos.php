@@ -15,10 +15,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Esta clase NO decide visibilidad: publicar o despublicar solo cambia el
  * estado, y quien decide quien ve un documento sigue siendo Permissions.
+ * Despublicar (uno a uno, con buscador y paginacion) y el historial de cada
+ * documento viven en Admin_Documentos_Publicados (#318). Todo cambio de
+ * estado deja su evento en Publicacion_Evento_Repository, en la misma
+ * transaccion.
  *
  * Acciones: publicar un documento, publicar todos los de una farmacia (solo
  * esa), publicar todos los pendientes de una vez (#316, en dos pasos: ver
- * abajo), despublicar un documento ya publicado, y la VISTA PREVIA para el
+ * abajo) y la VISTA PREVIA para el
  * administrador, que es el unico camino por el que alguien que no es la
  * farmacia titular lee un documento de cliente:
  * - mdf_ca_vista_previa (GET): manage_options + nonce por documento +
@@ -56,9 +60,6 @@ class Admin_Publicacion_Documentos {
 	private const PARENT_SLUG       = 'mdf-ca-documentos';
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_publicacion_notice_';
 
-	/** Publicados recientes que se listan para poder despublicar. */
-	private const LIMITE_RECIENTES = 50;
-
 	private const CONFIRMACION_TTL      = 15 * MINUTE_IN_SECONDS;
 	private const BLOQUE_KEY_PREFIX     = 'mdf_ca_publicar_bloque_';
 	private const NONCE_BLOQUE_PREPARAR = 'mdf_ca_publicacion_bloque_preparar';
@@ -78,7 +79,6 @@ class Admin_Publicacion_Documentos {
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ), 11 );
 		add_action( 'admin_post_mdf_ca_publicar_documento', array( __CLASS__, 'gestionar_publicar' ) );
 		add_action( 'admin_post_mdf_ca_publicar_farmacia', array( __CLASS__, 'gestionar_publicar_farmacia' ) );
-		add_action( 'admin_post_mdf_ca_despublicar_documento', array( __CLASS__, 'gestionar_despublicar' ) );
 		add_action( 'admin_post_mdf_ca_publicacion_bloque_preparar', array( __CLASS__, 'gestionar_bloque_preparar' ) );
 		add_action( 'admin_post_mdf_ca_publicacion_bloque_aplicar', array( __CLASS__, 'gestionar_bloque_aplicar' ) );
 		add_action( 'admin_post_mdf_ca_publicacion_bloque_cancelar', array( __CLASS__, 'gestionar_bloque_cancelar' ) );
@@ -162,7 +162,6 @@ class Admin_Publicacion_Documentos {
 			$pendientes_por_farmacia[ $documento->get_farmacia_id() ][] = $documento;
 		}
 
-		$recientes        = $repositorio->find_publicados_recibidos( self::LIMITE_RECIENTES );
 		$total_pendientes = $repositorio->contar_pendientes_publicacion();
 		$aviso            = self::consumir_aviso();
 		$nonce_preparar   = self::NONCE_BLOQUE_PREPARAR;
@@ -212,10 +211,10 @@ class Admin_Publicacion_Documentos {
 
 		check_admin_referer( 'mdf_ca_publicar_documento_' . $id );
 
-		$cambiados = ( new Documento_Repository() )->set_publicado( $id, true );
+		$cambiados = ( new Documento_Publicacion_Service() )->publicar_uno( $id, get_current_user_id() );
 
-		if ( false === $cambiados ) {
-			self::guardar_aviso( 'error', 'No se pudo publicar el documento.' );
+		if ( is_wp_error( $cambiados ) ) {
+			self::guardar_aviso( 'error', $cambiados->get_error_message() );
 		} elseif ( $cambiados > 0 ) {
 			self::guardar_aviso( 'success', 'Documento publicado. Ya lo ve su farmacia.' );
 		} else {
@@ -238,32 +237,12 @@ class Admin_Publicacion_Documentos {
 			self::redirigir();
 		}
 
-		$cambiados = ( new Documento_Repository() )->publicar_todos_de_farmacia( $farmacia_id );
+		$cambiados = ( new Documento_Publicacion_Service() )->publicar_farmacia( $farmacia_id, get_current_user_id() );
 
-		if ( false === $cambiados ) {
-			self::guardar_aviso( 'error', 'No se pudieron publicar los documentos.' );
+		if ( is_wp_error( $cambiados ) ) {
+			self::guardar_aviso( 'error', $cambiados->get_error_message() );
 		} else {
 			self::guardar_aviso( $cambiados > 0 ? 'success' : 'warning', sprintf( 'Documentos publicados: %d.', $cambiados ) );
-		}
-
-		self::redirigir();
-	}
-
-	public static function gestionar_despublicar(): void {
-		self::exigir_capacidad();
-
-		$id = isset( $_POST['documento_id'] ) ? (int) $_POST['documento_id'] : 0;
-
-		check_admin_referer( 'mdf_ca_despublicar_documento_' . $id );
-
-		$cambiados = ( new Documento_Repository() )->set_publicado( $id, false );
-
-		if ( false === $cambiados ) {
-			self::guardar_aviso( 'error', 'No se pudo despublicar el documento.' );
-		} elseif ( $cambiados > 0 ) {
-			self::guardar_aviso( 'success', 'Documento despublicado. Su farmacia ya no lo ve.' );
-		} else {
-			self::guardar_aviso( 'warning', 'El documento no existe o ya estaba pendiente de publicar.' );
 		}
 
 		self::redirigir();

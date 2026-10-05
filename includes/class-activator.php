@@ -10,6 +10,7 @@ class Activator {
 	public static function activate() {
 		self::create_tables();
 		update_option( 'mdf_ca_db_version', MDF_CA_DB_VERSION );
+		self::marcar_inicio_de_eventos();
 		self::migrar_planes_desde_varchar();
 		Roles::register();
 		Area_Privada_Pages::crear_paginas();
@@ -43,6 +44,11 @@ class Activator {
 			self::create_tables();
 			update_option( 'mdf_ca_db_version', MDF_CA_DB_VERSION );
 		}
+
+		// Eventos de publicacion (#318): desde cuando existe el registro.
+		// Va despues de create_tables() (que crea la tabla). Lo anterior a
+		// esta marca no tiene eventos y la pantalla lo dice.
+		self::marcar_inicio_de_eventos();
 
 		// Avisos de documentos nuevos (Fase 4): los documentos que ya
 		// existen al desplegar cuentan como notificados, para que activar
@@ -86,6 +92,27 @@ class Activator {
 			flush_rewrite_rules();
 			update_option( 'mdf_ca_visor_rewrite_flushed', '1' );
 		}
+	}
+
+	/**
+	 * Fija, una sola vez, desde cuando se registran los eventos de
+	 * publicacion: el instante (UTC, para mostrarlo) y el id mas alto de
+	 * documento en ese momento. Un documento con id <= ese no tiene registro
+	 * de lo ocurrido antes. Se usa el id y no fecha_subida porque esta sale
+	 * del CURRENT_TIMESTAMP de MySQL, que no tiene por que estar en UTC. Va
+	 * despues de create_tables(). Autoload: se lee en cada carga sin consulta.
+	 */
+	private static function marcar_inicio_de_eventos(): void {
+		global $wpdb;
+
+		if ( false !== get_option( 'mdf_ca_eventos_desde' ) ) {
+			return;
+		}
+
+		$ultimo_id = (int) $wpdb->get_var( 'SELECT COALESCE(MAX(id), 0) FROM ' . DB_Schema::get_documentos_table_name() );
+
+		add_option( 'mdf_ca_eventos_desde_doc_id', $ultimo_id, '', true );
+		add_option( 'mdf_ca_eventos_desde', gmdate( 'Y-m-d H:i:s' ), '', true );
 	}
 
 	private static function create_tables() {
