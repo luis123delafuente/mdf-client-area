@@ -19,6 +19,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   Identificador_Fiscal_Validator (nunca se fia del dato recibido) y se busca
  *   con Farmacia_Repository::find_by_cif(): asignada o cif_sin_farmacia.
  * - El cruce es solo por CIF/NIF, nunca por nombre.
+ * - El emisor (CIF de la sociedad del grupo que factura) y la serie se
+ *   revalidan contra Factura_Emisores (#314): sin emisor, emisor
+ *   desconocido o serie que no es de ese emisor dan formato_inesperado.
+ *   El emisor nunca se deduce de la serie.
  *
  * Sin hooks ni endpoint: lo llamara el endpoint de subida (otra tarea). No
  * decide visibilidad: eso sigue siendo Permissions.
@@ -52,7 +56,7 @@ class Factura_Cruce_Service {
 	 * @param array<string, mixed> $resultado Salida del parser (una factura).
 	 * @return array{
 	 *     estado: string, motivo: string, farmacia_id: ?int, cif: ?string,
-	 *     serie: ?string, numero: ?string, fecha: ?string,
+	 *     emisor: ?string, serie: ?string, numero: ?string, fecha: ?string,
 	 *     importe_total_centimos: ?int, es_abono: bool
 	 * }
 	 */
@@ -63,6 +67,9 @@ class Factura_Cruce_Service {
 			'farmacia_id'            => null,
 			'cif'                    => isset( $resultado['cif'] ) && is_string( $resultado['cif'] )
 				? Identificador_Fiscal_Validator::normalizar( $resultado['cif'] )
+				: null,
+			'emisor'                 => isset( $resultado['emisor'] ) && is_string( $resultado['emisor'] )
+				? Identificador_Fiscal_Validator::normalizar( $resultado['emisor'] )
 				: null,
 			'serie'                  => isset( $resultado['serie'] ) ? (string) $resultado['serie'] : null,
 			'numero'                 => isset( $resultado['numero'] ) ? (string) $resultado['numero'] : null,
@@ -94,8 +101,11 @@ class Factura_Cruce_Service {
 		// o no tiene la forma esperada, no se asigna.
 		$fecha = null === $cruce['fecha'] ? false : \DateTimeImmutable::createFromFormat( '!Y-m-d', $cruce['fecha'] );
 
-		if ( null === $cruce['serie'] || ! preg_match( '/^[A-Z]$/', $cruce['serie'] )
-			|| null === $cruce['numero'] || ! preg_match( '/^\d+$/', $cruce['numero'] )
+		// Serie de 1 a 3 letras (el parser usa hasta 2) y numero de hasta 20
+		// cifras (el ancho de documentos.factura_numero). /D: "$" no admite un
+		// salto de linea final.
+		if ( null === $cruce['serie'] || ! preg_match( '/^[A-Z]{1,3}$/D', $cruce['serie'] )
+			|| null === $cruce['numero'] || ! preg_match( '/^\d{1,20}$/D', $cruce['numero'] )
 			|| ! $fecha || $fecha->format( 'Y-m-d' ) !== $cruce['fecha'] || ! Documento_Service::fecha_documento_valida( $cruce['fecha'] )
 			|| null === $cruce['importe_total_centimos'] ) {
 			return array_merge(
@@ -107,7 +117,19 @@ class Factura_Cruce_Service {
 			);
 		}
 
-		if ( null === $cruce['cif'] || '' === $cruce['cif'] ) {
+		if ( null === $cruce['emisor'] || ! Factura_Emisores::admite( $cruce['emisor'], $cruce['serie'] ) ) {
+			return array_merge(
+				$cruce,
+				array(
+					'estado' => self::FORMATO_INESPERADO,
+					'motivo' => 'Falta el emisor, no es una sociedad del grupo admitida o la serie no es de ese emisor.',
+				)
+			);
+		}
+
+		// El CIF de una sociedad del grupo en la columna del cliente no es el de
+		// una farmacia (el parser ya lo descarta; aqui no se da por supuesto).
+		if ( null === $cruce['cif'] || '' === $cruce['cif'] || Factura_Emisores::es_emisor( $cruce['cif'] ) ) {
 			return array_merge(
 				$cruce,
 				array(

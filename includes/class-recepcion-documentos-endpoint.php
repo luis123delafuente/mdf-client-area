@@ -25,9 +25,15 @@ if ( ! defined( 'ABSPATH' ) ) {
  *              Cualquier otro fichero adjunto da 400.
  *   resultado  Objeto JSON de como maximo 8 KB: UNA linea de la salida de
  *              `python -m parser_facturas`, tal cual. Se usan solo estos
- *              campos: estado, cif, serie, numero, fecha, importe_total_centimos.
- *              Nunca se confia en ellos: Factura_Cruce_Service::cruzar()
- *              los revalida. El campo "motivo" del parser se ignora.
+ *              campos: estado, emisor, cif, serie, numero, fecha,
+ *              importe_total_centimos. Nunca se confia en ellos:
+ *              Factura_Cruce_Service::cruzar() los revalida. El resto
+ *              ("motivo", "es_abono", etc.) se ignora.
+ *              emisor (obligatorio, #314): CIF de la sociedad del grupo que
+ *              emite la factura. Tiene que estar en Factura_Emisores y la
+ *              serie tiene que ser una de las suyas (serie de 1 a 3 letras,
+ *              numero de 1 a 20 cifras); si no, o si falta, 422
+ *              formato_inesperado.
  *   notificar  Opcional, "1" o "0" (por defecto "1"). Con "0" el documento no
  *              genera aviso por email a la farmacia (ingesta del historico).
  *
@@ -35,18 +41,24 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  *   201 {"resultado":"aceptado","documento_id":N,"publicado":true|false}
  *       Estado "asignada": documento creado en la farmacia del CIF (tipo
- *       factura, no descargable, nombre en disco aleatorio, carpeta privada).
+ *       factura, no descargable, nombre en disco aleatorio, carpeta privada),
+ *       con su emisor, serie y numero guardados. Nombre visible
+ *       "Factura <sociedad> <serie> <numero>" ("Abono ..." si el importe
+ *       revalidado es negativo), p. ej. "Factura Formación SF 186".
  *       "publicado":false = pendiente de publicar: invisible para toda
  *       farmacia hasta que un administrador lo publica en el backoffice. Es
  *       lo normal mientras la option mdf_ca_recepcion_requiere_aprobacion
  *       este activa (lo esta por defecto); apagada, nace publicado.
  *   200 {"resultado":"duplicado","documento_id":N}
- *       El mismo PDF (SHA-256) ya estaba guardado para esa farmacia.
+ *       Ya estaba guardado para esa farmacia el mismo PDF (SHA-256) o la
+ *       misma factura (mismo emisor, serie y numero, aunque el PDF tenga
+ *       otros bytes). No se escribe nada.
  *   422 {"resultado":"excepcion","estado":"...","motivo":"..."}
  *       No se guarda nada. estado: sin_texto, formato_inesperado,
  *       numero_discrepante, sin_cif, cif_invalido, cif_sin_farmacia o
- *       documento_en_otra_farmacia (el mismo PDF ya esta guardado para OTRA
- *       farmacia). El motivo es un texto fijo del servidor.
+ *       documento_en_otra_farmacia (el mismo PDF, o la misma factura, ya esta
+ *       guardado para OTRA farmacia; no dice cual). El motivo es un texto
+ *       fijo del servidor.
  *   Cualquier error: {"code":"mdf_ca_peticion_rechazada","message":"Peticion rechazada."}
  *       con el mismo cuerpo siempre; solo cambia el codigo HTTP, para que el
  *       robot sepa si reintentar:
@@ -68,7 +80,7 @@ class Recepcion_Documentos_Endpoint {
 
 	private const MAX_JSON_BYTES   = 8192;
 	private const MAX_CAMPO_BYTES  = 200;
-	private const CAMPOS_RESULTADO = array( 'estado', 'cif', 'serie', 'numero', 'fecha', 'importe_total_centimos' );
+	private const CAMPOS_RESULTADO = array( 'estado', 'emisor', 'cif', 'serie', 'numero', 'fecha', 'importe_total_centimos' );
 
 	/** Textos fijos del servidor para cada excepcion (el motivo del cliente no se devuelve). */
 	private const MOTIVOS = array(
@@ -182,31 +194,38 @@ class Recepcion_Documentos_Endpoint {
 		}
 
 		$repositorio = new Documento_Repository();
-		$existente   = $repositorio->find_by_hash( $hash );
+		$factura     = array(
+			'emisor_cif' => $cruce['emisor'],
+			'serie'      => $cruce['serie'],
+			'numero'     => $cruce['numero'],
+		);
+		$existentes  = self::buscar_existentes( $repositorio, $hash, $factura );
 
-		if ( $existente ) {
-			return self::respuesta_duplicado( $existente, (int) $cruce['farmacia_id'] );
+		if ( $existentes ) {
+			return self::respuesta_duplicado( $existentes, (int) $cruce['farmacia_id'] );
 		}
 
 		$etiqueta  = $cruce['importe_total_centimos'] < 0 ? 'Abono' : 'Factura';
 		$publicar  = ! Recepcion_Registro::requiere_aprobacion();
 		$documento = ( new Documento_Service() )->subir_factura_recibida(
 			(int) $cruce['farmacia_id'],
-			sprintf( '%s %s %s', $etiqueta, $cruce['serie'], $cruce['numero'] ),
+			sprintf( '%s %s %s %s', $etiqueta, Factura_Emisores::nombre_corto( $cruce['emisor'] ), $cruce['serie'], $cruce['numero'] ),
 			$archivo,
 			$hash,
+			$factura,
 			$notificar,
 			$publicar,
 			$cruce['fecha'] // revalidada por Factura_Cruce_Service, nunca la declarada
 		);
 
 		if ( is_wp_error( $documento ) ) {
-			// Dos envios identicos a la vez: el UNIQUE del hash hace fallar
-			// el segundo INSERT. Si ahora existe, es un duplicado.
-			$existente = $repositorio->find_by_hash( $hash );
+			// Dos envios de la misma factura a la vez: el UNIQUE del hash o el
+			// de la factura hace fallar el segundo INSERT. Si ahora existe, es
+			// un duplicado (o la misma factura en otra farmacia).
+			$existentes = self::buscar_existentes( $repositorio, $hash, $factura );
 
-			if ( $existente ) {
-				return self::respuesta_duplicado( $existente, (int) $cruce['farmacia_id'] );
+			if ( $existentes ) {
+				return self::respuesta_duplicado( $existentes, (int) $cruce['farmacia_id'] );
 			}
 
 			return self::rechazar( in_array( $documento->get_error_code(), array( 'mdf_ca_error_bd', 'mdf_ca_documento_carpeta_no_disponible', 'mdf_ca_documento_error_escritura' ), true ) ? 500 : 400 );
@@ -224,11 +243,36 @@ class Recepcion_Documentos_Endpoint {
 		);
 	}
 
-	private static function respuesta_duplicado( Documento $existente, int $farmacia_id ): \WP_REST_Response {
-		// El mismo PDF para otra farmacia no es un duplicado: es un dato
-		// incoherente, y no se escribe nada.
-		if ( $existente->get_farmacia_id() !== $farmacia_id ) {
-			return self::excepcion( 'documento_en_otra_farmacia' );
+	/**
+	 * Documentos ya guardados con el mismo PDF (hash) o la misma factura
+	 * (emisor, serie y numero), sin repetir: normalmente uno o ninguno.
+	 *
+	 * @param array{emisor_cif: string, serie: string, numero: string} $factura
+	 * @return Documento[]
+	 */
+	private static function buscar_existentes( Documento_Repository $repositorio, string $hash, array $factura ): array {
+		$existentes = array();
+
+		foreach ( array(
+			$repositorio->find_by_hash( $hash ),
+			$repositorio->find_by_factura( $factura['emisor_cif'], $factura['serie'], $factura['numero'] ),
+		) as $documento ) {
+			if ( $documento ) {
+				$existentes[ $documento->get_id() ] = $documento;
+			}
+		}
+
+		return array_values( $existentes );
+	}
+
+	/** @param Documento[] $existentes No vacio. */
+	private static function respuesta_duplicado( array $existentes, int $farmacia_id ): \WP_REST_Response {
+		// El mismo PDF o la misma factura para otra farmacia no es un
+		// duplicado: es un dato incoherente, y no se escribe nada.
+		foreach ( $existentes as $existente ) {
+			if ( $existente->get_farmacia_id() !== $farmacia_id ) {
+				return self::excepcion( 'documento_en_otra_farmacia' );
+			}
 		}
 
 		Recepcion_Registro::registrar( Recepcion_Registro::DUPLICADO );
@@ -236,7 +280,7 @@ class Recepcion_Documentos_Endpoint {
 		return new \WP_REST_Response(
 			array(
 				'resultado'    => 'duplicado',
-				'documento_id' => $existente->get_id(),
+				'documento_id' => $existentes[0]->get_id(),
 			),
 			200
 		);

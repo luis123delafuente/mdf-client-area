@@ -40,6 +40,26 @@ class Documento_Repository {
 	}
 
 	/**
+	 * Factura recibida con este emisor, serie y numero (#314), sea cual sea
+	 * su farmacia. El UNIQUE de las tres columnas garantiza una como maximo.
+	 */
+	public function find_by_factura( string $emisor_cif, string $serie, string $numero ): ?Documento {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$row   = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE emisor_cif = %s AND factura_serie = %s AND factura_numero = %s",
+				$emisor_cif,
+				$serie,
+				$numero
+			)
+		);
+
+		return $row ? Documento::from_db_row( $row ) : null;
+	}
+
+	/**
 	 * Documentos de una farmacia, mas recientes primero. Usado por el
 	 * listado de front (#241): la consulta ya viene acotada a la farmacia,
 	 * asi que quien la consume no necesita repetir la comprobacion de
@@ -81,6 +101,10 @@ class Documento_Repository {
 	 * Insercion de metadatos. El fichero en si ya esta escrito en disco
 	 * cuando se llama aqui (responsabilidad de Documento_Service, #246):
 	 * este metodo no sabe nada de subida ni de validacion de fichero.
+	 *
+	 * @param array{emisor_cif: string, serie: string, numero: string}|null $factura
+	 *        Solo la recepcion automatica (#314): los tres valores, ya
+	 *        revalidados, o null (backoffice: las tres columnas en NULL).
 	 */
 	public function insert(
 		int $farmacia_id,
@@ -93,7 +117,8 @@ class Documento_Repository {
 		bool $ya_notificado = false,
 		?string $hash_sha256 = null,
 		bool $publicado = true,
-		?string $fecha_documento = null
+		?string $fecha_documento = null,
+		?array $factura = null
 	): ?Documento {
 		global $wpdb;
 
@@ -139,6 +164,13 @@ class Documento_Repository {
 		if ( null !== $fecha_documento ) {
 			$data['fecha_documento'] = $fecha_documento;
 			$format[]                = '%s';
+		}
+
+		if ( null !== $factura ) {
+			$data['emisor_cif']     = $factura['emisor_cif'];
+			$data['factura_serie']  = $factura['serie'];
+			$data['factura_numero'] = $factura['numero'];
+			array_push( $format, '%s', '%s', '%s' );
 		}
 
 		// Solo la recepcion automatica puede crear documentos pendientes de

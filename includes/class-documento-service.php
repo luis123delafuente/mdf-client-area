@@ -113,7 +113,7 @@ class Documento_Service {
 		}
 
 		// La subida de backoffice siempre publica.
-		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null, true, $fecha_documento );
+		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null, true, $fecha_documento, null );
 	}
 
 	/**
@@ -125,6 +125,11 @@ class Documento_Service {
 	 * Factura_Cruce_Service: aqui no se decide a quien pertenece.
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
+	 * @param array{emisor_cif: string, serie: string, numero: string} $factura
+	 *                       Emisor, serie y numero YA revalidados por
+	 *                       Factura_Cruce_Service (#314). UNIQUE: la misma
+	 *                       factura no se guarda dos veces aunque cambien los
+	 *                       bytes del PDF.
 	 * @param bool $publicar false deja el documento pendiente de publicar
 	 *                       (invisible para toda farmacia hasta que un
 	 *                       administrador lo publica, #304).
@@ -133,7 +138,7 @@ class Documento_Service {
 	 *                       validar). Obligatoria: guardar() la exige.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, bool $notificar = true, bool $publicar = true, ?string $fecha_documento = null ) {
+	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, array $factura, bool $notificar = true, bool $publicar = true, ?string $fecha_documento = null ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Farmacia no valida.' );
 		}
@@ -148,7 +153,15 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_hash_invalido', 'Hash de fichero no valido.' );
 		}
 
-		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar, $fecha_documento );
+		// Defensa en profundidad: quien llama ya lo ha revalidado.
+		if ( ! isset( $factura['emisor_cif'], $factura['serie'], $factura['numero'] )
+			|| ! is_string( $factura['emisor_cif'] ) || ! is_string( $factura['serie'] ) || ! is_string( $factura['numero'] )
+			|| ! Factura_Emisores::admite( $factura['emisor_cif'], $factura['serie'] )
+			|| 1 !== preg_match( '/^\d{1,20}$/D', $factura['numero'] ) ) {
+			return new \WP_Error( 'mdf_ca_documento_factura_invalida', 'Emisor, serie o numero de factura no validos.' );
+		}
+
+		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar, $fecha_documento, $factura );
 	}
 
 	/**
@@ -156,9 +169,10 @@ class Documento_Service {
 	 * lo mueve a la carpeta privada con nombre aleatorio y registra la fila.
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo
+	 * @param array{emisor_cif: string, serie: string, numero: string}|null $factura Solo la recepcion.
 	 * @return Documento|\WP_Error
 	 */
-	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento ) {
+	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura ) {
 		// Antes de tocar el fichero: si viene fecha, tiene que ser valida, y
 		// una factura no se guarda sin ella (la de subida nunca la sustituye).
 		if ( null !== $fecha_documento && ! self::fecha_documento_valida( $fecha_documento ) ) {
@@ -224,27 +238,44 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_error_escritura', 'No se pudo guardar el fichero en el servidor.' );
 		}
 
-		$documento = $this->repository->insert(
-			$farmacia_id,
-			$nombre,
-			$nombre_fichero,
-			$filetype['type'],
-			(int) $archivo['size'],
-			$tipo_documento,
-			// Solo un Excel puede ser descargable; para el resto el flag se
-			// ignora (siempre visor), aunque llegue marcado.
-			$descargable && self::MIME_XLSX === $filetype['type'],
-			! $notificar,
-			$hash_sha256,
-			$publicar,
-			$fecha_documento
-		);
+		// En la recepcion, un INSERT que pierde una carrera choca con un UNIQUE
+		// (hash o factura) y $wpdb escribiria en el log "Duplicate entry ..."
+		// con la serie y el numero: se silencia y el error no lleva el texto
+		// de la BD. Quien llama vuelve a buscar y responde duplicado.
+		global $wpdb;
+		$silenciar = null !== $factura;
+		$errores   = $silenciar ? $wpdb->suppress_errors( true ) : null;
+
+		try {
+			$documento = $this->repository->insert(
+				$farmacia_id,
+				$nombre,
+				$nombre_fichero,
+				$filetype['type'],
+				(int) $archivo['size'],
+				$tipo_documento,
+				// Solo un Excel puede ser descargable; para el resto el flag se
+				// ignora (siempre visor), aunque llegue marcado.
+				$descargable && self::MIME_XLSX === $filetype['type'],
+				! $notificar,
+				$hash_sha256,
+				$publicar,
+				$fecha_documento,
+				$factura
+			);
+		} finally {
+			if ( $silenciar ) {
+				$wpdb->suppress_errors( $errores );
+			}
+		}
 
 		if ( null === $documento ) {
 			wp_delete_file( $ruta_destino );
 
-			global $wpdb;
-			return new \WP_Error( 'mdf_ca_error_bd', sprintf( 'No se pudo registrar el documento: %s', $wpdb->last_error ) );
+			return new \WP_Error(
+				'mdf_ca_error_bd',
+				$silenciar ? 'No se pudo registrar el documento.' : sprintf( 'No se pudo registrar el documento: %s', $wpdb->last_error )
+			);
 		}
 
 		return $documento;

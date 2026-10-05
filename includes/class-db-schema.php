@@ -148,6 +148,17 @@ class DB_Schema {
 		// por KEY farmacia_id) y agrupa y ordena en memoria; solo tendria
 		// sentido (farmacia_id, fecha_documento) si algun dia se pagina o se
 		// filtra por mes en SQL.
+		// emisor_cif, factura_serie y factura_numero (#314): que sociedad del
+		// grupo emitio la factura y con que serie y numero. Solo los rellena
+		// la recepcion automatica, siempre los tres a la vez y ya revalidados
+		// (Factura_Cruce_Service + Factura_Emisores). El UNIQUE sobre los tres
+		// detecta la misma factura aunque SAGE regenere el PDF con otros bytes
+		// (el hash no lo veria). Una fila con algun NULL nunca choca en un
+		// UNIQUE de InnoDB: los documentos de backoffice y los anteriores
+		// (los tres en NULL, sin backfill) no colisionan entre si. Global,
+		// no por farmacia, por el mismo motivo que el hash. factura_serie es
+		// mas ancha que las 3 letras que se aceptan hoy para no tener que
+		// cambiar el esquema si se amplia.
 		// Nullable y sin backfill por dbDelta: la migracion que marca como
 		// notificados los documentos ya existentes vive en
 		// Activator::maybe_upgrade(), con su propia option. El indice
@@ -166,11 +177,15 @@ class DB_Schema {
 			hash_sha256 CHAR(64) NULL,
 			publicado TINYINT(1) NOT NULL DEFAULT 1,
 			fecha_documento DATE NULL,
+			emisor_cif VARCHAR(9) NULL,
+			factura_serie VARCHAR(10) NULL,
+			factura_numero VARCHAR(20) NULL,
 			PRIMARY KEY  (id),
 			KEY farmacia_id (farmacia_id),
 			KEY notificado_en (notificado_en,farmacia_id),
 			KEY publicado (publicado,farmacia_id),
-			UNIQUE KEY hash_sha256 (hash_sha256)
+			UNIQUE KEY hash_sha256 (hash_sha256),
+			UNIQUE KEY factura (emisor_cif,factura_serie,factura_numero)
 		) {$charset_collate};";
 
 		$registro_sql = "CREATE TABLE {$registro_table} (
