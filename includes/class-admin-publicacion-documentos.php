@@ -74,6 +74,11 @@ class Admin_Publicacion_Documentos {
 	/** Lotes que se listan en el historial. */
 	private const LIMITE_LOTES = 20;
 
+	/** Lista de pendientes (#319): farmacias por pagina, documentos por grupo y, con filtro de farmacia, documentos por pagina. */
+	private const FARMACIAS_POR_PAGINA = 20;
+	private const DOCS_POR_GRUPO       = 50;
+	private const DOCS_POR_PAGINA      = 50;
+
 	public static function register_hooks(): void {
 		// Prioridad 11: el menu padre lo registra Admin_Documentos en la 10.
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ), 11 );
@@ -86,6 +91,7 @@ class Admin_Publicacion_Documentos {
 		add_action( 'admin_post_mdf_ca_despublicar_lote_aplicar', array( __CLASS__, 'gestionar_deshacer_aplicar' ) );
 		add_action( 'admin_post_mdf_ca_despublicar_lote_cancelar', array( __CLASS__, 'gestionar_deshacer_cancelar' ) );
 		add_action( 'admin_post_mdf_ca_vista_previa', array( __CLASS__, 'gestionar_vista_previa' ) );
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'encolar_assets' ) );
 		add_action( 'admin_post_mdf_ca_vista_previa_fichero', array( __CLASS__, 'gestionar_vista_previa_fichero' ) );
 	}
 
@@ -150,19 +156,63 @@ class Admin_Publicacion_Documentos {
 
 		$repositorio = new Documento_Repository();
 
+		$farmacias        = ( new Farmacia_Repository() )->find_all();
 		$farmacias_por_id = array();
 
-		foreach ( ( new Farmacia_Repository() )->find_all() as $farmacia ) {
+		foreach ( $farmacias as $farmacia ) {
 			$farmacias_por_id[ $farmacia->get_id() ] = $farmacia;
 		}
 
-		$pendientes_por_farmacia = array();
+		// Lista paginada en SQL (#319): nunca se cargan todos los pendientes.
+		// Sin filtro de farmacia, se pagina por FARMACIAS (cada una con hasta
+		// DOCS_POR_GRUPO documentos); con filtro de farmacia hay un solo grupo
+		// y se pagina por sus documentos. Los contadores salen de SQL sobre
+		// todos los pendientes, no de lo que se pinta.
+		$filtro           = Filtro_Listado_Documentos::desde( $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- filtros de solo lectura.
+		$totales          = $repositorio->totales_pendientes();
+		$filtrados        = $filtro->hay_filtros() ? $repositorio->totales_pendientes( $filtro->farmacia(), $filtro->q ) : $totales;
+		$por_farmacia     = null !== $filtro->farmacia();
+		$por_pagina       = $por_farmacia ? self::DOCS_POR_PAGINA : self::FARMACIAS_POR_PAGINA;
+		$paginas          = max( 1, (int) ceil( ( $por_farmacia ? $filtrados['documentos'] : $filtrados['farmacias'] ) / $por_pagina ) );
+		$filtro           = $filtro->en_pagina( min( $filtro->pagina, $paginas ) );
+		$desplazamiento   = ( $filtro->pagina - 1 ) * $por_pagina;
+		$grupos           = array();
 
-		foreach ( $repositorio->find_pendientes_publicacion() as $documento ) {
-			$pendientes_por_farmacia[ $documento->get_farmacia_id() ][] = $documento;
+		if ( $por_farmacia ) {
+			if ( $filtrados['documentos'] > 0 ) {
+				$grupos[] = array(
+					'farmacia_id' => (int) $filtro->farmacia(),
+					'coinciden'   => $filtrados['documentos'],
+					'documentos'  => $repositorio->pendientes_de_farmacia( (int) $filtro->farmacia(), $filtro->q, self::DOCS_POR_PAGINA, $desplazamiento ),
+					'hay_mas'     => false,
+				);
+			}
+		} else {
+			foreach ( $repositorio->grupos_pendientes( null, $filtro->q, self::FARMACIAS_POR_PAGINA, $desplazamiento ) as $grupo ) {
+				// Uno de mas para saber si la farmacia tiene mas de los que se pintan.
+				$documentos = $repositorio->pendientes_de_farmacia( $grupo['farmacia_id'], $filtro->q, self::DOCS_POR_GRUPO + 1, 0 );
+				$grupos[]   = array(
+					'farmacia_id' => $grupo['farmacia_id'],
+					'coinciden'   => $grupo['coinciden'],
+					'documentos'  => array_slice( $documentos, 0, self::DOCS_POR_GRUPO ),
+					'hay_mas'     => count( $documentos ) > self::DOCS_POR_GRUPO,
+				);
+			}
 		}
 
-		$total_pendientes = $repositorio->contar_pendientes_publicacion();
+		$pendientes_farmacia = $repositorio->contar_pendientes_por_farmacia( array_column( $grupos, 'farmacia_id' ) );
+		$farmacia_elegida    = $por_farmacia && isset( $farmacias_por_id[ $filtro->farmacia() ] ) ? $farmacias_por_id[ $filtro->farmacia() ] : null;
+		$url_pagina          = static fn( int $n ): string => add_query_arg( $filtro->en_pagina( $n )->args(), admin_url( 'admin.php?page=' . self::MENU_SLUG ) );
+		$url_farmacia        = static fn( int $id ): string => add_query_arg( array_filter( array( 'farmacia_id' => $id, 'q' => $filtro->q ) ), admin_url( 'admin.php?page=' . self::MENU_SLUG ) );
+		$url_sin_filtros     = admin_url( 'admin.php?page=' . self::MENU_SLUG );
+		$docs_por_grupo      = self::DOCS_POR_GRUPO;
+		$total_pendientes    = $totales['documentos'];
+
+		usort(
+			$farmacias,
+			static fn( Farmacia $a, Farmacia $b ): int => strcasecmp( $a->get_nombre(), $b->get_nombre() )
+		);
+
 		$aviso            = self::consumir_aviso();
 		$nonce_preparar   = self::NONCE_BLOQUE_PREPARAR;
 		$nonce_deshacer   = self::NONCE_DESHACER_PREPARAR;
@@ -188,6 +238,13 @@ class Admin_Publicacion_Documentos {
 		}
 
 		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-publicacion-documentos.php';
+	}
+
+	/** El selector de farmacia con filtro, solo en esta pantalla. */
+	public static function encolar_assets( string $hook_suffix ): void {
+		if ( 'documentos-mdf_page_' . self::MENU_SLUG === $hook_suffix ) {
+			Admin_Documentos::encolar_selector_farmacia();
+		}
 	}
 
 	/** URL de la vista previa de un documento (con nonce por documento). */
@@ -221,7 +278,7 @@ class Admin_Publicacion_Documentos {
 			self::guardar_aviso( 'warning', 'El documento no existe o ya estaba publicado.' );
 		}
 
-		self::redirigir();
+		self::redirigir( Filtro_Listado_Documentos::desde_retorno( $_POST )->args() );
 	}
 
 	/** Publica los pendientes de UNA farmacia; ninguna otra se toca. */
@@ -234,7 +291,7 @@ class Admin_Publicacion_Documentos {
 
 		if ( $farmacia_id < 1 || ! ( new Farmacia_Repository() )->find_by_id( $farmacia_id ) ) {
 			self::guardar_aviso( 'error', 'La farmacia no existe.' );
-			self::redirigir();
+			self::redirigir( Filtro_Listado_Documentos::desde_retorno( $_POST )->args() );
 		}
 
 		$cambiados = ( new Documento_Publicacion_Service() )->publicar_farmacia( $farmacia_id, get_current_user_id() );
@@ -245,7 +302,7 @@ class Admin_Publicacion_Documentos {
 			self::guardar_aviso( $cambiados > 0 ? 'success' : 'warning', sprintf( 'Documentos publicados: %d.', $cambiados ) );
 		}
 
-		self::redirigir();
+		self::redirigir( Filtro_Listado_Documentos::desde_retorno( $_POST )->args() );
 	}
 
 	/**

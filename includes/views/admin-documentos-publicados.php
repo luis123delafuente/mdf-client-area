@@ -50,51 +50,10 @@ $hasta_n = min( $total, $pagina * $por_pagina );
 				<tr>
 					<th scope="row"><label for="mdf-ca-publicados-farmacia">Farmacia</label></th>
 					<td>
-						<div class="mdf-ca-selector-farmacia" data-mdf-ca-selector-farmacia data-mdf-ca-opcional>
-							<div class="mdf-ca-selector-farmacia__filtros">
-								<div class="mdf-ca-selector-farmacia__combo">
-									<input
-										type="text"
-										id="mdf-ca-publicados-farmacia"
-										class="regular-text"
-										placeholder="Todas las farmacias (haz clic para buscar por nombre o CIF/NIF)"
-										autocomplete="off"
-										role="combobox"
-										aria-expanded="false"
-										aria-controls="mdf-ca-publicados-farmacia-lista"
-										aria-autocomplete="list"
-										value="<?php echo esc_attr( $farmacia_elegida ? $farmacia_elegida->get_nombre() . ' (' . $farmacia_elegida->get_cif() . ')' : '' ); ?>"
-										data-mdf-ca-buscar
-									/>
-									<ul id="mdf-ca-publicados-farmacia-lista" class="mdf-ca-selector-farmacia__lista" role="listbox" hidden data-mdf-ca-lista></ul>
-								</div>
-								<select data-mdf-ca-tipo-entidad aria-label="Filtrar por tipo de entidad">
-									<option value="">Todos los tipos</option>
-									<?php foreach ( Farmacia::TIPOS_ENTIDAD as $clave => $etiqueta ) : ?>
-										<option value="<?php echo esc_attr( $clave ); ?>"><?php echo esc_html( $etiqueta ); ?></option>
-									<?php endforeach; ?>
-								</select>
-							</div>
-							<input type="hidden" name="farmacia_id" value="<?php echo esc_attr( $farmacia_elegida ? (string) $farmacia_elegida->get_id() : '' ); ?>" data-mdf-ca-farmacia-id />
-							<script type="application/json" data-mdf-ca-farmacias>
-								<?php
-								echo wp_json_encode(
-									array_map(
-										static fn( Farmacia $f ): array => array(
-											'id'     => $f->get_id(),
-											'nombre' => $f->get_nombre(),
-											'cif'    => $f->get_cif(),
-											'tipo'   => $f->get_tipo_entidad(),
-											'tipoEt' => $f->get_tipo_entidad_etiqueta(),
-										),
-										$farmacias
-									),
-									JSON_HEX_TAG | JSON_HEX_AMP
-								);
-								?>
-							</script>
-							<p class="description" data-mdf-ca-contador aria-live="polite"></p>
-						</div>
+						<?php
+						$selector_id = 'mdf-ca-publicados-farmacia';
+						require MDF_CA_PLUGIN_DIR . 'includes/views/parcial-selector-farmacia.php';
+						?>
 					</td>
 				</tr>
 				<tr>

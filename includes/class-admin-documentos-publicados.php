@@ -38,7 +38,6 @@ class Admin_Documentos_Publicados {
 	private const PARENT_SLUG       = 'mdf-ca-documentos';
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_publicados_notice_';
 	private const POR_PAGINA        = 50;
-	private const MAX_NOMBRE        = 100;
 
 	/** Etiquetas de los origenes de un evento, en palabras. */
 	private const ORIGENES = array(
@@ -74,20 +73,7 @@ class Admin_Documentos_Publicados {
 			return;
 		}
 
-		wp_enqueue_style(
-			'mdf-ca-admin-selector-farmacia',
-			plugins_url( 'assets/css/admin-selector-farmacia.css', MDF_CA_PLUGIN_FILE ),
-			array(),
-			MDF_CA_VERSION
-		);
-
-		wp_enqueue_script(
-			'mdf-ca-admin-selector-farmacia',
-			plugins_url( 'assets/js/admin-selector-farmacia.js', MDF_CA_PLUGIN_FILE ),
-			array(),
-			MDF_CA_VERSION,
-			true
-		);
+		Admin_Documentos::encolar_selector_farmacia();
 	}
 
 	public static function url_listado( array $args = array() ): string {
@@ -125,32 +111,23 @@ class Admin_Documentos_Publicados {
 			return;
 		}
 
-		// Buscador: filtros saneados; la consulta es preparada y paginada en SQL.
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- filtros de solo lectura detras de manage_options.
-		// (int) y no absint(): un valor negativo no se convierte en otro valido.
-		$farmacia_id = isset( $_GET['farmacia_id'] ) ? max( 0, (int) wp_unslash( $_GET['farmacia_id'] ) ) : 0;
-		$q           = isset( $_GET['q'] ) ? mb_substr( trim( sanitize_text_field( wp_unslash( $_GET['q'] ) ) ), 0, self::MAX_NOMBRE ) : '';
-		$pagina      = isset( $_GET['paged'] ) ? max( 1, (int) wp_unslash( $_GET['paged'] ) ) : 1;
-		// phpcs:enable
-
+		// Buscador: filtros saneados en un solo sitio (Filtro_Listado_Documentos);
+		// la consulta es preparada y paginada en SQL.
+		$filtro      = Filtro_Listado_Documentos::desde( $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- filtros de solo lectura detras de manage_options.
+		$farmacia_id = (int) $filtro->farmacia();
+		$q           = $filtro->q;
 		$repositorio = new Documento_Repository();
-		$total       = $repositorio->contar_publicados( $farmacia_id ?: null, $q );
+		$total       = $repositorio->contar_publicados( $filtro->farmacia(), $q );
 		$paginas     = max( 1, (int) ceil( $total / self::POR_PAGINA ) );
-		$pagina      = min( $pagina, $paginas );
-		$documentos  = $repositorio->buscar_publicados( $farmacia_id ?: null, $q, self::POR_PAGINA, ( $pagina - 1 ) * self::POR_PAGINA );
+		$pagina      = min( $filtro->pagina, $paginas );
+		$documentos  = $repositorio->buscar_publicados( $filtro->farmacia(), $q, self::POR_PAGINA, ( $pagina - 1 ) * self::POR_PAGINA );
 
 		usort(
 			$farmacias,
 			static fn( Farmacia $a, Farmacia $b ): int => strcasecmp( $a->get_nombre(), $b->get_nombre() )
 		);
 
-		$filtros           = array_filter(
-			array(
-				'farmacia_id' => $farmacia_id ?: null,
-				'q'           => '' !== $q ? $q : null,
-			),
-			static fn( $v ): bool => null !== $v
-		);
+		$filtros           = $filtro->args( false );
 		$farmacia_elegida  = $farmacia_id && isset( $por_id[ $farmacia_id ] ) ? $por_id[ $farmacia_id ] : null;
 		$aviso             = self::consumir_aviso();
 		$url_pagina        = static fn( int $n ): string => self::url_listado( array_merge( $filtros, $n > 1 ? array( 'paged' => $n ) : array() ) );
@@ -226,25 +203,7 @@ class Admin_Documentos_Publicados {
 		}
 
 		// Misma busqueda y misma pagina, reconstruidas con valores saneados.
-		$args = array();
-
-		if ( ! empty( $_POST['farmacia_id'] ) && (int) wp_unslash( $_POST['farmacia_id'] ) > 0 ) {
-			$args['farmacia_id'] = (int) wp_unslash( $_POST['farmacia_id'] );
-		}
-
-		if ( ! empty( $_POST['q'] ) ) {
-			$q = mb_substr( trim( sanitize_text_field( wp_unslash( $_POST['q'] ) ) ), 0, self::MAX_NOMBRE );
-
-			if ( '' !== $q ) {
-				$args['q'] = $q;
-			}
-		}
-
-		if ( ! empty( $_POST['paged'] ) && (int) wp_unslash( $_POST['paged'] ) > 1 ) {
-			$args['paged'] = (int) wp_unslash( $_POST['paged'] );
-		}
-
-		wp_safe_redirect( self::url_listado( $args ) );
+		wp_safe_redirect( self::url_listado( Filtro_Listado_Documentos::desde( $_POST )->args() ) );
 		exit;
 	}
 

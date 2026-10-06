@@ -271,20 +271,6 @@ class Documento_Repository {
 	// Publicacion (#304): solo para el backoffice. Ninguna decide visibilidad.
 	// ------------------------------------------------------------------
 
-	/**
-	 * Pendientes de publicar, agrupables por farmacia.
-	 *
-	 * @return Documento[]
-	 */
-	public function find_pendientes_publicacion(): array {
-		global $wpdb;
-
-		$table = DB_Schema::get_documentos_table_name();
-		$rows  = $wpdb->get_results( "SELECT * FROM {$table} WHERE publicado = 0 ORDER BY farmacia_id, fecha_subida, id" );
-
-		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );
-	}
-
 	public function contar_pendientes_publicacion(): int {
 		global $wpdb;
 
@@ -540,19 +526,20 @@ class Documento_Repository {
 	}
 
 	// ------------------------------------------------------------------
-	// Buscador de documentos publicados (#318): paginado en SQL.
+	// Listas paginadas del backoffice: documentos publicados (#318) y
+	// pendientes de publicar (#319). Todo en SQL, sin cargar la tabla.
 	// ------------------------------------------------------------------
 
 	/**
-	 * Condiciones y argumentos del buscador de publicados. $nombre se busca
-	 * como texto literal (esc_like): % y _ no son comodines.
+	 * Condiciones y argumentos de las listas paginadas. $nombre se busca como
+	 * texto literal (esc_like): % y _ no son comodines.
 	 *
 	 * @return array{0: string, 1: array<int, int|string>}
 	 */
-	private function condiciones_publicados( ?int $farmacia_id, string $nombre ): array {
+	private function condiciones_busqueda( bool $publicado, ?int $farmacia_id, string $nombre ): array {
 		global $wpdb;
 
-		$where = array( 'publicado = 1' );
+		$where = array( $publicado ? 'publicado = 1' : 'publicado = 0' );
 		$args  = array();
 
 		if ( null !== $farmacia_id && $farmacia_id > 0 ) {
@@ -572,7 +559,7 @@ class Documento_Repository {
 		global $wpdb;
 
 		$table                = DB_Schema::get_documentos_table_name();
-		list( $where, $args ) = $this->condiciones_publicados( $farmacia_id, $nombre );
+		list( $where, $args ) = $this->condiciones_busqueda( true, $farmacia_id, $nombre );
 		$sql                  = "SELECT COUNT(*) FROM {$table} WHERE {$where}";
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- condiciones fijas, valores por placeholders.
@@ -588,13 +575,130 @@ class Documento_Repository {
 		global $wpdb;
 
 		$table                = DB_Schema::get_documentos_table_name();
-		list( $where, $args ) = $this->condiciones_publicados( $farmacia_id, $nombre );
+		list( $where, $args ) = $this->condiciones_busqueda( true, $farmacia_id, $nombre );
 		$args[]               = max( 1, $limite );
 		$args[]               = max( 0, $desplazamiento );
 
 		$rows = $wpdb->get_results(
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- condiciones fijas, valores por placeholders.
 			$wpdb->prepare( "SELECT * FROM {$table} WHERE {$where} ORDER BY id DESC LIMIT %d OFFSET %d", $args )
+		);
+
+		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );
+	}
+
+	/**
+	 * Cuantos pendientes y de cuantas farmacias, con los filtros dados (sin
+	 * filtros: todos). Es el recuento de arriba de la pantalla y el que
+	 * decide el numero de paginas.
+	 *
+	 * @return array{documentos: int, farmacias: int}
+	 */
+	public function totales_pendientes( ?int $farmacia_id = null, string $nombre = '' ): array {
+		global $wpdb;
+
+		$table                = DB_Schema::get_documentos_table_name();
+		list( $where, $args ) = $this->condiciones_busqueda( false, $farmacia_id, $nombre );
+		$sql                  = "SELECT COUNT(*) AS documentos, COUNT(DISTINCT farmacia_id) AS farmacias FROM {$table} WHERE {$where}";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- condiciones fijas, valores por placeholders.
+		$fila = $wpdb->get_row( $args ? $wpdb->prepare( $sql, $args ) : $sql, ARRAY_A );
+
+		return array(
+			'documentos' => (int) ( $fila['documentos'] ?? 0 ),
+			'farmacias'  => (int) ( $fila['farmacias'] ?? 0 ),
+		);
+	}
+
+	/**
+	 * Una pagina de FARMACIAS con pendientes (#319), en orden estable: la que
+	 * lleva mas tiempo esperando primero (su pendiente mas antiguo, MIN(id)),
+	 * y a igualdad por id de farmacia. Un documento nuevo nunca adelanta a
+	 * nadie: va al final de su farmacia, o crea una farmacia al final.
+	 * "coinciden" son los pendientes de la farmacia que cumplen los filtros.
+	 *
+	 * @return array<int, array{farmacia_id: int, coinciden: int}>
+	 */
+	public function grupos_pendientes( ?int $farmacia_id, string $nombre, int $limite, int $desplazamiento ): array {
+		global $wpdb;
+
+		$table                = DB_Schema::get_documentos_table_name();
+		list( $where, $args ) = $this->condiciones_busqueda( false, $farmacia_id, $nombre );
+		$args[]               = max( 1, $limite );
+		$args[]               = max( 0, $desplazamiento );
+
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- condiciones fijas, valores por placeholders.
+				"SELECT farmacia_id, MIN(id) AS primero, COUNT(*) AS coinciden FROM {$table} WHERE {$where} GROUP BY farmacia_id ORDER BY primero, farmacia_id LIMIT %d OFFSET %d",
+				$args
+			),
+			ARRAY_A
+		);
+
+		return array_map(
+			static fn( array $row ): array => array(
+				'farmacia_id' => (int) $row['farmacia_id'],
+				'coinciden'   => (int) $row['coinciden'],
+			),
+			$rows ?: array()
+		);
+	}
+
+	/**
+	 * Todos los pendientes de cada una de estas farmacias, sin filtros: el
+	 * contador de su cabecera, el mismo en cualquier pagina, y lo que publica
+	 * "Publicar todos los de esta farmacia".
+	 *
+	 * @param int[] $farmacia_ids
+	 * @return array<int, int> farmacia_id => pendientes
+	 */
+	public function contar_pendientes_por_farmacia( array $farmacia_ids ): array {
+		global $wpdb;
+
+		$farmacia_ids = array_values( array_filter( array_map( 'intval', $farmacia_ids ) ) );
+
+		if ( ! $farmacia_ids ) {
+			return array();
+		}
+
+		$table        = DB_Schema::get_documentos_table_name();
+		$placeholders = implode( ',', array_fill( 0, count( $farmacia_ids ), '%d' ) );
+		$rows         = $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba.
+				"SELECT farmacia_id, COUNT(*) AS total FROM {$table} WHERE publicado = 0 AND farmacia_id IN ({$placeholders}) GROUP BY farmacia_id",
+				$farmacia_ids
+			),
+			ARRAY_A
+		);
+
+		$recuentos = array();
+
+		foreach ( $rows ?: array() as $row ) {
+			$recuentos[ (int) $row['farmacia_id'] ] = (int) $row['total'];
+		}
+
+		return $recuentos;
+	}
+
+	/**
+	 * Pendientes de UNA farmacia que cumplen el filtro de nombre, por id
+	 * ascendente (orden estable: los nuevos van al final).
+	 *
+	 * @return Documento[]
+	 */
+	public function pendientes_de_farmacia( int $farmacia_id, string $nombre, int $limite, int $desplazamiento ): array {
+		global $wpdb;
+
+		$table                = DB_Schema::get_documentos_table_name();
+		list( $where, $args ) = $this->condiciones_busqueda( false, $farmacia_id, $nombre );
+		$args[]               = max( 1, $limite );
+		$args[]               = max( 0, $desplazamiento );
+
+		$rows = $wpdb->get_results(
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- condiciones fijas, valores por placeholders.
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE {$where} ORDER BY id ASC LIMIT %d OFFSET %d", $args )
 		);
 
 		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );

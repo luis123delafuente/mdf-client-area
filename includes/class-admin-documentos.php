@@ -46,6 +46,14 @@ class Admin_Documentos {
 			return;
 		}
 
+		self::encolar_selector_farmacia();
+	}
+
+	/**
+	 * CSS y JS del selector de farmacia con filtro. Lo usan Documentos MDF,
+	 * Documentos publicados y Pendientes de publicar (#318, #319).
+	 */
+	public static function encolar_selector_farmacia(): void {
 		wp_enqueue_style(
 			'mdf-ca-admin-selector-farmacia',
 			plugins_url( 'assets/css/admin-selector-farmacia.css', MDF_CA_PLUGIN_FILE ),
