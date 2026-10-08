@@ -28,6 +28,13 @@ class Documento_Endpoint {
 
 	private const QUERY_VAR = 'mdf_ca_documento_id';
 
+	/**
+	 * Ruta de la carpeta privada relativa a ABSPATH. La usa tambien
+	 * Carpeta_Privada_Proteccion para la URL de la sonda y para los avisos
+	 * (que nunca muestran la ruta absoluta).
+	 */
+	public const CARPETA_RELATIVA = 'Clientes/private-docs';
+
 	public static function register_hooks(): void {
 		add_action( 'init', array( __CLASS__, 'registrar_rewrite' ) );
 		add_filter( 'query_vars', array( __CLASS__, 'registrar_query_var' ) );
@@ -148,6 +155,6 @@ class Documento_Endpoint {
 	 * sitios. No cambia nada de la logica de permisos de esta clase.
 	 */
 	public static function get_carpeta_documentos(): string {
-		return ABSPATH . 'Clientes/private-docs';
+		return ABSPATH . self::CARPETA_RELATIVA;
 	}
 }

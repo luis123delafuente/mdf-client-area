@@ -15,6 +15,12 @@ class Activator {
 		Roles::register();
 		Area_Privada_Pages::crear_paginas();
 
+		// Proteccion de la carpeta privada (#327): crea lo que falte y hace
+		// la comprobacion HTTP (como mucho 5 s, solo al activar). La option
+		// evita que maybe_upgrade() la repita y tire la cache recien hecha.
+		Carpeta_Privada_Proteccion::comprobar( true );
+		update_option( 'mdf_ca_proteccion_carpeta_v1', '1' );
+
 		// Las rewrite rules de Documento_Endpoint y Documento_Visor se
 		// registran en cada carga via 'init', pero el flush (caro, no se
 		// debe hacer en cada peticion) solo debe pasar al activar/desactivar.
@@ -67,6 +73,18 @@ class Activator {
 		if ( ! get_option( 'mdf_ca_roles_v2' ) ) {
 			Roles::register_robot();
 			update_option( 'mdf_ca_roles_v2', '1' );
+		}
+
+		// Proteccion de la carpeta privada (#327) en las instalaciones ya
+		// activas: crea solo lo que falte, una vez. Sin sonda HTTP, porque
+		// esto corre en 'init' y puede ser la peticion de un visitante: se
+		// borra la cache y la sonda la hace la primera pantalla del plugin
+		// que abra un administrador. La option se marca aunque falle (sin
+		// permisos de escritura): esa pantalla lo reintenta y lo avisa.
+		if ( ! get_option( 'mdf_ca_proteccion_carpeta_v1' ) ) {
+			Carpeta_Privada_Proteccion::asegurar();
+			Carpeta_Privada_Proteccion::invalidar_cache();
+			update_option( 'mdf_ca_proteccion_carpeta_v1', '1' );
 		}
 
 		if ( ! get_option( 'mdf_ca_planes_migrados' ) ) {
