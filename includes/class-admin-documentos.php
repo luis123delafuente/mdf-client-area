@@ -26,6 +26,7 @@ class Admin_Documentos {
 	public static function register_hooks(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ) );
 		add_action( 'admin_post_mdf_ca_subir_documento', array( __CLASS__, 'gestionar_subir' ) );
+		add_action( 'admin_post_mdf_ca_retirar_modelo_347', array( __CLASS__, 'gestionar_retirar_modelo_347' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'encolar_assets' ) );
 	}
 
@@ -47,6 +48,16 @@ class Admin_Documentos {
 		}
 
 		self::encolar_selector_farmacia();
+
+		// Muestra ejercicio y sociedad solo con el tipo Modelo 347, y la fecha
+		// con el resto. Sin JS se ven todos los campos: decide el servidor.
+		wp_enqueue_script(
+			'mdf-ca-admin-documentos',
+			plugins_url( 'assets/js/admin-documentos.js', MDF_CA_PLUGIN_FILE ),
+			array(),
+			MDF_CA_VERSION,
+			true
+		);
 	}
 
 	/**
@@ -115,12 +126,49 @@ class Admin_Documentos {
 		$fecha_documento = isset( $_POST['fecha_documento'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['fecha_documento'] ) ) ) : '';
 		$fecha_documento = '' === $fecha_documento ? null : $fecha_documento;
 
-		$resultado = ( new Documento_Service() )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, true, $fecha_documento );
+		// Modelo 347 (#307): ejercicio y sociedad emisora; vacios = null y el
+		// servicio los exige y valida. En el resto de tipos se ignoran.
+		$ejercicio  = isset( $_POST['ejercicio'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['ejercicio'] ) ) ) : '';
+		$ejercicio  = 1 === preg_match( '/^\d{4}$/D', $ejercicio ) ? (int) $ejercicio : null;
+		$emisor_cif = isset( $_POST['emisor_cif'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['emisor_cif'] ) ) ) : '';
+		$emisor_cif = '' === $emisor_cif ? null : $emisor_cif;
+
+		$resultado = ( new Documento_Service() )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, true, $fecha_documento, $ejercicio, $emisor_cif );
 
 		if ( is_wp_error( $resultado ) ) {
 			self::guardar_aviso( 'error', $resultado->get_error_message() );
 		} else {
 			self::guardar_aviso( 'success', sprintf( 'Documento "%s" subido y asignado correctamente.', $resultado->get_nombre() ) );
+		}
+
+		self::redirigir();
+	}
+
+	/**
+	 * Retirar para correccion un Modelo 347 (#307). Nonce por documento y
+	 * casilla de confirmacion obligatoria; la logica (transaccion, eventos)
+	 * vive en Documento_Publicacion_Service::retirar_modelo_347().
+	 */
+	public static function gestionar_retirar_modelo_347(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'No tienes permiso para realizar esta accion.' );
+		}
+
+		$id = isset( $_POST['documento_id'] ) ? (int) $_POST['documento_id'] : 0;
+
+		check_admin_referer( 'mdf_ca_retirar_modelo_347_' . $id );
+
+		if ( empty( $_POST['confirmar'] ) ) {
+			self::guardar_aviso( 'error', 'Marca la casilla de confirmacion para retirar el Modelo 347. No se ha cambiado nada.' );
+			self::redirigir();
+		}
+
+		$resultado = ( new Documento_Publicacion_Service() )->retirar_modelo_347( $id, get_current_user_id() );
+
+		if ( is_wp_error( $resultado ) ) {
+			self::guardar_aviso( 'error', $resultado->get_error_message() );
+		} else {
+			self::guardar_aviso( 'success', 'Modelo 347 retirado: su farmacia ya no lo ve. Ya puedes subir el corregido (lo que la farmacia ya vio o descargo no se puede retirar).' );
 		}
 
 		self::redirigir();

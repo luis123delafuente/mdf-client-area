@@ -25,7 +25,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * - "agrupada" (por defecto): documentos por tipo, en el orden de
  *   Documento_Tipos::get_grupos_listado(), y las facturas ademas por ano y mes
  *   de la FECHA DE LA FACTURA (nunca la de subida) con el mes en espanol; las
- *   facturas sin fecha, en un grupo "Sin fecha". Secciones colapsables con
+ *   facturas sin fecha, en un grupo "Sin fecha". El Modelo 347 (#307), justo
+ *   despues, por EJERCICIO (nunca por fecha de subida), sin meses, y los que
+ *   no tienen ejercicio en "Sin ejercicio". Secciones colapsables con
  *   <details> nativo, sin JavaScript.
  * - "plana": el listado de siempre, byte a byte (ul/li sin agrupar).
  * El agrupado es solo presentacion: una unica consulta, el filtrado de
@@ -155,9 +157,13 @@ class Shortcode_Listado_Documentos {
 				continue;
 			}
 
-			$cuerpo = 'factura' === $clave
-				? self::render_facturas( $grupos[ $clave ] )
-				: self::render_items( self::ordenar_por_subida( $grupos[ $clave ] ), false );
+			if ( 'factura' === $clave ) {
+				$cuerpo = self::render_facturas( $grupos[ $clave ] );
+			} elseif ( 'modelo_347' === $clave ) {
+				$cuerpo = self::render_modelo_347( $grupos[ $clave ] );
+			} else {
+				$cuerpo = self::render_items( self::ordenar_por_subida( $grupos[ $clave ] ), false );
+			}
 
 			$html .= self::seccion( 'mdf-ca-listado-documentos__grupo mdf-ca-listado-documentos__grupo--' . $clave, $etiqueta, count( $grupos[ $clave ] ), $cuerpo, true );
 		}
@@ -240,6 +246,55 @@ class Shortcode_Listado_Documentos {
 	}
 
 	/**
+	 * Modelo 347 por ejercicio, el mas reciente primero, sin meses; dentro de
+	 * cada ejercicio, por nombre (los de las dos sociedades juntos). Sin
+	 * ejercicio: "Sin ejercicio" al final. La fecha de subida NUNCA sustituye
+	 * al ejercicio, y en los ejercicios no se muestra (no es la fecha del
+	 * documento). Solo el ejercicio mas reciente sale abierto.
+	 *
+	 * @param Documento[] $documentos
+	 */
+	private static function render_modelo_347( array $documentos ): string {
+		$por_ejercicio = array(); // AAAA => Documento[]
+		$sin_ejercicio = array();
+
+		foreach ( $documentos as $documento ) {
+			if ( null === $documento->get_ejercicio() ) {
+				$sin_ejercicio[] = $documento;
+			} else {
+				$por_ejercicio[ $documento->get_ejercicio() ][] = $documento;
+			}
+		}
+
+		krsort( $por_ejercicio, SORT_NUMERIC );
+
+		$html    = '';
+		$primero = true;
+
+		foreach ( $por_ejercicio as $ejercicio => $docs ) {
+			usort(
+				$docs,
+				static fn( Documento $a, Documento $b ): int => array( $a->get_nombre(), $a->get_id() ) <=> array( $b->get_nombre(), $b->get_id() )
+			);
+
+			$html   .= self::seccion( 'mdf-ca-listado-documentos__anio', (string) $ejercicio, count( $docs ), self::render_items( $docs, false, false, false ), $primero, array( 'data-anio' => (string) $ejercicio ) );
+			$primero = false;
+		}
+
+		if ( $sin_ejercicio ) {
+			$html .= self::seccion(
+				'mdf-ca-listado-documentos__anio mdf-ca-listado-documentos__anio--sin-ejercicio',
+				'Sin ejercicio',
+				count( $sin_ejercicio ),
+				self::render_items( self::ordenar_por_subida( $sin_ejercicio ), false, true ),
+				false
+			);
+		}
+
+		return $html;
+	}
+
+	/**
 	 * Un bloque colapsable. $cuerpo ya viene escapado; aqui se escapan titulo,
 	 * contador y atributos.
 	 *
@@ -262,15 +317,18 @@ class Shortcode_Listado_Documentos {
 	/**
 	 * @param Documento[] $documentos
 	 * @param bool        $con_fecha_factura true: la fecha que se muestra es la de la factura.
-	 * @param bool        $es_sin_fecha      true: factura sin fecha; se indica "Subido el", nunca como si fuera la fecha de la factura.
+	 * @param bool        $es_sin_fecha      true: factura sin fecha (o 347 sin ejercicio); se indica "Subido el", nunca como si fuera la fecha del documento.
+	 * @param bool        $con_fecha         false: sin fecha visible (Modelo 347 dentro de su ejercicio).
 	 */
-	private static function render_items( array $documentos, bool $con_fecha_factura, bool $es_sin_fecha = false ): string {
+	private static function render_items( array $documentos, bool $con_fecha_factura, bool $es_sin_fecha = false, bool $con_fecha = true ): string {
 		$items = '';
 
 		foreach ( $documentos as $documento ) {
 			$url = home_url( 'mdf-ca-visor/' . $documento->get_id() . '/' );
 
-			if ( $con_fecha_factura && null !== $documento->get_fecha_documento() ) {
+			if ( ! $con_fecha ) {
+				$fecha = '';
+			} elseif ( $con_fecha_factura && null !== $documento->get_fecha_documento() ) {
 				$fecha = '<span class="mdf-ca-listado-documentos__fecha"><time datetime="' . esc_attr( $documento->get_fecha_documento() ) . '">'
 					. esc_html( self::fecha_larga( $documento->get_fecha_documento() ) ) . '</time></span>';
 			} elseif ( $es_sin_fecha ) {
@@ -281,7 +339,7 @@ class Shortcode_Listado_Documentos {
 			}
 
 			$items .= '<li class="mdf-ca-listado-documentos__item">'
-				. '<a href="' . esc_url( $url ) . '">' . esc_html( $documento->get_nombre() ) . '</a> ' . $fecha
+				. '<a href="' . esc_url( $url ) . '">' . esc_html( $documento->get_nombre() ) . '</a>' . ( '' !== $fecha ? ' ' . $fecha : '' )
 				. '</li>';
 		}
 

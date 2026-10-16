@@ -40,6 +40,12 @@ class Admin_Documentos_Publicados {
 	private const POR_PAGINA        = 50;
 
 	/** Etiquetas de los origenes de un evento, en palabras. */
+	private const ACCIONES = array(
+		Publicacion_Evento_Repository::ACCION_PUBLICADO    => 'Publicado',
+		Publicacion_Evento_Repository::ACCION_DESPUBLICADO => 'Despublicado',
+		Publicacion_Evento_Repository::ACCION_RETIRADO     => 'Retirado para corrección',
+	);
+
 	private const ORIGENES = array(
 		Publicacion_Evento_Repository::ORIGEN_INDIVIDUAL        => 'Uno a uno',
 		Publicacion_Evento_Repository::ORIGEN_POR_FARMACIA      => 'Todos los de una farmacia',
@@ -160,7 +166,7 @@ class Admin_Documentos_Publicados {
 		foreach ( $eventos as $evento ) {
 			$filas[] = array(
 				'fecha'  => self::fecha_local( (string) $evento->fecha ),
-				'accion' => Publicacion_Evento_Repository::ACCION_PUBLICADO === $evento->accion ? 'Publicado' : 'Despublicado',
+				'accion' => self::ACCIONES[ $evento->accion ] ?? (string) $evento->accion,
 				'origen' => self::ORIGENES[ $evento->origen ] ?? (string) $evento->origen,
 				'quien'  => null === $evento->usuario_id ? '—' : self::nombre_usuario( (int) $evento->usuario_id ),
 				'lote'   => null === $evento->lote_id ? '—' : (string) (int) $evento->lote_id,
@@ -169,7 +175,7 @@ class Admin_Documentos_Publicados {
 
 		// fecha_subida se muestra como en el resto de pantallas (sin convertir).
 		$recibido      = $documento ? gmdate( 'd/m/Y H:i', (int) strtotime( $documento->get_fecha_subida() . ' UTC' ) ) : '';
-		$estado        = $documento ? ( $documento->is_publicado() ? 'Publicado' : 'Pendiente de publicar' ) : '';
+		$estado        = $documento ? ( $documento->is_retirado() ? 'Retirado para corrección' : ( $documento->is_publicado() ? 'Publicado' : 'Pendiente de publicar' ) ) : '';
 		$farmacia      = $documento ? $nombre_farmacia( $documento->get_farmacia_id() ) : '';
 		$url_publicados = self::url_listado();
 		$url_pendientes = admin_url( 'admin.php?page=mdf-ca-publicacion-documentos' );

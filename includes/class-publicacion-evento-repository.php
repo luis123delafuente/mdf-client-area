@@ -7,7 +7,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Libro de eventos de publicacion de documentos (#318): quien publico o
- * despublico cada documento, cuando y por que via. De SOLO ANADIR: esta
+ * despublico cada documento (y, desde #307, quien retiro un Modelo 347 para
+ * correccion), cuando y por que via. De SOLO ANADIR: esta
  * clase expone insertar y leer, y no hay ningun UPDATE, DELETE ni TRUNCATE
  * sobre la tabla en todo el plugin (se comprueba con grep). Corregir un
  * error se hace con un evento nuevo, nunca reescribiendo uno.
@@ -25,6 +26,8 @@ class Publicacion_Evento_Repository {
 
 	public const ACCION_PUBLICADO    = 'publicado';
 	public const ACCION_DESPUBLICADO = 'despublicado';
+	/** Modelo 347 retirado para correccion (#307). No cambia publicado: deja constancia de la retirada. */
+	public const ACCION_RETIRADO = 'retirado';
 
 	public const ORIGEN_INDIVIDUAL        = 'individual';
 	public const ORIGEN_POR_FARMACIA      = 'por_farmacia';
@@ -47,7 +50,7 @@ class Publicacion_Evento_Repository {
 	public function insertar_para( array $filas, string $accion, string $origen, ?int $usuario_id ) {
 		global $wpdb;
 
-		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO ), true ) || ! $this->origen_valido( $origen ) ) {
+		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO ), true ) || ! $this->origen_valido( $origen ) ) {
 			return false;
 		}
 

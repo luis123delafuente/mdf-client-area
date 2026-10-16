@@ -15,6 +15,16 @@ class Documento_Repository {
 	/** Ids por UPDATE en la publicacion en bloque (#316) y al deshacer un lote (#317). */
 	private const TANDA_PUBLICACION = 500;
 
+	/**
+	 * Condicion SQL de "pendiente de publicar" (#307): no publicado y no
+	 * retirado para correccion. Un Modelo 347 retirado tambien tiene
+	 * publicado = 0, pero no es un pendiente: no se cuenta, no se lista y
+	 * cambiar_estado() nunca lo publica. Todas las consultas de pendientes de
+	 * esta clase la usan; la version con alias es para las que hacen JOIN.
+	 */
+	private const PENDIENTE   = 'publicado = 0 AND retirado_en IS NULL';
+	private const PENDIENTE_D = 'd.publicado = 0 AND d.retirado_en IS NULL';
+
 	private Publicacion_Evento_Repository $eventos;
 
 	/** El repositorio de eventos es inyectable para poder probar un fallo a mitad de un cambio. */
@@ -70,6 +80,26 @@ class Documento_Repository {
 	}
 
 	/**
+	 * Modelo 347 vigente de esta farmacia, emisor y ejercicio (#307). El
+	 * UNIQUE modelo_347 garantiza uno como maximo; los retirados no cuentan.
+	 */
+	public function find_modelo_347_vigente( int $farmacia_id, string $emisor_cif, int $ejercicio ): ?Documento {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$row   = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE farmacia_id = %d AND emisor_cif = %s AND ejercicio = %d AND vigente = 1",
+				$farmacia_id,
+				$emisor_cif,
+				$ejercicio
+			)
+		);
+
+		return $row ? Documento::from_db_row( $row ) : null;
+	}
+
+	/**
 	 * Documentos de una farmacia, mas recientes primero. Usado por el
 	 * listado de front (#241): la consulta ya viene acotada a la farmacia,
 	 * asi que quien la consume no necesita repetir la comprobacion de
@@ -115,6 +145,10 @@ class Documento_Repository {
 	 * @param array{emisor_cif: string, serie: string, numero: string}|null $factura
 	 *        Solo la recepcion automatica (#314): los tres valores, ya
 	 *        revalidados, o null (backoffice: las tres columnas en NULL).
+	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347
+	 *        Solo los Modelo 347 (#307): emisor y ejercicio ya validados por
+	 *        Documento_Service. Nace vigente (vigente = 1): el UNIQUE
+	 *        modelo_347 rechaza un segundo vigente de la misma combinacion.
 	 */
 	public function insert(
 		int $farmacia_id,
@@ -128,7 +162,8 @@ class Documento_Repository {
 		?string $hash_sha256 = null,
 		bool $publicado = true,
 		?string $fecha_documento = null,
-		?array $factura = null
+		?array $factura = null,
+		?array $modelo_347 = null
 	): ?Documento {
 		global $wpdb;
 
@@ -181,6 +216,13 @@ class Documento_Repository {
 			$data['factura_serie']  = $factura['serie'];
 			$data['factura_numero'] = $factura['numero'];
 			array_push( $format, '%s', '%s', '%s' );
+		}
+
+		if ( null !== $modelo_347 ) {
+			$data['emisor_cif'] = $modelo_347['emisor_cif'];
+			$data['ejercicio']  = $modelo_347['ejercicio'];
+			$data['vigente']    = 1;
+			array_push( $format, '%s', '%d', '%d' );
 		}
 
 		// Solo la recepcion automatica puede crear documentos pendientes de
@@ -276,7 +318,7 @@ class Documento_Repository {
 
 		$table = DB_Schema::get_documentos_table_name();
 
-		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE publicado = 0" );
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE " . self::PENDIENTE );
 	}
 
 	/**
@@ -295,7 +337,7 @@ class Documento_Repository {
 
 		$table     = DB_Schema::get_documentos_table_name();
 		$farmacias = DB_Schema::get_farmacias_table_name();
-		$where     = array( 'd.publicado = 0' );
+		$where     = array( self::PENDIENTE_D );
 		$args      = array();
 
 		if ( null !== $tipo ) {
@@ -372,11 +414,13 @@ class Documento_Repository {
 		foreach ( array_chunk( $ids, self::TANDA_PUBLICACION ) as $tanda ) {
 			$placeholders = implode( ',', array_fill( 0, count( $tanda ), '%d' ) );
 			$filtro_lote  = ! $publicar && null !== $lote_id_filtro ? ' AND publicacion_lote_id = %d' : '';
+			// Un 347 retirado (#307) nunca se vuelve a publicar, por ninguna via.
+			$sin_retirados = $publicar ? ' AND retirado_en IS NULL' : '';
 
 			$bloqueadas = $wpdb->get_results(
 				$wpdb->prepare(
 					// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba; condiciones fijas.
-					"SELECT id, publicacion_lote_id FROM {$table} WHERE publicado = %d AND id IN ({$placeholders}){$filtro_lote} ORDER BY id FOR UPDATE",
+					"SELECT id, publicacion_lote_id FROM {$table} WHERE publicado = %d AND id IN ({$placeholders}){$filtro_lote}{$sin_retirados} ORDER BY id FOR UPDATE",
 					array_merge( array( $desde ), $tanda, '' !== $filtro_lote ? array( $lote_id_filtro ) : array() )
 				),
 				ARRAY_A
@@ -427,6 +471,44 @@ class Documento_Repository {
 	}
 
 	/**
+	 * Retira para correccion un Modelo 347 vigente (#307): libera su hueco en
+	 * el UNIQUE modelo_347 (vigente = NULL) y lo marca retirado. Solo si sigue
+	 * vigente y ya NO esta publicado: quien llama lo despublica antes con
+	 * cambiar_estado(), en la misma transaccion. No toca publicado.
+	 *
+	 * @return bool true si ha retirado exactamente esa fila.
+	 */
+	public function marcar_retirado( int $documento_id ): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$filas = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$table} SET vigente = NULL, retirado_en = %s WHERE id = %d AND tipo_documento = 'modelo_347' AND vigente = 1 AND retirado_en IS NULL AND publicado = 0",
+				gmdate( 'Y-m-d H:i:s' ),
+				$documento_id
+			)
+		);
+
+		return 1 === $filas;
+	}
+
+	/**
+	 * Fila de un documento bloqueada (SELECT ... FOR UPDATE) hasta el final de
+	 * la transaccion de quien llama.
+	 */
+	public function find_by_id_para_actualizar( int $id ): ?Documento {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$row   = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d FOR UPDATE", $id )
+		);
+
+		return $row ? Documento::from_db_row( $row ) : null;
+	}
+
+	/**
 	 * Publica EXACTAMENTE estos ids en un lote (#316, #317). Transaccion de
 	 * quien llama (ver cambiar_estado()).
 	 *
@@ -458,7 +540,7 @@ class Documento_Repository {
 		global $wpdb;
 
 		$table = DB_Schema::get_documentos_table_name();
-		$ids   = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE farmacia_id = %d AND publicado = 0 ORDER BY id", $farmacia_id ) );
+		$ids   = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE farmacia_id = %d AND " . self::PENDIENTE . ' ORDER BY id', $farmacia_id ) );
 
 		return '' !== $wpdb->last_error ? null : array_map( 'intval', $ids );
 	}
@@ -539,7 +621,7 @@ class Documento_Repository {
 	private function condiciones_busqueda( bool $publicado, ?int $farmacia_id, string $nombre ): array {
 		global $wpdb;
 
-		$where = array( $publicado ? 'publicado = 1' : 'publicado = 0' );
+		$where = array( $publicado ? 'publicado = 1' : self::PENDIENTE );
 		$args  = array();
 
 		if ( null !== $farmacia_id && $farmacia_id > 0 ) {
@@ -667,7 +749,7 @@ class Documento_Repository {
 		$rows         = $wpdb->get_results(
 			$wpdb->prepare(
 				// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba.
-				"SELECT farmacia_id, COUNT(*) AS total FROM {$table} WHERE publicado = 0 AND farmacia_id IN ({$placeholders}) GROUP BY farmacia_id",
+				"SELECT farmacia_id, COUNT(*) AS total FROM {$table} WHERE " . self::PENDIENTE . " AND farmacia_id IN ({$placeholders}) GROUP BY farmacia_id",
 				$farmacia_ids
 			),
 			ARRAY_A

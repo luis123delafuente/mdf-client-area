@@ -217,6 +217,20 @@ class DB_Schema {
 		// vuelto a publicar o despublicar despues por otra via. NULL en todo
 		// lo anterior (sin backfill: no se puede deshacer en bloque). Sin FK,
 		// como el resto. El indice cubre "publicados de este lote".
+		// ejercicio, vigente y retirado_en (#307, Modelo 347): solo los rellenan
+		// los documentos de tipo modelo_347. ejercicio es el ano fiscal (no se
+		// guarda como fecha_documento AAAA-12-31: no es la fecha del documento
+		// y el validador de fechas rechazaria el ejercicio en curso). El 347
+		// tambien rellena emisor_cif (la sociedad que lo emite). vigente = 1 en
+		// el 347 vigente y NULL en todo lo demas (facturas, el resto de tipos y
+		// los 347 retirados para correccion): el UNIQUE modelo_347 garantiza
+		// un unico 347 vigente por farmacia, emisor y ejercicio, y como una
+		// fila con algun NULL nunca choca, los retirados y el resto de
+		// documentos no colisionan (mismo comportamiento en MySQL y MariaDB).
+		// retirado_en (UTC) marca un 347 retirado: estado terminal, no se
+		// puede publicar ni aparece en las listas de pendientes (ver
+		// Documento_Repository::PENDIENTE). Sin backfill: todo lo anterior,
+		// NULL. Los importes del 347 nunca se guardan en la BD: solo en el PDF.
 		// Nullable y sin backfill por dbDelta: la migracion que marca como
 		// notificados los documentos ya existentes vive en
 		// Activator::maybe_upgrade(), con su propia option. El indice
@@ -239,13 +253,17 @@ class DB_Schema {
 			factura_serie VARCHAR(10) NULL,
 			factura_numero VARCHAR(20) NULL,
 			publicacion_lote_id BIGINT UNSIGNED NULL,
+			ejercicio SMALLINT UNSIGNED NULL,
+			vigente TINYINT(1) NULL,
+			retirado_en DATETIME NULL,
 			PRIMARY KEY  (id),
 			KEY farmacia_id (farmacia_id),
 			KEY notificado_en (notificado_en,farmacia_id),
 			KEY publicado (publicado,farmacia_id),
 			KEY publicacion_lote (publicacion_lote_id,publicado),
 			UNIQUE KEY hash_sha256 (hash_sha256),
-			UNIQUE KEY factura (emisor_cif,factura_serie,factura_numero)
+			UNIQUE KEY factura (emisor_cif,factura_serie,factura_numero),
+			UNIQUE KEY modelo_347 (farmacia_id,emisor_cif,ejercicio,vigente)
 		) {$charset_collate};";
 
 		// Lotes de publicacion en bloque (#317). creado_en y deshecho_en en

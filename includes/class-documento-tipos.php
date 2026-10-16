@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Lista fija de tipos/etiqueta de documento (contrato, factura,
+ * Lista fija de tipos/etiqueta de documento (contrato, factura, Modelo 347,
  * presupuesto, entregable, otro), segun los requisitos de MKT para la
  * seccion Documentacion. No es una entidad de datos como Plan: a
  * diferencia de los planes, no hay ningun flujo de negocio en Fase 3 que
@@ -20,6 +20,7 @@ class Documento_Tipos {
 	private const TIPOS = array(
 		'contrato'    => 'Contrato',
 		'factura'     => 'Factura',
+		'modelo_347'  => 'Modelo 347',
 		'presupuesto' => 'Presupuesto',
 		'entregable'  => 'Entregable',
 		'otro'        => 'Otro',
@@ -27,12 +28,13 @@ class Documento_Tipos {
 
 	/**
 	 * Orden fijo de los grupos del listado de Documentacion y su etiqueta en
-	 * plural. Facturas primero (lo mas voluminoso y lo que mas se consulta);
-	 * "otro" cierra y recoge tambien los documentos sin tipo o con uno
+	 * plural. Facturas primero (lo mas voluminoso y lo que mas se consulta),
+	 * despues el Modelo 347 (#307, por ejercicio); "otro" cierra y recoge tambien los documentos sin tipo o con uno
 	 * desconocido (ver clave_para_recuento()).
 	 */
 	private const GRUPOS_LISTADO = array(
 		'factura'     => 'Facturas',
+		'modelo_347'  => 'Modelo 347',
 		'contrato'    => 'Contratos',
 		'presupuesto' => 'Presupuestos',
 		'entregable'  => 'Entregables',
@@ -43,6 +45,7 @@ class Documento_Tipos {
 	private const RECUENTO = array(
 		'contrato'    => array( 'contrato', 'contratos' ),
 		'factura'     => array( 'factura', 'facturas' ),
+		'modelo_347'  => array( 'Modelo 347', 'Modelos 347' ),
 		'presupuesto' => array( 'presupuesto', 'presupuestos' ),
 		'entregable'  => array( 'entregable', 'entregables' ),
 		'otro'        => array( 'otro', 'otros' ),

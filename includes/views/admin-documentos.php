@@ -89,7 +89,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 							</div>
 						</td>
 					</tr>
-					<tr>
+					<tr data-mdf-ca-solo-no-347>
 						<th scope="row"><label for="mdf-ca-documento-nombre">Nombre del documento</label></th>
 						<td>
 							<input
@@ -100,6 +100,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 								maxlength="255"
 								required
 							/>
+							<p class="description">En el Modelo 347 no se usa: el nombre es siempre "Modelo 347 &lt;sociedad&gt; &lt;ejercicio&gt;".</p>
 						</td>
 					</tr>
 					<tr>
@@ -113,11 +114,35 @@ if ( ! defined( 'ABSPATH' ) ) {
 							</select>
 						</td>
 					</tr>
-					<tr>
+					<tr data-mdf-ca-solo-no-347>
 						<th scope="row"><label for="mdf-ca-documento-fecha">Fecha del documento</label></th>
 						<td>
 							<input type="date" id="mdf-ca-documento-fecha" name="fecha_documento" min="2000-01-01" />
-							<p class="description">Obligatoria para las facturas (es la fecha de la factura, no la de subida); opcional en el resto. Con ella el cliente ve las facturas agrupadas por mes.</p>
+							<p class="description">Obligatoria para las facturas (es la fecha de la factura, no la de subida); opcional en el resto. Con ella el cliente ve las facturas agrupadas por mes. No se usa en el Modelo 347.</p>
+						</td>
+					</tr>
+					<tr data-mdf-ca-solo-347>
+						<th scope="row"><label for="mdf-ca-documento-ejercicio">Ejercicio</label></th>
+						<td>
+							<select id="mdf-ca-documento-ejercicio" name="ejercicio">
+								<option value="">-- Selecciona un ejercicio --</option>
+								<?php for ( $anio = (int) wp_date( 'Y' ); $anio >= Documento_Service::EJERCICIO_MINIMO; $anio-- ) : ?>
+									<option value="<?php echo esc_attr( (string) $anio ); ?>"><?php echo esc_html( (string) $anio ); ?></option>
+								<?php endfor; ?>
+							</select>
+							<p class="description">Solo Modelo 347, obligatorio. El cliente lo ve agrupado por ejercicio.</p>
+						</td>
+					</tr>
+					<tr data-mdf-ca-solo-347>
+						<th scope="row"><label for="mdf-ca-documento-emisor">Sociedad emisora</label></th>
+						<td>
+							<select id="mdf-ca-documento-emisor" name="emisor_cif">
+								<option value="">-- Selecciona una sociedad --</option>
+								<?php foreach ( Factura_Emisores::get_opciones() as $cif_emisor => $nombre_emisor ) : ?>
+									<option value="<?php echo esc_attr( $cif_emisor ); ?>"><?php echo esc_html( $nombre_emisor . ' (' . $cif_emisor . ')' ); ?></option>
+								<?php endforeach; ?>
+							</select>
+							<p class="description">Solo Modelo 347, obligatoria. Una farmacia tiene un unico Modelo 347 por sociedad y ejercicio; para corregirlo, retira antes el anterior en la lista de abajo.</p>
 						</td>
 					</tr>
 					<tr>
@@ -169,6 +194,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<th>Descarga</th>
 					<th>Fecha documento</th>
 					<th>Subido</th>
+					<th>Modelo 347</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -188,8 +214,30 @@ if ( ! defined( 'ABSPATH' ) ) {
 							<?php echo $documento->get_tamano_bytes() ? esc_html( size_format( $documento->get_tamano_bytes() ) ) : '-'; ?>
 						</td>
 						<td><?php echo Documento_Service::MIME_XLSX === $documento->get_tipo_mime() ? ( $documento->is_descargable() ? 'Si' : 'No' ) : '-'; ?></td>
-						<td><?php echo esc_html( Documento::formatear_fecha_corta( $documento->get_fecha_documento() ) ); ?></td>
+						<td>
+							<?php if ( null !== $documento->get_ejercicio() ) : ?>
+								<?php echo esc_html( 'Ejercicio ' . $documento->get_ejercicio() ); ?>
+							<?php else : ?>
+								<?php echo esc_html( Documento::formatear_fecha_corta( $documento->get_fecha_documento() ) ); ?>
+							<?php endif; ?>
+						</td>
 						<td><?php echo esc_html( $documento->get_fecha_subida() ); ?></td>
+						<td>
+							<?php if ( $documento->is_retirado() ) : ?>
+								<em>Retirado para corrección</em>
+							<?php elseif ( $documento->es_modelo_347_vigente() ) : ?>
+								<?php echo esc_html( ( Factura_Emisores::nombre_corto( (string) $documento->get_emisor_cif() ) ?? '' ) . ( $documento->is_publicado() ? ' · Publicado' : ' · Pendiente' ) ); ?>
+								<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+									<?php wp_nonce_field( 'mdf_ca_retirar_modelo_347_' . $documento->get_id() ); ?>
+									<input type="hidden" name="action" value="mdf_ca_retirar_modelo_347" />
+									<input type="hidden" name="documento_id" value="<?php echo esc_attr( (string) $documento->get_id() ); ?>" />
+									<label><input type="checkbox" name="confirmar" value="1" required /> Confirmo</label>
+									<button type="submit" class="button button-small">Retirar para corrección</button>
+								</form>
+							<?php else : ?>
+								-
+							<?php endif; ?>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>

@@ -42,4 +42,13 @@ class Factura_Emisores {
 	public static function nombre_corto( string $cif ): ?string {
 		return self::EMISORES[ $cif ]['nombre'] ?? null;
 	}
+
+	/**
+	 * Emisores para un selector (subida manual del Modelo 347, #307).
+	 *
+	 * @return array<string, string> CIF => nombre corto
+	 */
+	public static function get_opciones(): array {
+		return array_map( static fn( array $emisor ): string => $emisor['nombre'], self::EMISORES );
+	}
 }

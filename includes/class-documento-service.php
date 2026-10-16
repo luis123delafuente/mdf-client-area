@@ -53,6 +53,9 @@ class Documento_Service {
 	private const FECHA_DOCUMENTO_MINIMA     = '2000-01-01';
 	private const FECHA_DOCUMENTO_MARGEN_DIAS = 31;
 
+	/** Primer ejercicio admitido para un Modelo 347 (#307); el ultimo es el ano en curso. */
+	public const EJERCICIO_MINIMO = 2000;
+
 	/** Limites anti zip-bomb para validar_xlsx(): nunca se descomprime nada, solo se suman los tamanos declarados. */
 	private const XLSX_MAX_ENTRADAS          = 2000;
 	private const XLSX_MAX_DESCOMPRIMIDO_BYTES = 200 * 1024 * 1024;
@@ -89,6 +92,14 @@ class Documento_Service {
 	}
 
 	/**
+	 * Ejercicio de un Modelo 347 valido (#307): del 2000 al ano en curso (en
+	 * la zona horaria de WordPress). Es el UNICO sitio que lo decide.
+	 */
+	public static function ejercicio_valido( int $ejercicio ): bool {
+		return $ejercicio >= self::EJERCICIO_MINIMO && $ejercicio <= (int) wp_date( 'Y' );
+	}
+
+	/**
 	 * Subida desde el backoffice (Admin_Documentos).
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
@@ -96,12 +107,36 @@ class Documento_Service {
 	 *                        farmacia (p. ej. ingesta del historico). No
 	 *                        cambia la visibilidad: solo el aviso por email.
 	 * @param string|null $fecha_documento 'Y-m-d'. Obligatoria para las
-	 *                        facturas, opcional en el resto.
+	 *                        facturas, opcional en el resto. Un Modelo 347 no
+	 *                        la usa (se ignora): lleva ejercicio.
+	 * @param int|null    $ejercicio  Solo Modelo 347 (#307), obligatorio.
+	 * @param string|null $emisor_cif Solo Modelo 347, obligatorio: una
+	 *                        sociedad de Factura_Emisores. En el resto de tipos
+	 *                        ejercicio y emisor se ignoran.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable = false, bool $notificar = true, ?string $fecha_documento = null ) {
+	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable = false, bool $notificar = true, ?string $fecha_documento = null, ?int $ejercicio = null, ?string $emisor_cif = null ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Selecciona una farmacia valida.' );
+		}
+
+		if ( ! Documento_Tipos::es_valido( $tipo_documento ) ) {
+			return new \WP_Error( 'mdf_ca_documento_tipo_invalido', 'Selecciona un tipo de documento valido.' );
+		}
+
+		$modelo_347 = null;
+
+		if ( 'modelo_347' === $tipo_documento ) {
+			$modelo_347 = self::validar_modelo_347( $ejercicio, $emisor_cif );
+
+			if ( is_wp_error( $modelo_347 ) ) {
+				return $modelo_347;
+			}
+
+			// El 347 se agrupa por ejercicio, nunca por una fecha, y su nombre
+			// visible lo fija el servidor (el escrito a mano se ignora).
+			$fecha_documento = null;
+			$nombre          = self::nombre_modelo_347( $modelo_347 );
 		}
 
 		$nombre = trim( $nombre );
@@ -110,12 +145,44 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_nombre_vacio', 'El nombre del documento no puede estar vacio.' );
 		}
 
-		if ( ! Documento_Tipos::es_valido( $tipo_documento ) ) {
-			return new \WP_Error( 'mdf_ca_documento_tipo_invalido', 'Selecciona un tipo de documento valido.' );
+		// La subida de backoffice siempre publica.
+		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null, true, $fecha_documento, null, $modelo_347 );
+	}
+
+	/**
+	 * Nombre visible de un Modelo 347 (#307), unico sitio que lo decide:
+	 * "Modelo 347 Mediformplus 2025", "Modelo 347 Formación 2025".
+	 *
+	 * @param array{emisor_cif: string, ejercicio: int} $modelo_347 Ya validado.
+	 */
+	public static function nombre_modelo_347( array $modelo_347 ): string {
+		return sprintf( 'Modelo 347 %s %d', Factura_Emisores::nombre_corto( $modelo_347['emisor_cif'] ), $modelo_347['ejercicio'] );
+	}
+
+	/**
+	 * Ejercicio y emisor de un Modelo 347, validados (#307).
+	 *
+	 * @return array{emisor_cif: string, ejercicio: int}|\WP_Error
+	 */
+	private static function validar_modelo_347( ?int $ejercicio, ?string $emisor_cif ) {
+		if ( null === $ejercicio ) {
+			return new \WP_Error( 'mdf_ca_documento_ejercicio_obligatorio', 'El ejercicio es obligatorio para el Modelo 347.' );
 		}
 
-		// La subida de backoffice siempre publica.
-		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null, true, $fecha_documento, null );
+		if ( ! self::ejercicio_valido( $ejercicio ) ) {
+			return new \WP_Error( 'mdf_ca_documento_ejercicio_invalido', sprintf( 'Ejercicio no valido: tiene que estar entre %d y el ano en curso.', self::EJERCICIO_MINIMO ) );
+		}
+
+		$emisor_cif = null === $emisor_cif ? '' : Identificador_Fiscal_Validator::normalizar( $emisor_cif );
+
+		if ( ! Factura_Emisores::es_emisor( $emisor_cif ) ) {
+			return new \WP_Error( 'mdf_ca_documento_emisor_obligatorio', 'Selecciona la sociedad emisora del Modelo 347.' );
+		}
+
+		return array(
+			'emisor_cif' => $emisor_cif,
+			'ejercicio'  => $ejercicio,
+		);
 	}
 
 	/**
@@ -172,9 +239,10 @@ class Documento_Service {
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo
 	 * @param array{emisor_cif: string, serie: string, numero: string}|null $factura Solo la recepcion.
+	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347 Solo el Modelo 347 (#307), ya validado.
 	 * @return Documento|\WP_Error
 	 */
-	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura ) {
+	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347 = null ) {
 		// Antes de tocar el fichero: si viene fecha, tiene que ser valida, y
 		// una factura no se guarda sin ella (la de subida nunca la sustituye).
 		if ( null !== $fecha_documento && ! self::fecha_documento_valida( $fecha_documento ) ) {
@@ -183,6 +251,13 @@ class Documento_Service {
 
 		if ( 'factura' === $tipo_documento && null === $fecha_documento ) {
 			return new \WP_Error( 'mdf_ca_documento_fecha_obligatoria', 'La fecha del documento es obligatoria para las facturas.' );
+		}
+
+		// Un unico Modelo 347 vigente por farmacia, emisor y ejercicio (#307):
+		// nunca se sustituye en silencio. El UNIQUE modelo_347 lo garantiza
+		// ademas frente a dos subidas a la vez (ver mas abajo).
+		if ( null !== $modelo_347 && $this->repository->find_modelo_347_vigente( $farmacia_id, $modelo_347['emisor_cif'], $modelo_347['ejercicio'] ) ) {
+			return self::error_modelo_347_ya_existe( $modelo_347 );
 		}
 
 		$validacion_archivo = $this->validar_archivo( $archivo );
@@ -257,8 +332,9 @@ class Documento_Service {
 		// (hash o factura) y $wpdb escribiria en el log "Duplicate entry ..."
 		// con la serie y el numero: se silencia y el error no lleva el texto
 		// de la BD. Quien llama vuelve a buscar y responde duplicado.
+		// Lo mismo con el UNIQUE modelo_347 (#307).
 		global $wpdb;
-		$silenciar = null !== $factura;
+		$silenciar = null !== $factura || null !== $modelo_347;
 		$errores   = $silenciar ? $wpdb->suppress_errors( true ) : null;
 
 		if ( $publicar ) {
@@ -280,7 +356,8 @@ class Documento_Service {
 				$hash_sha256,
 				$publicar,
 				$fecha_documento,
-				$factura
+				$factura,
+				$modelo_347
 			);
 		} finally {
 			if ( $silenciar ) {
@@ -294,6 +371,11 @@ class Documento_Service {
 			}
 
 			wp_delete_file( $ruta_destino );
+
+			// Otra subida del mismo 347 gano la carrera: el mismo mensaje claro.
+			if ( null !== $modelo_347 && $this->repository->find_modelo_347_vigente( $farmacia_id, $modelo_347['emisor_cif'], $modelo_347['ejercicio'] ) ) {
+				return self::error_modelo_347_ya_existe( $modelo_347 );
+			}
 
 			return new \WP_Error(
 				'mdf_ca_error_bd',
@@ -322,6 +404,23 @@ class Documento_Service {
 		}
 
 		return $documento;
+	}
+
+	/**
+	 * Unico sitio del texto. Lleva el nombre corto de la sociedad del grupo y
+	 * el ejercicio, nunca datos de la farmacia.
+	 *
+	 * @param array{emisor_cif: string, ejercicio: int} $modelo_347
+	 */
+	private static function error_modelo_347_ya_existe( array $modelo_347 ): \WP_Error {
+		return new \WP_Error(
+			'mdf_ca_documento_modelo_347_ya_existe',
+			sprintf(
+				'Esta farmacia ya tiene un Modelo 347 de %s del ejercicio %d. Para subir una correccion, retira antes el anterior ("Retirar para correccion" en la lista de documentos).',
+				Factura_Emisores::nombre_corto( $modelo_347['emisor_cif'] ),
+				$modelo_347['ejercicio']
+			)
+		);
 	}
 
 	/** MIME real del contenido (fileinfo), o null si no se puede inspeccionar. */

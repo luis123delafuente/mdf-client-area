@@ -31,6 +31,10 @@ class Documento {
 	private bool $descargable;
 	private bool $publicado;
 	private ?string $fecha_documento;
+	private ?string $emisor_cif;
+	private ?int $ejercicio;
+	private bool $vigente;
+	private bool $retirado;
 
 	public function __construct(
 		int $id,
@@ -43,7 +47,11 @@ class Documento {
 		string $fecha_subida,
 		bool $descargable = false,
 		bool $publicado = true,
-		?string $fecha_documento = null
+		?string $fecha_documento = null,
+		?string $emisor_cif = null,
+		?int $ejercicio = null,
+		bool $vigente = false,
+		bool $retirado = false
 	) {
 		$this->id             = $id;
 		$this->farmacia_id    = $farmacia_id;
@@ -56,6 +64,10 @@ class Documento {
 		$this->descargable    = $descargable;
 		$this->publicado      = $publicado;
 		$this->fecha_documento = $fecha_documento;
+		$this->emisor_cif      = $emisor_cif;
+		$this->ejercicio       = $ejercicio;
+		$this->vigente         = $vigente;
+		$this->retirado        = $retirado;
 	}
 
 	public static function from_db_row( object $row ): self {
@@ -71,7 +83,11 @@ class Documento {
 			! empty( $row->descargable ),
 			// Sin la columna (fila anterior a #304) cuenta como publicado.
 			! isset( $row->publicado ) || ! empty( $row->publicado ),
-			! empty( $row->fecha_documento ) ? (string) $row->fecha_documento : null
+			! empty( $row->fecha_documento ) ? (string) $row->fecha_documento : null,
+			! empty( $row->emisor_cif ) ? (string) $row->emisor_cif : null,
+			isset( $row->ejercicio ) && null !== $row->ejercicio ? (int) $row->ejercicio : null,
+			! empty( $row->vigente ),
+			! empty( $row->retirado_en )
 		);
 	}
 
@@ -133,5 +149,25 @@ class Documento {
 	 */
 	public function is_publicado(): bool {
 		return $this->publicado;
+	}
+
+	/** CIF de la sociedad del grupo que emite el documento (facturas recibidas y Modelo 347), o null. */
+	public function get_emisor_cif(): ?string {
+		return $this->emisor_cif;
+	}
+
+	/** Ejercicio fiscal de un Modelo 347 (#307), o null. Nunca se deduce de la fecha de subida. */
+	public function get_ejercicio(): ?int {
+		return $this->ejercicio;
+	}
+
+	/** Modelo 347 vigente: el unico de su farmacia, emisor y ejercicio que se puede publicar (#307). */
+	public function es_modelo_347_vigente(): bool {
+		return 'modelo_347' === $this->tipo_documento && $this->vigente && ! $this->retirado;
+	}
+
+	/** Retirado para correccion (#307): estado terminal, nunca se vuelve a publicar. */
+	public function is_retirado(): bool {
+		return $this->retirado;
 	}
 }

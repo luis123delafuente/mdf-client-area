@@ -67,6 +67,65 @@ class Documento_Publicacion_Service {
 	}
 
 	/**
+	 * Retira para correccion un Modelo 347 vigente (#307), publicado o
+	 * pendiente, para que se pueda subir el corregido. En una transaccion:
+	 * bloquea la fila; si esta publicado lo despublica con cambiar_estado()
+	 * (evento "despublicado"); libera su hueco en el UNIQUE y lo marca
+	 * retirado (Documento_Repository::marcar_retirado()), y deja el evento
+	 * "retirado". Si algo falla, no cambia nada. Retirado es terminal: no se
+	 * vuelve a publicar por ninguna via. Lo que la farmacia ya haya visto o
+	 * descargado no se puede retirar.
+	 *
+	 * @return true|\WP_Error
+	 */
+	public function retirar_modelo_347( int $documento_id, int $usuario_id ) {
+		global $wpdb;
+
+		if ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() )
+			|| ! DB_Schema::tabla_es_innodb( DB_Schema::get_publicacion_eventos_table_name() ) ) {
+			return new \WP_Error(
+				'mdf_ca_publicacion_sin_transacciones',
+				'Las tablas de documentos o de eventos no admiten transacciones (no son InnoDB). No se ha cambiado nada.'
+			);
+		}
+
+		$wpdb->query( 'START TRANSACTION' );
+
+		$documento = $this->repository->find_by_id_para_actualizar( $documento_id );
+
+		if ( ! $documento || ! $documento->es_modelo_347_vigente() ) {
+			$wpdb->query( 'ROLLBACK' );
+
+			return new \WP_Error( 'mdf_ca_retirar_no_aplica', 'El documento no existe, no es un Modelo 347 o ya estaba retirado. No se ha cambiado nada.' );
+		}
+
+		$ok = true;
+
+		if ( $documento->is_publicado() ) {
+			$ok = 1 === $this->repository->cambiar_estado( array( $documento_id ), false, Publicacion_Evento_Repository::ORIGEN_INDIVIDUAL, $usuario_id );
+		}
+
+		$ok = $ok
+			&& $this->repository->marcar_retirado( $documento_id )
+			&& 1 === ( new Publicacion_Evento_Repository() )->insertar_para(
+				array( $documento_id => null ),
+				Publicacion_Evento_Repository::ACCION_RETIRADO,
+				Publicacion_Evento_Repository::ORIGEN_INDIVIDUAL,
+				$usuario_id
+			);
+
+		if ( ! $ok ) {
+			$wpdb->query( 'ROLLBACK' );
+
+			return new \WP_Error( 'mdf_ca_publicacion_error_bd', 'No se pudo retirar el documento. No se ha cambiado nada.' );
+		}
+
+		$wpdb->query( 'COMMIT' );
+
+		return true;
+	}
+
+	/**
 	 * Publica los pendientes de UNA farmacia; ninguna otra se toca.
 	 *
 	 * @return int|\WP_Error Documentos publicados.
