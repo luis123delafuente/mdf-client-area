@@ -2,13 +2,13 @@
 
 Plugin de WordPress que concentra toda la lógica de negocio del Área de Clientes de Mediformplus SL (MDF): permisos, documentos, catálogo y (más adelante) tokens. Elementor solo maqueta; este plugin decide qué se ve y qué se entrega.
 
-- Cliente: Mediformplus SL (MDF), grupo de farmacias
+- Cliente: Mediformplus SL (MDF), grupo de farmacias (unas 200 farmacias previstas)
 - Stack: WordPress + Elementor + este plugin propio
 - Entorno local: WordPress con Local (by WP Engine), PHP 8.4.18, Apache, MySQL 8.4.0, site `mdf-client-area.local`
-- Producción: `clientes.mediformplus.com`, hosting IONOS, PHP 8.4.24, WordPress 7.1
+- Producción: `clientes.mediformplus.com`, hosting IONOS (servidor dedicado gestionado), PHP 8.4.24, WordPress 7.1, base de datos **MariaDB 11.8** (distinta del MySQL local: cualquier SQL nuevo debe funcionar en los dos)
 - Ruta del plugin en ambos entornos: `wp-content/plugins/mdf-client-area/`
-- Despliegue: SFTP con `lftp mirror` vía `deploy.sh` (rsync no funciona en este hosting) — nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin — no las confundas
-- Fecha límite de desarrollo: 8 de noviembre de 2026. Demo al cliente: 8 de octubre de 2026. **Fase 4 debe caber entre la demo y finales de octubre**, dejando la última semana para la Fase 5 (cierre y traspaso)
+- Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
+- Fechas: objetivo de entrega el 12 de octubre de 2026; fecha límite el 8 de noviembre de 2026
 - Versión del plugin: consulta las constantes `MDF_CA_VERSION` y `MDF_CA_DB_VERSION` en el código antes de subirlas; no asumas su valor
 
 ## Reglas no negociables
@@ -29,24 +29,25 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - **Farmacia** es una entidad propia (con CIF o NIF), separada del Usuario de WordPress, aunque hoy la relación sea 1:1
 - Rol de cliente propio (`mdf_cliente`), **sin capacidades de backend**, con redirección forzada al área privada — nunca acceso a `wp-admin`
 - **Planes** como entidad de datos (`wp_mdf_ca_planes`), no hardcodeados; cada farmacia tiene `plan_id`
-- Toda comprobación de permiso pasa por una única función centralizada (`Permissions::puede_ver_documento()`, `puede_descargar_documento()`, `puede_ver_item_catalogo()`, `puede_ver_bloque_por_plan()`), para poder añadir excepciones en el futuro sin refactorizar
+- Toda comprobación de permiso pasa por una única función centralizada (`Permissions::puede_ver_documento()`, `puede_descargar_documento()`, `puede_previsualizar_documento()`, `puede_ver_item_catalogo()`, `puede_ver_bloque_por_plan()`), para poder añadir excepciones en el futuro sin refactorizar
 - Dos módulos de contenido separados: catálogo compartido por plan (Herramientas, Formación) vs documentos privados por farmacia, vinculados por CIF/NIF, visibles solo por su titular (no dependen del plan)
-- Documentos: carpeta propia dentro de `Clientes/` (`Clientes/private-docs/`), bloqueada con `.htaccess` deny-all, servida exclusivamente por script PHP del plugin que valida permiso antes de leer el fichero
-- Alta de farmacias: un único camino lógico. El importador CSV (Fase 4) y el formulario de alta manual comparten el mismo servicio; CIF/NIF es la clave normalizada y validada; importación idempotente (upsert por CIF/NIF, simulación previa antes de escribir)
+- Documentos: carpeta `Clientes/private-docs/` **en la raíz de WordPress** (`ABSPATH`, no en `wp-content`; ruta relativa en `Documento_Endpoint::CARPETA_RELATIVA`), protegida con `.htaccess` de denegación total e `index.php`, que el propio plugin crea si faltan y vigila (`Carpeta_Privada_Proteccion`). Solo se sirven por el script PHP del plugin, que valida permiso antes de leer el fichero
+- Alta de farmacias: un único camino lógico. El importador CSV y el formulario de alta manual comparten el mismo servicio; CIF/NIF es la clave normalizada y validada; importación idempotente (upsert por CIF/NIF, simulación previa antes de escribir)
+- Facturas: el parser (repo hermano `Parser_facturas_SAGE`, Python) lee los PDF en el Mac de MDF y envía el resultado al endpoint autenticado del plugin; el plugin nunca lee PDF y revalida todo en servidor
 - CRM de MDF aún sin identificar: WordPress es el sistema de registro del MVP, preparado para delegar en un CRM más adelante sin reescritura
 
 ## Decisiones técnicas ya tomadas
 
 ### Fase 1
 
-- Sin `FOREIGN KEY` real en `documentos.farmacia_id` (`dbDelta()` no las gestiona de forma fiable); integridad a nivel de aplicación. Mismo criterio en `farmacias.plan_id` y en la tabla puente del catálogo
+- Sin `FOREIGN KEY` real en `documentos.farmacia_id` (`dbDelta()` no las gestiona de forma fiable); integridad a nivel de aplicación. Mismo criterio en `farmacias.plan_id`, en la tabla puente del catálogo y en las tablas de la Fase 4
 - Bloqueo de `wp-admin` para `mdf_cliente` enganchado en `init`, no `admin_init` (con capacidades vacías, WordPress corta la petición antes de `admin_init`)
 - Rol `mdf_cliente` registrado de forma idempotente (`remove_role` + `add_role` en cada activación)
 - Endpoint de documentos vía `add_rewrite_rule` + `template_redirect`, no `admin-post.php` (evita el mismo gate de capacidad que bloquea `wp-admin`)
 - Endpoint responde siempre 404 (nunca 403) para documento ajeno o inexistente, para no facilitar enumeración
 - `flush_rewrite_rules()` en el hook de activación, después de registrar la rewrite rule — **cualquier rewrite rule nueva necesita el mismo cuidado**, o el mecanismo de versión de abajo
 - Validación de ruta con `realpath()` + comprobación de prefijo antes de leer cualquier fichero servido, como defensa en profundidad
-- `Activator::maybe_upgrade()`: compara `mdf_ca_db_version` guardada contra la constante del plugin y repite `dbDelta()` si difieren — **patrón obligatorio para cualquier cambio de esquema**
+- `Activator::maybe_upgrade()`: compara `mdf_ca_db_version` guardada contra la constante del plugin y repite `dbDelta()` si difieren — **patrón obligatorio para cualquier cambio de esquema**. Como el plugin ya está activo en producción, todo lo que deba ejecutarse una vez tras desplegar va en `maybe_upgrade()` gateado por su propia option, no solo en `activate()`
 
 ### Fase 2
 
@@ -73,8 +74,8 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 
 **Excel (.xlsx)**
 - Se admite `.xlsx` a petición de MDF. Se siguen rechazando `.xls`, `.xlsm` y `.xlsb` (no se puede garantizar la ausencia de VBA)
-- Un `.xlsx` se valida por contenido (`Documento_Service::validar_xlsx()`): ZIP con `[Content_Types].xml` y `xl/workbook.xml`, libro principal de tipo xlsx (no xlsm), sin `vbaProject.bin` ni `xl/embeddings/`, con límites anti zip-bomb (2000 entradas, 200 MB descomprimido, sin extraer nada a disco). **No se busca "macroEnabled" en todo el `[Content_Types].xml`**: generadores legítimos (SheetJS) lo declaran en un `Default` genérico y daba falsos positivos. Requiere la extensión `zip` de PHP
-- **Un Excel no es descargable por defecto.** Columna `documentos.descargable` (`TINYINT(1) NOT NULL DEFAULT 0`, esquema 1.5.0 vía `maybe_upgrade()`), con checkbox en la subida. Solo aplica a Excel; PDF e imágenes siempre van al visor. La decisión vive en `Permissions::puede_descargar_documento()`
+- Un `.xlsx` se valida por contenido (`Documento_Service::validar_xlsx()`): ZIP con `[Content_Types].xml` y `xl/workbook.xml`, libro principal de tipo xlsx (no xlsm), sin `vbaProject.bin` ni `xl/embeddings/`, con límites anti zip-bomb (2000 entradas, 200 MB descomprimido, sin extraer nada a disco). **No se busca "macroEnabled" en todo el `[Content_Types].xml`**: generadores legítimos (SheetJS) lo declaran en un `Default` genérico y daba falsos positivos. Requiere la extensión `zip` de PHP (confirmada en producción)
+- **Un Excel no es descargable por defecto.** Columna `documentos.descargable` (`TINYINT(1) NOT NULL DEFAULT 0`), con checkbox en la subida. Solo aplica a Excel; PDF e imágenes siempre van al visor. La decisión vive en `Permissions::puede_descargar_documento()`
 - Sin marcar, el Excel se ve en el visor con SheetJS 0.20.3 (`assets/vendor/sheetjs/`, vendorizado), dibujado en canvas con marca de agua, con selector de hojas y paginación por filas (2000 filas x 60 columnas por hoja). Se dibujan fondos, color de texto, negrita, cursiva, alineación y celdas combinadas; **no** bordes, formato condicional, degradados, imágenes ni gráficos (los documentos con gráficos o diseño deben subirse como PDF). SheetJS Pro no se usa
 
 **Visor**
@@ -93,130 +94,101 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Sesión de 8 horas fijas para `mdf_cliente` (`auth_cookie_expiration`), ignorando "Recuérdame"; el administrador no se toca
 
 **Alta de farmacias y NIF**
-- `Admin_Farmacias`: alta mínima (nombre, CIF/NIF y plan), reutiliza `Farmacia_Service::crear()`; tras crear redirige a `Admin_Invitaciones`
+- `Admin_Farmacias`: alta mínima (nombre, CIF/NIF y plan); tras crear redirige a `Admin_Invitaciones`
 - `Identificador_Fiscal_Validator` detecta el formato por el primer carácter (letra → CIF con `CIF_Validator`, dígito → NIF con `NIF_Validator`, mod 23). NIE fuera de alcance. La columna sigue llamándose `cif`; `get_cif()` y `find_by_cif()` no cambiaron de nombre
 
 **Cambios hechos directamente por Luis, sin pasar por revisión** (ya verificados): filtro de farmacia en el selector de Documentos MDF, soporte de Excel, checkbox de descargable y botón de logout en el backoffice
 
-## Completado: Fases 0 a 3
+### Fase 4
 
-Las cuatro fases cerradas con batería de seguridad pasada. Desplegado y activo en producción con 4-5 farmacias piloto reales.
-
-Pendientes sueltos de Fase 3, no bloquean la Fase 4:
-- Sección de Cuota en modo lectura (tarea #254): a la espera del contenido de MKT
-- Borrar los documentos de prueba subidos a las farmacias piloto
-- Espaciado estético de la marca de agua del visor (no bloqueante)
-
-## Fase actual: Fase 4 — Escala y automatización
-
-Objetivo: pasar de un portal que funciona con altas manuales a uno que se mantiene solo. Duración estimada: ~3 semanas, tras la demo del 8 de octubre.
-
-Tareas, en orden de ejecución y dependencia:
-
-1. **Importador CSV de farmacias con simulación previa** (Alta). Columnas mínimas: nombre, CIF/NIF, plan (por slug). La simulación muestra crear / actualizar / rechazada sin escribir nada; la confirmación aplica el upsert por CIF/NIF. Idempotente. Si la farmacia ya existe, actualiza nombre y plan; **no** toca `wp_user_id`, invitación ni documentos. Nunca envía invitaciones ni crea usuarios
-2. **Alta manual alimentando la misma lógica que el importador** (Media). `Admin_Farmacias` pasa por el mismo servicio de upsert. Depende de 1
-3. **Parser de facturas SAGE con cruce de CIF** (Alta). Formato uniforme confirmado. Extrae CIF/NIF, número, fecha e importe; cruza con `find_by_cif()`. Reutiliza lo aprendido del parser de nóminas. Bloquea 4, 5 y 6
-4. **Bandeja de excepciones de facturas** (Media). Lo que el parser no asigna (sin CIF, desconocido, ambiguo) se resuelve a mano. Nada se sube al cliente sin estar resuelto. Depende de 3
-5. **Ingesta del histórico de documentos** (Media). Por lotes, idempotente (hash del fichero), con informe final. Depende de 3 y 4
-6. **Modelo 347** (Media). Falta confirmar con MDF el formato y el origen. Nuevo tipo en `Documento_Tipos`
-7. **Notificaciones al cliente por documentación nueva** (Media). Agrupadas, sin datos sensibles ni enlaces directos al fichero: solo enlazan al área privada. Por el SMTP ya configurado
-8. **Diseño de la automatización "robotito"** (Baja). Solo diseño, sin implementación
-9. **Batería de cierre de la Fase 4** (Alta)
-
-### Decisiones de Fase 4
-
-- **Robotito:** script Python que reutiliza el parser de nóminas/facturas, con un **endpoint de subida autenticado en el plugin**. Se descarta n8n. El endpoint y sus credenciales (siempre en gestor de contraseñas, nunca en el repo) son la parte sensible del diseño
-- El importador, la bandeja de excepciones y la ingesta se construyen siempre con `manage_options` + nonce, sin ninguna vía para `mdf_cliente`
-- Los ficheros subidos (CSV, facturas) nunca se guardan en una carpeta pública. Las facturas de las farmacias son documentación fiscal real de terceros: no se suben a chats ni a Git. Para pruebas, usar datos propios o ficticios
-- Todo documento ingerido sigue las reglas de la Fase 3: nombre en disco aleatorio, carpeta privada, servido solo por el endpoint, visible solo para su titular
-
-- **Importador CSV (hecho, v0.10.0):** entre simular y confirmar se guardan las filas ya leídas, no el fichero, en un transient ligado al usuario (`mdf_ca_import_{user_id}_{id}`, 15 min). `aplicar()` recalcula contra la BD y compara una huella; si difiere, no escribe nada y muestra la simulación nueva. El lote se consume una sola vez
-- Todo o nada con transacción, previa comprobación de InnoDB (si no lo es, se niega a aplicar). Las filas rechazadas se ignoran y no bloquean al resto
-- Rechazos: CIF/NIF duplicado en el fichero (todas las apariciones), plan vacío o inexistente, nombre vacío o de más de 255 caracteres. Plan por `sanitize_title()`, igual que `Plan_Service`
-- Límites: 1 MB y 1000 filas. Un CSV con etiquetas HTML se rechaza entero (WordPress lo detecta como HTML)
+**Importador CSV y alta manual** (v0.10.0 y v0.11.0)
+- Entre simular y confirmar se guardan las filas ya leídas, no el fichero, en un transient ligado al usuario (`mdf_ca_import_{user_id}_{id}`, 15 min). `aplicar()` recalcula contra la BD y compara una huella; si difiere, no escribe nada y muestra la simulación nueva. El lote se consume una sola vez
+- Todo o nada con transacción, previa comprobación de InnoDB (`DB_Schema::tabla_es_innodb()`). Las filas rechazadas se ignoran y no bloquean al resto
+- Rechazos: CIF/NIF duplicado en el fichero (todas las apariciones), plan vacío o inexistente, nombre vacío o de más de 255 caracteres. Plan por `sanitize_title()`, igual que `Plan_Service`. Límites: 1 MB y 1000 filas. Un CSV con etiquetas HTML se rechaza entero
+- Si la farmacia existe, actualiza nombre y plan; **no** toca `wp_user_id`, invitación ni documentos. Nunca envía invitaciones ni crea usuarios
 - `Identificador_Fiscal_Validator::normalizar()` es la única normalización de CIF/NIF, usada también por `Farmacia_Service::crear()`
-- Permisos: `manage_options` en el controlador, como el resto del backoffice
+- Alta manual: `Admin_Farmacias::gestionar_crear()` solo comprueba capacidad y nonce, sanea los tres campos y llama a `Farmacia_Import_Service::crear_una()`. El formulario solo crea: si el CIF/NIF ya existe, devuelve el duplicado (`Farmacia_Service::error_duplicado()`, único sitio del texto). Plan obligatorio también en el formulario
 
-- **Alta manual (hecho, v0.11.0):** `Admin_Farmacias::gestionar_crear()` solo comprueba capacidad y nonce, sanea los tres campos y llama a `Farmacia_Import_Service::crear_una()` (simular + aplicar de una fila, sin paso de confirmación). La validación vive solo en el servicio
-- El formulario solo crea: si el CIF/NIF ya existe, devuelve el duplicado (`Farmacia_Service::error_duplicado()`, único sitio del texto). Actualizar es cosa del importador
-- Plan obligatorio también en el formulario (por slug). Ya no se puede crear una farmacia sin plan desde la pantalla; las existentes sin plan no se tocan
-
-- **Avisos por email (hecho, v0.12.0, esquema 1.6.0):** columna `documentos.notificado_en` (UTC, NULL = pendiente). La migración inicial marca todos los documentos existentes como notificados, gateada por `mdf_ca_avisos_backfill_hecho`, para no avisar de lo ya subido
-- Evento único de WP-Cron a las 09:00 de `wp_timezone()`, reprogramado en cada ejecución (no el recurrente `daily`, que se desplaza con el cambio horario). Tope de un aviso por farmacia y día natural (usermeta `mdf_ca_ultimo_aviso_documentos`)
-- Bloqueo propio en `wp_options` con `INSERT IGNORE` y toma de caducados por `UPDATE` condicionado (no `add_option()`, que pisaría el de otro proceso); se libera siempre en `finally`
+**Avisos por email** (v0.12.0, esquema 1.6.0)
+- Columna `documentos.notificado_en` (UTC, NULL = pendiente). La migración inicial marcó todos los documentos existentes como notificados (`mdf_ca_avisos_backfill_hecho`)
+- Evento único de WP-Cron a las 09:00 de `wp_timezone()`, reprogramado en cada ejecución (no el recurrente `daily`, que se desplaza con el cambio horario). Tope de un aviso por farmacia y día natural (usermeta `mdf_ca_ultimo_aviso_documentos`). En producción WP-Cron depende de las visitas; alternativa disponible: tareas cron del panel de IONOS
+- Bloqueo propio en `wp_options` con `INSERT IGNORE` y toma de caducados por `UPDATE` condicionado (no `add_option()`); se libera siempre en `finally`
 - Se marca como notificado solo si `wp_mail()` devuelve true; si falla, se reintenta en la siguiente ejecución. Riesgo asumido: aviso duplicado antes que perdido
-- Farmacias sin cuenta activa: sus documentos quedan pendientes y entran en el primer aviso tras activar. El email solo lleva recuentos por tipo (sin tipo = "otro") y un enlace a Documentación; nunca nombres, CIF ni enlaces al fichero
-- Interruptor `mdf_ca_avisos_documentos_activos` apagado por defecto; `MDF_CA_AVISOS_DESACTIVADOS` en wp-config.php lo anula. La ingesta masiva usa `subir(..., $notificar = false)`
-- Pendiente: opción de baja (preferencia por usuario y enlace en el email); los documentos silenciados son indistinguibles de los notificados
+- Farmacias sin cuenta activa: sus documentos quedan pendientes y entran en el primer aviso tras activar. El email solo lleva recuentos por tipo y un enlace a Documentación; nunca nombres, CIF ni enlaces al fichero
+- Interruptor `mdf_ca_avisos_documentos_activos` apagado por defecto (MDF prefiere no avisar de momento); `MDF_CA_AVISOS_DESACTIVADOS` en wp-config.php lo anula
+- Pendiente: opción de baja; los documentos silenciados son indistinguibles de los notificados
 
-- **Parser de facturas SAGE (hecho, plugin v0.13.0):** vive fuera del plugin, en el repo hermano `Parser_facturas_SAGE` (Python, PyMuPDF); el plugin nunca lee PDFs. El parser devuelve datos y un estado; el cruce lo hace `Factura_Cruce_Service::cruzar()` con `find_by_cif()`, que revalida el CIF y exige número, fecha e importe válidos, sin fiarse del JSON recibido
-- Plantilla: 2 páginas por PDF (original y copia), todas deben dar los mismos datos; se lee por coordenadas. El CIF del emisor debe estar en `EMISORES` (config.py, hoy solo Mediformplus); el del cliente es el de la columna "N.I.F"
-- Estados: sin texto > formato inesperado > número discrepante > sin CIF > CIF inválido > ok. El parser nunca devuelve "asignada": lo decide el cruce. Abonos con importe negativo y `es_abono`
+**Parser de facturas SAGE** (repo `Parser_facturas_SAGE`; cruce en el plugin desde v0.13.0)
+- El parser (Python, PyMuPDF, licencia AGPL a revisar antes de la entrega) devuelve datos y un estado; el cruce lo hace `Factura_Cruce_Service::cruzar()` con `find_by_cif()`, que revalida el CIF y exige emisor, serie, número, fecha e importe válidos, sin fiarse del JSON recibido. El parser nunca devuelve "asignada"
+- Emisores: Mediformplus (B82827635, serie `A`) y Mediformplus Formación (B88471149, serie `SF`). SAGE exporta por sociedad. La serie identifica al emisor y ninguna se comparte
+- Se lee por coordenadas. Copias delimitadas por PÁG. = 1; todas las copias con el mismo número de páginas, la misma cabecera y el mismo total. El total solo en la última página de cada copia; las intermedias llevan "SUMA Y SIGUE". La moneda aparece exactamente una vez ("(EUR)" bajo el total en Mediformplus, "€" en el importe en Formación). Cualquier cosa que no encaje da `formato_inesperado`. Sin OCR
+- Estados: sin texto > formato inesperado > número discrepante > sin CIF > CIF inválido > ok. Abonos con importe negativo
+- Pendiente de verificar con cientos de facturas reales de 2026 (solo se han probado unas pocas; el rótulo de las páginas intermedias de Formación no está confirmado)
 - Los PDF reales nunca van al repo (`*.pdf` en .gitignore); los tests usan fixtures sintéticas
 
-- **Recepción de documentos (hecho, v0.14.0, esquema 1.7.0):** `POST /wp-json/mdf-ca/v1/facturas` (REST, multipart: `pdf`, `resultado` del parser y `notificar` opcional). Autenticación con Application Passwords sobre el usuario técnico `mdf-robot` (rol `mdf_robot`, una sola capacidad); el `permission_callback` es `Recepcion_Autenticacion::autorizar()`, único punto para cambiar de mecanismo
-- El robot solo puede usar el namespace `mdf-ca/v1` (`rest_pre_dispatch`, también `batch`); su login por contraseña está rechazado; las application passwords solo existen para él y solo valen en REST. Errores uniformes: un filtro sustituye cualquier error del namespace por el mismo cuerpo
-- Solo el estado "asignada", revalidado en servidor con `Factura_Cruce_Service`, crea documento (nombre visible "Factura A N" o "Abono A N", según el signo del importe revalidado). Idempotencia con UNIQUE global sobre `documentos.hash_sha256` (NULL en documentos de backoffice y anteriores)
-- Interruptor `mdf_ca_recepcion_activa` apagado por defecto; `MDF_CA_RECEPCION_DESACTIVADA` lo anula. Tope diario configurable y registro de auditoría solo con recuentos (`wp_mdf_ca_recepcion_registro`). Pantalla: Documentos MDF › Recepción automática (manage_options + nonce)
-- La subida de PDF (también la del backoffice) exige ahora el tipo real `application/pdf` con `fileinfo`; en producción hay que comprobar que la extensión existe
-- Pendiente: estado "pendiente de publicar" (`documentos.publicado`, condición en `Permissions::puede_ver_documento()`), antes de activar la recepción en producción
+**Recepción de documentos** (v0.14.0, esquema 1.7.0; emisor en v0.17.0, esquema 1.10.0)
+- `POST /wp-json/mdf-ca/v1/facturas` (multipart: `pdf`, `resultado` del parser y `notificar` opcional). Application Passwords sobre el usuario técnico `mdf-robot` (rol `mdf_robot`, una sola capacidad `mdf_ca_subir_facturas`); el `permission_callback` es `Recepcion_Autenticacion::autorizar()`, único punto para cambiar de mecanismo
+- El robot solo puede usar el namespace `mdf-ca/v1` (`rest_pre_dispatch`, también `batch`); su login por contraseña está rechazado; las application passwords solo existen para él. Errores uniformes: un filtro sustituye cualquier error del namespace por el mismo cuerpo
+- `Factura_Emisores` es la lista de emisores y series en código, único sitio que lo decide; nunca se deduce el emisor de la serie. Serie `^[A-Z]{1,3}$/D`, número `^\d{1,20}$/D`
+- Columnas nullable `documentos.hash_sha256` (UNIQUE), `emisor_cif`, `factura_serie` y `factura_numero` (UNIQUE conjunto); los NULL no chocan. Misma factura para la misma farmacia: 200 duplicado idempotente; para otra: 422 `documento_en_otra_farmacia` uniforme. La carrera la pierde el INSERT del segundo, cuyo error de base de datos se silencia para no llevar serie y número al log
+- Nombre visible `{Factura|Abono} {sociedad} {serie} {número}`, abono por el signo del importe revalidado
+- Interruptor `mdf_ca_recepcion_activa` apagado por defecto; `MDF_CA_RECEPCION_DESACTIVADA` lo anula. Tope diario configurable (1000 por defecto) y registro de auditoría solo con recuentos (`wp_mdf_ca_recepcion_registro`). Pantalla: Documentos MDF › Recepción automática
+- La subida de PDF (también la del backoffice) exige el tipo real `application/pdf` con `fileinfo` (confirmada en producción)
 
-- **Envío por lotes (hecho, repo `Parser_facturas_SAGE`, paquete `envio_facturas/`):** recorre una carpeta de PDF, los parsea y los manda a `POST /wp-json/mdf-ca/v1/facturas`. Sin `--enviar` es dry-run y nunca abre conexión; `notificar=0` por defecto. Credenciales solo por variables de entorno (`MDF_ENVIO_*`) o fichero `--config` fuera del repo; URL https obligatoria (http solo en localhost) y TLS nunca desactivado
-- Lo que el parser no resuelve nunca se envía: se copia a `excepciones/<estado>/` con un informe CSV sin CIF, nombres ni importes; se resuelve subiéndolo a mano desde Documentos MDF. No hay bandeja de excepciones en el servidor (decisión: se reconsidera solo si el histórico genera muchas)
-- 401, 429 y 503 detienen el lote; 400 y 422 se copian a excepciones; 500 o red se reintentan 3 veces con espera creciente. Registro local `registro.jsonl` de solo añadir, con bloqueo contra dos lotes simultáneos
+**Envío por lotes** (repo `Parser_facturas_SAGE`, paquete `envio_facturas/`; diseño en `docs/robotito.md`)
+- Recorre una carpeta de PDF, los parsea y los manda al endpoint. Sin `--enviar` es dry-run; `notificar=0` por defecto. Credenciales solo por variables de entorno (`MDF_ENVIO_*`) o fichero `--config` fuera del repo; https obligatorio y TLS nunca desactivado
+- Lo que el parser no resuelve nunca se envía: se copia a `excepciones/<estado>/` con un informe CSV sin CIF, nombres ni importes, y se resuelve subiéndolo a mano desde Documentos MDF (no hay bandeja de excepciones en el servidor). Una factura resuelta a mano no se reenvía (queda sin emisor, serie ni número y el servidor no la detectaría como duplicada)
+- 401, 429 y 503 detienen el lote; 400 y 422 se copian a excepciones; 500 o red se reintentan 3 veces. Registro local `registro.jsonl` de solo añadir, con bloqueo contra dos lotes simultáneos
+- `cif_sin_farmacia` es permanente (hay facturas de clientes que no son farmacias del portal). Antes del histórico de 2026: dar de alta las farmacias con el importador y subir el tope diario
+- Operación recomendada: manual tras cada exportación de SAGE (simulación y luego envío), al menos el primer mes. Lo opera la persona de MDF que exporta de SAGE, en un Mac
 
-- `EMISORES` es un diccionario de CIF a series admitidas: `{"B82827635": {"A"}, "B88471149": {"SF"}}` (Mediformplus y Mediformplus Formación). La serie identifica al emisor y ninguna se comparte; una serie que no sea de su emisor, o un emisor desconocido, da `formato_inesperado`. El resultado incluye el campo `emisor`
-- El total se lee bajo "TOTAL FRA" y la moneda debe aparecer exactamente una vez: el rótulo "(EUR)" bajo el total (plantilla de Mediformplus) o el "€" en el importe (plantilla de Formación). Dos veces o ninguna, `formato_inesperado`
+**Pendiente de publicar, publicación en bloque y deshacer** (v0.15.0 a v0.19.0, esquemas 1.8.0 y 1.11.0)
+- Columna `documentos.publicado` (DEFAULT 1). La recepción crea con publicado = 0 mientras `mdf_ca_recepcion_requiere_aprobacion` esté activa (por defecto activada); la subida de backoffice siempre publica
+- `Permissions::puede_ver_documento()` exige misma farmacia y publicado (un único predicado privado, compartido con `filtrar_documentos_visibles()`); un documento no publicado da el mismo 404 uniforme que uno inexistente o ajeno. Excepción deliberada: `find_pendientes_aviso()` filtra publicado = 1 en SQL
+- Vista previa de admin por `admin-post.php`, sin URL estable al fichero: nonce por documento, token de un solo uso y marca de agua con el login del admin; solo `Permissions::puede_previsualizar_documento()`
+- «Publicar todos los pendientes»: dos pasos; al preparar se guarda en un transient del usuario la huella de los ids publicables; al aplicar se consume, se recalcula y solo se escribe si coincide. Se publica por lista explícita de ids, nunca por filtro, así que lo que llegue después no se publica sin haber sido contado. Tandas de 500 dentro de una transacción
+- Lotes: tabla `wp_mdf_ca_publicacion_lotes` y columna `documentos.publicacion_lote_id`, que solo vale L mientras el documento siga publicado desde el lote L; cualquier otro cambio de estado la pone a NULL. Deshacer un lote usa el mismo patrón de dos pasos y solo toca lo que siga con ese lote y publicado. Deshacer no retira lo que la farmacia ya haya visto o descargado
 
-- Facturas de varias páginas: las copias se delimitan por PÁG. = 1 (PÁG. entero, 1..N sin saltos); todas las copias tienen el mismo número de páginas, la misma cabecera en cada página (cliente incluido) y el mismo total. El total se lee solo en la última página de cada copia; las intermedias deben llevar "SUMA Y SIGUE" y la columna del total vacía, y la última no puede llevarlo. Un total en una intermedia o cualquier cosa que no encaje da `formato_inesperado`. Sin OCR
-- Pendiente de verificar con facturas largas reales (solo se ha probado una, de Mediformplus): el rótulo de las páginas intermedias de Formación puede ser distinto
+**Trazabilidad y pantallas** (v0.20.0 y v0.21.0, esquema 1.12.0)
+- Tabla de solo añadir `wp_mdf_ca_publicacion_eventos` (documento, acción, origen, usuario, fecha UTC, lote). Un único punto cambia `publicado`: `Documento_Repository::cambiar_estado()`, por tandas con `SELECT … FOR UPDATE`, `UPDATE` e `INSERT` multifila de eventos dentro de la transacción de quien llama; un fallo revierte estado y eventos. Sin `UPDATE`, `DELETE` ni `TRUNCATE` sobre la tabla de eventos
+- Un documento que nace publicado deja un evento `recepcion` o `subida_backoffice`. «Anterior a la versión» se decide por id de documento (`mdf_ca_eventos_desde_doc_id`). Guarda solo ids de usuario, fecha, acción, origen y lote; conservación propuesta de 6 años, a validar en la revisión RGPD
+- Submenú Documentos publicados con buscador paginado en SQL (despublicar cualquier documento) e historial por documento
+- Pendientes de publicar paginado por farmacias (20 por página, tope de 50 documentos por grupo); contadores siempre en SQL sobre todos los pendientes, nunca sumando lo pintado. Orden estable por pendiente más antiguo. `Filtro_Listado_Documentos` sanea farmacia, búsqueda y página (`(int)` con mínimos, no `absint()`). Sin índice nuevo (medido)
 
-- **Documentos organizados (hecho, v0.16.0, esquema 1.9.0):** columna `documentos.fecha_documento DATE NULL` (fecha de la factura, no de subida), rellenada por la recepción con la fecha ya revalidada por el cruce. Un único validador (`Documento_Service::fecha_documento_valida()`: formato `Y-m-d` estricto, del 1-1-2000 a hoy+31 días); la subida manual la exige si el tipo es factura
-- Shortcode del listado: atributo `vista` (`agrupada` por defecto, `plana` idéntica al HTML anterior). Agrupado por tipo en orden fijo (Facturas, Contratos, Presupuestos, Entregables, Otros; sin tipo o desconocido, en "Otros"); facturas por año y mes de la fecha de factura, más reciente primero, con "Sin fecha" al final; la fecha de subida nunca sustituye a la de factura. Mes en español con array propio. La visibilidad sigue en Permissions (una consulta, agrupado en memoria)
+**Documentos organizados** (v0.16.0, esquema 1.9.0)
+- Columna `documentos.fecha_documento DATE NULL` (fecha de la factura, no de subida), rellenada por la recepción con la fecha ya revalidada. Un único validador (`Documento_Service::fecha_documento_valida()`: `Y-m-d` estricto, del 1-1-2000 a hoy+31 días); la subida manual la exige si el tipo es factura
+- Shortcode del listado: atributo `vista` (`agrupada` por defecto, `plana` idéntica al HTML anterior). Agrupado por tipo en orden fijo (Facturas, Contratos, Presupuestos, Entregables, Otros); facturas por año y mes de la fecha de factura, con "Sin fecha" al final; la fecha de subida nunca sustituye a la de factura. Al añadir el tipo Modelo 347 hay que incluirlo en ese orden
 
-- **Emisor de la factura (hecho, v0.17.0, esquema 1.10.0):** clase `Factura_Emisores` con la lista de emisores y series en código (B82827635 → Mediformplus, serie A; B88471149 → Formación, serie SF); es el único sitio que lo decide y nunca se deduce el emisor de la serie. El campo `emisor` del resultado del parser es obligatorio en el endpoint
-- Columnas nullable `documentos.emisor_cif`, `factura_serie` y `factura_numero` con UNIQUE (emisor, serie, número), además del hash; los NULL no chocan (backoffice y documentos anteriores). Serie `^[A-Z]{1,3}$/D`, número `^\d{1,20}$/D`
-- Misma factura para la misma farmacia: 200 duplicado idempotente; para otra: 422 `documento_en_otra_farmacia` uniforme, sin pistas. La carrera la pierde el INSERT del segundo. El INSERT de la recepción silencia el error de base de datos para que no lleguen serie y número al log
-- Nombre visible `{Factura|Abono} {sociedad} {serie} {número}`; el abono se decide por el signo del importe revalidado
+**Protección de la carpeta privada** (v0.22.0)
+- `Carpeta_Privada_Proteccion::asegurar()` crea solo lo que falta (carpeta, `.htaccess` de denegación para Apache 2.4 y 2.2, `index.php`, con 0644) abriendo con `fopen('x')`, de modo que nunca sobrescribe. `sondear()` pide por HTTP (`site_url()`, timeout 5 s, sin redirecciones, `sslverify`) una sonda `.txt` temporal que borra siempre, y limpia las huérfanas de más de 10 minutos
+- Solo se da por protegida si el `.htaccess` deniega y la sonda da 403 o 404. Alarma roja solo con prueba (200 con el contenido exacto de la sonda); cualquier otro resultado es aviso suave. Un `.htaccess` existente que no deniega no se toca y se avisa. Caché de 12 h si está bien y 1 h si no. `maybe_upgrade` solo crea lo que falta; la sonda corre en la primera pantalla de administración del plugin. Decisión: solo avisar, sin bloquear la subida
+- `.htaccess` en la raíz del plugin que deniega `md`, `lock`, `sh`, `yml`, `yaml` y `log`, como segunda capa frente a ficheros de trabajo subidos por error
 
-- **Robotito (hecho como diseño, docs/robotito.md en Parser_facturas_SAGE):** recomendación de operar manual tras cada exportación, con simulación primero y envío después, durante al menos el primer mes, y decidir después sobre aprobación, avisos por email y ejecución programada. Una factura resuelta a mano desde Documentos MDF no se reenvía (queda sin emisor, serie ni número, y el servidor no la detectaría como duplicada)
-- `cif_sin_farmacia` es permanente (hay facturas de clientes que no son farmacias del portal); las copias de excepciones/ son facturas reales y se borran al resolver. Antes del histórico: dar de alta las farmacias con el importador CSV y subir el tope diario de recepción
+## Estado
 
-- **Deshacer un lote (hecho, v0.19.0, esquema 1.11.0):** tabla `wp_mdf_ca_publicacion_lotes` y columna `documentos.publicacion_lote_id`. El lote se crea, se publica por tandas y se actualiza su recuento en una sola transacción (si falla, ROLLBACK; nunca lotes huérfanos ni vacíos). `publicacion_lote_id` solo vale L mientras el documento siga publicado desde que lo publicó el lote L; deshacer el lote, o cualquier otro cambio de estado, lo pone a NULL, así que deshacer nunca contradice una decisión posterior. Tras deshacer ya no se sabe qué documentos formaban el lote; el historial conserva quién, cuándo y cuántos
-- Deshacer: mismo patrón de dos pasos que la publicación en bloque (huella y transient del usuario); despublica por lista de ids solo lo que siga con ese lote y publicado, y marca el lote deshecho solo si seguía aplicado (si otro proceso ganó la carrera, ROLLBACK). `notificado_en` no se toca: un documento ya avisado nunca se avisa dos veces. Resultado `despublicado_lote` en el registro de auditoría
-- Limitaciones: lo publicado uno a uno, por farmacia o antes de la 0.19.0 no se puede deshacer en bloque; el despublicar uno a uno solo llega a los 50 documentos recibidos más recientes; deshacer no retira lo que la farmacia ya haya visto o descargado
+- Fases 0 a 3 cerradas con batería de seguridad pasada
+- **Fase 4 desplegada en producción el 08/10/2026** (plugin 0.22.0, esquema 1.12.0) y batería de cierre superada: acceso cruzado, sin sesión, enlace directo, cliente fuera del backoffice, API de páginas, ficheros de trabajo no públicos, robot limitado a su ruta y revisión de código sin hallazgos de gravedad alta
+- Etiquetas de Git: `fase3-prod` (último estado de la Fase 3) y `fase4-prod` / `fase4-327`
+- Copia de archivos (`backup.sh`, repo `deploy-script`): `wp-content` y `Clientes/private-docs`, en `~/Backups-MDF/archivos` con permisos 700. La base de datos la copia IONOS a diario
 
-- **Trazabilidad de publicaciones (hecho, v0.20.0, esquema 1.12.0):** tabla de solo añadir `wp_mdf_ca_publicacion_eventos` (documento, acción, origen, usuario, fecha UTC, lote). Un único punto cambia `publicado`: `Documento_Repository::cambiar_estado()`, por tandas de 500 con `SELECT … FOR UPDATE`, `UPDATE` e `INSERT` multifila de eventos, dentro de la transacción de quien llama (lotes, `Documento_Publicacion_Service`); un fallo revierte estado y eventos. Exige InnoDB. Sin `UPDATE`, `DELETE` ni `TRUNCATE` sobre la tabla de eventos
-- Un documento que nace publicado deja un evento `recepcion` o `subida_backoffice`; el que nace pendiente no genera evento. «Anterior a la versión» se decide por id de documento (`mdf_ca_eventos_desde_doc_id`), no por fecha. Historial por documento y submenú Documentos publicados con buscador y paginación en SQL. Guarda solo ids de usuario, fecha, acción, origen y lote (sin IP ni datos fiscales); conservación propuesta de 6 años, a validar en la revisión RGPD; sin purga implementada
-- Pendiente: paginar la lista de Pendientes de publicar
-
-- **Pendientes de publicar paginados (hecho, v0.21.0):** paginación por farmacias (20 por página) en SQL, con tope de 50 documentos por grupo y enlace a ver todos los de esa farmacia; con filtro de farmacia se pagina por sus documentos (50 por página). Los contadores (total, por farmacia, con filtros) se calculan en SQL sobre todos los pendientes, nunca sumando lo pintado; «Publicar los N de esta farmacia» y «Publicar todos los pendientes» (#316) no dependen de la página visible
-- Orden estable: farmacias por su pendiente más antiguo (`MIN(id)`) y luego por id; documentos por id ascendente. Lo que llega va al final de su grupo. `Filtro_Listado_Documentos` lee y sanea farmacia, búsqueda y página para Pendientes y Documentos publicados; página con `(int)` y mínimos, no `absint()`. Sin índice nuevo (medido
-
-### Cómo trabajar cada tarea
-
-- Antes de escribir código, resume qué clases tocarás o crearás y espera el visto bueno
-- Reutiliza `Farmacia_Service`, `Farmacia_Repository`, `Identificador_Fiscal_Validator`, `Plan_Repository`, `Documento_Service` y `Permissions`; no dupliques lógica ni consultas
-- Todo cambio de esquema pasa por `maybe_upgrade()` y sube `MDF_CA_DB_VERSION`; sube `MDF_CA_VERSION` en cada tarea
-- Prueba en local con datos reales de las fases anteriores antes de desplegar
-- Al terminar, entrega los cambios por archivo con las decisiones de diseño tomadas, para pasarlas a memoria
-
-- **Pendiente de publicar (hecho, v0.15.0, esquema 1.8.0):** columna `documentos.publicado` (DEFAULT 1). La recepción crea con publicado = 0 mientras la option `mdf_ca_recepcion_requiere_aprobacion` esté activa (por defecto activada); la subida de backoffice siempre publica. Apagar la option no publica lo ya pendiente
-- `Permissions::puede_ver_documento()` exige misma farmacia y publicado (un único predicado privado, compartido con `filtrar_documentos_visibles()`, que el listado usa con una sola consulta de farmacia); `puede_descargar_documento()` lo hereda. Un documento no publicado da el mismo 404 uniforme que uno inexistente o ajeno (verificado byte a byte). Excepción deliberada: `find_pendientes_aviso()` filtra publicado = 1 en SQL
-- Pantalla Documentos MDF › Pendientes de publicar (manage_options + nonce): ver, publicar, publicar todos los de una farmacia y despublicar. Vista previa de admin por `admin-post.php`, sin URL estable al fichero: nonce por documento y token de un solo uso, marca de agua con el login del admin; solo `Permissions::puede_previsualizar_documento()` (administrador)
+Pendientes:
+- **#307 Generador de Modelo 347** desde el Excel depurado de MDF (se emite a todos los clientes; lo valida la persona de MDF). Espera el Excel y el PDF de ejemplo
+- **#329 Endurecimiento menor:** mensaje de login del robot que delata la cuenta, índice REST de `mdf-ca/v1`, página de ejemplo y temas inactivos, actualizar WP Mail SMTP, retoques de `deploy.sh`, y **borrar los documentos de prueba** de las farmacias piloto (incluido `sol.pdf`, de la Fase 1) antes de que MDF use el portal
+- Sección de Cuota (tarea #254): a la espera del contenido de MKT
+- Avisar a MKT de las clases CSS del listado agrupado
 
 ## Batería de cierre de fase
 
 Se ejecuta al final de cada fase. Si algo falla, la fase no está cerrada:
 
-- Acceso cruzado: con sesión de la farmacia A, intentar alcanzar recursos de la B manipulando identificadores. Debe fallar siempre.
+- Acceso cruzado: con sesión de la farmacia A, intentar alcanzar recursos de la B manipulando identificadores. Debe fallar siempre, con respuesta idéntica a la de un id inexistente.
 - Sin sesión: ningún recurso privado accesible. Ni documentos, ni endpoints, ni datos vía API de WordPress.
-- Ningún documento privado alcanzable por enlace directo.
+- Ningún documento privado alcanzable por enlace directo (carpeta y fichero de `Clientes/private-docs` dan 403 o 404).
 - Los usuarios cliente no pueden entrar a `wp-admin` ni acceder a datos de otros por ninguna vía.
-- Las comprobaciones de permiso pasan por la función centralizada, no por lógica dispersa.
+- El usuario robot no puede usar rutas REST fuera de `mdf-ca/v1` (con control positivo: la misma contraseña debe autenticar en su ruta).
+- Ningún fichero de trabajo del plugin (`.md`, `docs/`, `.htaccess`) se sirve públicamente.
+- Las comprobaciones de permiso pasan por la función centralizada, no por lógica dispersa (revisión de código de solo lectura).
 - Decisiones de arquitectura de la fase documentadas.
-
-Específico de la Fase 4: importador, bandeja de excepciones e ingesta solo accesibles con `manage_options` + nonce; documentos ingeridos sin enlace directo y solo visibles para su titular.
 
 ## Fuera de alcance ahora (no construir todavía)
 
@@ -224,5 +196,8 @@ Específico de la Fase 4: importador, bandeja de excepciones e ingesta solo acce
 - Pasarela de pago online y herramientas de pago
 - Integración con CRM (MDF aún no lo ha seleccionado)
 - SSO con "la Academia" (viabilidad pendiente de datos de MDF; alternativa si no es viable: credenciales sincronizadas en el alta, no sesión compartida)
-- Implementación del robotito (en Fase 4 solo se diseña)
-- Fase 5: revisión RGPD, documentación de traspaso, plan de mantenimiento, formación a MDF y cuentas individuales de backoffice para cada persona de MDF
+- Ejecución programada o carpeta vigilada del envío de facturas (se decide tras el primer mes de operación manual)
+
+## Fase 5 (siguiente)
+
+Revisión RGPD (tabla de eventos, copias de excepciones y de backup, plazos de conservación, encargado de tratamiento, política de privacidad, licencia AGPL de PyMuPDF), documentación técnica de traspaso, plan de mantenimiento (Luis y Víctor; copia de archivos manual: quién, cuándo y cuánto se conserva; WP-Cron frente a cron de IONOS; SPF y DKIM), formación a MDF y cuentas individuales de backoffice para cada persona de MDF.
