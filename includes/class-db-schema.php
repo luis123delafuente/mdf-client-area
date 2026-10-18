@@ -92,6 +92,16 @@ class DB_Schema {
 		return $wpdb->prefix . 'mdf_ca_publicacion_eventos';
 	}
 
+	/**
+	 * Envios por correo de las cartas del Modelo 347 (#307, generador): un
+	 * registro por documento con su destinatario, estado, intentos, fechas y
+	 * error. Nunca importes.
+	 */
+	public static function get_modelo_347_envios_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_347_envios';
+	}
+
 	public static function get_catalogo_table_name() {
 		global $wpdb;
 		return $wpdb->prefix . 'mdf_ca_catalogo';
@@ -133,6 +143,7 @@ class DB_Schema {
 		$registro_table        = self::get_recepcion_registro_table_name();
 		$lotes_table           = self::get_publicacion_lotes_table_name();
 		$eventos_table         = self::get_publicacion_eventos_table_name();
+		$envios_347_table      = self::get_modelo_347_envios_table_name();
 
 		// slug es el identificador estable para comparar visibilidad
 		// (Permissions::puede_ver_bloque_por_plan(), atributo "planes" de
@@ -306,6 +317,33 @@ class DB_Schema {
 			KEY documento (documento_id,fecha)
 		) {$charset_collate};";
 
+		// Envios del Modelo 347 (#307). UNIQUE documento_id: una fila por
+		// carta; "reenviar" reutiliza la fila (estado otra vez pendiente), asi
+		// que nunca hay dos envios en curso de la misma carta. estado:
+		// pendiente | enviando | enviado | fallido | cancelado. "enviando" lo
+		// pone el UPDATE condicionado que reclama la fila antes de llamar a
+		// wp_mail(): si PHP muere a mitad se queda asi y NO se reintenta solo
+		// (el correo pudo salir). destinatario es el email de la cuenta de la
+		// farmacia en el momento del envio (dato personal: revision RGPD de la
+		// Fase 5). error, saneado y sin importes. Fechas en UTC. Sin FK.
+		$envios_347_sql = "CREATE TABLE {$envios_347_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			documento_id BIGINT UNSIGNED NOT NULL,
+			farmacia_id BIGINT UNSIGNED NOT NULL,
+			lote_id BIGINT UNSIGNED NULL,
+			destinatario VARCHAR(190) NOT NULL DEFAULT '',
+			estado VARCHAR(12) NOT NULL DEFAULT 'pendiente',
+			intentos SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+			creado_en DATETIME NOT NULL,
+			ultimo_intento_en DATETIME NULL,
+			enviado_en DATETIME NULL,
+			error VARCHAR(255) NULL,
+			usuario_id BIGINT UNSIGNED NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY documento_id (documento_id),
+			KEY estado (estado,lote_id)
+		) {$charset_collate};";
+
 		$registro_sql = "CREATE TABLE {$registro_table} (
 			fecha DATE NOT NULL,
 			resultado VARCHAR(20) NOT NULL,
@@ -350,6 +388,6 @@ class DB_Schema {
 			KEY plan_id (plan_id)
 		) {$charset_collate};";
 
-		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql, $lotes_sql, $eventos_sql );
+		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql, $lotes_sql, $eventos_sql, $envios_347_sql );
 	}
 }

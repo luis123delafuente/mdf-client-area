@@ -130,6 +130,12 @@ class Despublicacion_Lote_Service {
 
 		Recepcion_Registro::registrar( Recepcion_Registro::DESPUBLICADO_LOTE, $despublicados );
 
+		// Lote del generador del Modelo 347 (#307): lo que aun no se haya
+		// enviado ya no se envia. Lo enviado no se puede retirar. Sin
+		// transaccion propia: el envio comprueba de todos modos que la carta
+		// siga publicada antes de mandarla.
+		( new Modelo_347_Envio_Repository() )->cancelar_pendientes_de_lote( $lote_id );
+
 		return array(
 			'despublicados'   => $despublicados,
 			'farmacias'       => $actual['farmacias'],

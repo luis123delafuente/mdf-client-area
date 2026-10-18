@@ -13,6 +13,8 @@ class Activator {
 		self::marcar_inicio_de_eventos();
 		self::migrar_planes_desde_varchar();
 		Roles::register();
+		Roles::conceder_gestion_347();
+		update_option( 'mdf_ca_cap_347_v1', '1' );
 		Area_Privada_Pages::crear_paginas();
 
 		// Proteccion de la carpeta privada (#327): crea lo que falte y hace
@@ -45,7 +47,87 @@ class Activator {
 	 * pisa paginas ya creadas), asi que aqui basta con una option propia
 	 * que evite repetir esa comprobacion en cada peticion una vez hecha.
 	 */
+	/**
+	 * Options que marcan cada tarea de un solo uso de migrar() como hecha. Si
+	 * falta alguna (o la version de BD no coincide), hay trabajo pendiente.
+	 */
+	private const MARCAS_MIGRACION = array(
+		'mdf_ca_eventos_desde',
+		'mdf_ca_avisos_backfill_hecho',
+		'mdf_ca_roles_v2',
+		'mdf_ca_cap_347_v1',
+		'mdf_ca_proteccion_carpeta_v1',
+		'mdf_ca_planes_migrados',
+		'mdf_ca_area_privada_paginas_creadas',
+		'mdf_ca_visor_rewrite_flushed',
+	);
+
+	/**
+	 * Cerrojo de maybe_upgrade() (#307): GET_LOCK es por conexion y existe
+	 * igual en MySQL y en MariaDB; se libera solo si PHP muere.
+	 */
+	private const CERROJO_MIGRACION = 'mdf_ca_upgrade';
+
+	/**
+	 * Comprobacion barata en cada peticion (options ya cargadas en memoria).
+	 * Solo si queda algo pendiente se pide el cerrojo, sin esperar: si otra
+	 * peticion lo tiene, esta sigue sin migrar (lo esta haciendo la otra) en
+	 * vez de repetir el ALTER TABLE a la vez (antes de #307, dos peticiones
+	 * simultaneas tras un despliegue dejaban "Duplicate column" en el log).
+	 * Con el cerrojo se vacia la cache de options de esta peticion y se
+	 * vuelve a comprobar contra la BD: la otra peticion puede haber terminado
+	 * justo antes.
+	 */
 	public static function maybe_upgrade(): void {
+		if ( ! self::hay_migracion_pendiente() ) {
+			return;
+		}
+
+		global $wpdb;
+
+		$cerrojo = $wpdb->prefix . self::CERROJO_MIGRACION;
+
+		if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 0)', $cerrojo ) ) ) {
+			return;
+		}
+
+		try {
+			self::olvidar_options_en_cache();
+
+			if ( self::hay_migracion_pendiente() ) {
+				self::migrar();
+			}
+		} finally {
+			$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $cerrojo ) );
+		}
+	}
+
+	private static function hay_migracion_pendiente(): bool {
+		if ( get_option( 'mdf_ca_db_version' ) !== MDF_CA_DB_VERSION ) {
+			return true;
+		}
+
+		foreach ( self::MARCAS_MIGRACION as $marca ) {
+			if ( false === get_option( $marca ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/** Para que get_option() vuelva a leer de la BD lo que otra peticion haya escrito. */
+	private static function olvidar_options_en_cache(): void {
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+
+		foreach ( array_merge( array( 'mdf_ca_db_version' ), self::MARCAS_MIGRACION ) as $option ) {
+			wp_cache_delete( $option, 'options' );
+		}
+	}
+
+	/** Lo que hacia maybe_upgrade() antes del cerrojo, ahora siempre dentro de el. */
+	private static function migrar(): void {
 		if ( get_option( 'mdf_ca_db_version' ) !== MDF_CA_DB_VERSION ) {
 			self::create_tables();
 			update_option( 'mdf_ca_db_version', MDF_CA_DB_VERSION );
@@ -73,6 +155,13 @@ class Activator {
 		if ( ! get_option( 'mdf_ca_roles_v2' ) ) {
 			Roles::register_robot();
 			update_option( 'mdf_ca_roles_v2', '1' );
+		}
+
+		// Generador del Modelo 347 (#307): su capacidad propia, al rol
+		// administrator, una sola vez.
+		if ( ! get_option( 'mdf_ca_cap_347_v1' ) ) {
+			Roles::conceder_gestion_347();
+			update_option( 'mdf_ca_cap_347_v1', '1' );
 		}
 
 		// Proteccion de la carpeta privada (#327) en las instalaciones ya

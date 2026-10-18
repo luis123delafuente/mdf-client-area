@@ -2,9 +2,9 @@
 /**
  * Plugin Name:       MDF Client Area
  * Description:       Logica de negocio del Area de Clientes de Mediformplus SL (permisos, documentos, catalogo). Elementor solo maqueta, este plugin decide.
- * Version:           0.1.0
+ * Version:           0.24.0
  * Requires at least: 6.4
- * Requires PHP:      8.1
+ * Requires PHP:      8.4
  * Author:            Mediformplus SL
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.23.0' );
-define( 'MDF_CA_DB_VERSION', '1.13.0' );
+define( 'MDF_CA_VERSION', '0.24.0' );
+define( 'MDF_CA_DB_VERSION', '1.14.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MDF_CA_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
@@ -65,6 +65,7 @@ add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Avisos_Documentos', '
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Recepcion_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Publicacion_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Documentos_Publicados', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Modelo_347', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Proteccion_Carpeta', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Recepcion_Autenticacion', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Recepcion_Documentos_Endpoint', 'register_hooks' ) );

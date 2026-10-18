@@ -1,3 +1,3 @@
-<FilesMatch "\.(md|lock|sh|yml|yaml|log)$">
+<FilesMatch "\.(md|lock|sh|yml|yaml|log|docx)$">
   Require all denied
 </FilesMatch>

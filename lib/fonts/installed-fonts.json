@@ -1,0 +1,12 @@
+{
+    "liberation serif": {
+        "normal": "liberation_serif_normal_73707118f740100a36e3ca13278d1768",
+        "bold": "liberation_serif_bold_7712d4e2fe7899998c2cbb36b46a5929",
+        "italic": "liberation_serif_italic_7400beee07b717e46a10311488a2b843",
+        "bold_italic": "liberation_serif_bold_italic_50fa49e1df88b0c3b16bd23e29e31ffe"
+    },
+    "liberation sans": {
+        "normal": "liberation_sans_normal_4842fdd78d6b86f96b37ac6af71f1780",
+        "bold": "liberation_sans_bold_12a2795b985ede3fffba399ee54a255c"
+    }
+}

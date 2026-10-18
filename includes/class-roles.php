@@ -24,6 +24,15 @@ class Roles {
 	public const CAP_SUBIR_FACTURAS  = 'mdf_ca_subir_facturas';
 
 	/**
+	 * Generador del Modelo 347 (#307): subir el Excel de SAGE, generar,
+	 * publicar y enviar las cartas, y sus ajustes. Capacidad propia (no
+	 * manage_options) para poder darla mas adelante a una cuenta individual de
+	 * Administracion sin darle todo el backoffice. Hoy solo la tiene el rol
+	 * administrator (conceder_gestion_347()).
+	 */
+	public const CAP_GESTIONAR_347 = 'mdf_ca_gestionar_347';
+
+	/**
 	 * Registra el rol con las capacidades exactas definidas aqui.
 	 *
 	 * add_role() no hace nada si el rol ya existe (no lo actualiza ni lo
@@ -46,6 +55,15 @@ class Roles {
 	public static function register_robot(): void {
 		remove_role( self::ROLE_ROBOT );
 		add_role( self::ROLE_ROBOT, 'Robot MDF', array( self::CAP_SUBIR_FACTURAS => true ) );
+	}
+
+	/** Idempotente: add_cap() sobre un rol que ya la tiene no cambia nada. */
+	public static function conceder_gestion_347(): void {
+		$administrador = get_role( 'administrator' );
+
+		if ( $administrador ) {
+			$administrador->add_cap( self::CAP_GESTIONAR_347 );
+		}
 	}
 
 	public static function user_is_robot( \WP_User $user ): bool {

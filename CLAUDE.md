@@ -5,11 +5,11 @@ Plugin de WordPress que concentra toda la lógica de negocio del Área de Client
 - Cliente: Mediformplus SL (MDF), grupo de farmacias (unas 200 farmacias previstas)
 - Stack: WordPress + Elementor + este plugin propio
 - Entorno local: WordPress con Local (by WP Engine), PHP 8.4.18, Apache, MySQL 8.4.0, site `mdf-client-area.local`
-- Producción: `clientes.mediformplus.com`, hosting IONOS (servidor dedicado gestionado), PHP 8.4.24, WordPress 7.1, base de datos **MariaDB 11.8** (distinta del MySQL local: cualquier SQL nuevo debe funcionar en los dos)
+- Producción: `clientes.mediformplus.com`, hosting IONOS (servidor dedicado gestionado), PHP 8.4.24 (el plugin exige **PHP 8.4**: `Requires PHP: 8.4`, por OpenSpout), WordPress 7.1, base de datos **MariaDB 11.8** (distinta del MySQL local: cualquier SQL nuevo debe funcionar en los dos)
 - Ruta del plugin en ambos entornos: `wp-content/plugins/mdf-client-area/`
-- Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
+- Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script (`wp-content/plugins/deploy-script/deploy.sh`, carpeta hermana del plugin, **sin control de versiones**) excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md`, `*.docx` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
 - Fechas: objetivo de entrega el 12 de octubre de 2026; fecha límite el 8 de noviembre de 2026
-- Versión del plugin: consulta las constantes `MDF_CA_VERSION` y `MDF_CA_DB_VERSION` en el código antes de subirlas; no asumas su valor
+- Versión del plugin: consulta las constantes `MDF_CA_VERSION` y `MDF_CA_DB_VERSION` en el código antes de subirlas; no asumas su valor. **`MDF_CA_VERSION` y la línea `Version:` de la cabecera de `mdf-client-area.php` se actualizan siempre juntas, en el mismo cambio, con el mismo valor** (la cabecera es lo que muestra WordPress en Plugins; hasta la 0.24.0 se quedó en 0.1.0)
 
 ## Reglas no negociables
 
@@ -165,12 +165,75 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Unicidad: `UNIQUE modelo_347 (farmacia_id, emisor_cif, ejercicio, vigente)`, con `vigente` = 1 en el vigente y **NULL** (nunca 0) en todo lo demás y en los retirados. Así puede haber varios retirados y un único vigente por farmacia, sociedad y ejercicio (probado en MySQL 8.4; los NULL no chocan tampoco en MariaDB). La misma combinación con otro PDF se rechaza con un mensaje claro y nunca se sustituye; la carrera la pierde el INSERT, con el error de la BD silenciado
 - Correcciones: **«Retirar para corrección»** en Documentos MDF (solo el administrador, con nonce por documento y casilla de confirmación). `Documento_Publicacion_Service::retirar_modelo_347()`, en una transacción: `FOR UPDATE`, despublica con `cambiar_estado()` si estaba publicado, `marcar_retirado()` (`vigente = NULL`, `retirado_en`) y evento `retirado`. Retirado es terminal: `cambiar_estado()` no lo publica y `Documento_Repository::PENDIENTE` (`publicado = 0 AND retirado_en IS NULL`) lo saca de todas las consultas de pendientes. Lo que la farmacia ya vio o descargó no se retira
 - Subida manual: con el tipo Modelo 347 se piden ejercicio y sociedad emisora (`Factura_Emisores::get_opciones()`), los dos obligatorios. La fecha se ignora y el nombre lo fija el servidor: `Documento_Service::nombre_modelo_347()`, «Modelo 347 {sociedad} {ejercicio}». Sin hash: subir el mismo PDF otra vez se rechaza como combinación repetida
-- No hay ruta REST: los 347 se generarán en el servidor desde el Excel de SAGE subido en el backoffice (tarea siguiente), sobre el mismo `guardar()`. `Permissions`, el endpoint, el visor y la recepción de facturas no cambian
+- No hay ruta REST: los 347 se generan en el servidor desde el Excel de SAGE subido en el backoffice (ver «Generador del Modelo 347»). `Permissions`, el endpoint, el visor y la recepción de facturas no cambian
+
+**Generador del Modelo 347** (#307; v0.24.0, esquema 1.14.0). Solo clientes de Mediformplus (B82827635)
+- Pantalla «Documentos MDF › Modelo 347» (`Admin_Modelo_347`) con tres pestañas: Generar cartas, Publicar y enviar, y Ajustes. Capacidad propia `mdf_ca_gestionar_347` (`Roles::conceder_gestion_347()`, solo el rol administrator, en `maybe_upgrade()` con la marca `mdf_ca_cap_347_v1`) en toda acción: pantalla, `admin-post` y AJAX, más un nonce propio por acción (por documento o por envío cuando aplica)
+- Librerías vendorizadas en `lib/` (no en `vendor/`, que `.gitignore` ignora): dompdf 3.1.6 y OpenSpout 5.12.2, que **exige PHP ~8.4**. `lib/.htaccess` deniega todo y la carga es perezosa (`Modelo_347_Librerias`). La LGPL-3.0 de php-svg-lib obliga a distribuir el conjunto como GPLv3 (el plugin es GPL-2.0-or-later). Cómo se reconstruye, en `lib/LEEME.md`
+- Fuentes: Liberation Serif y Sans (OFL, métricamente idénticas a Times New Roman), preinstaladas en `lib/fonts` con `installed-fonts.json` en rutas relativas y las cachés `.ufm.json` generadas
+- Dónde escribe dompdf (revisado en su código):
+  - `fontDir` y `fontCache` = `lib/fonts`, **solo lectura** en ejecución. `installed-fonts.json` solo se escribe al registrar fuentes, al vendorizar. Cpdf solo escribe una caché `.ufm.json` si falta, y `Modelo_347_Librerias::fuentes_completas()` impide renderizar si falta alguna. Así dompdf nunca escribe dentro del plugin y `deploy.sh --delete` no borra nada generado en el servidor;
+  - `tempDir` **sí** se escribe en cada render (subconjuntos de fuente y los PNG del canal alfa del logo). Va a una subcarpeta aleatoria `r-*` (0700) por render, dentro de `Clientes/private-docs/.tmp-generador-347/`: fuera del plugin (`deploy.sh` no la toca), fuera de `wp-content` y con su propio `.htaccess` e `index.php` (`Carpeta_Privada_Proteccion::asegurar()`, sonda HTTP = 403). `Modelo_347_Carta` la borra entera al terminar; es una por render porque Cpdf solo borra sus PNG en el destructor, al final de la petición, y así dos renders simultáneos no se pisan;
+  - las subcarpetas de más de una hora (renders interrumpidos) se borran en el siguiente render;
+  - nunca `get_temp_dir()`, que puede caer en `wp-content`, que es pública. Si la carpeta privada no existe, no es escribible o su `.htaccess` no deniega, no se genera.
+- Lectura del Excel (`Modelo_347_Excel_Lector`):
+  - antes de abrir, `Xlsx_Validator` (el mismo que la subida manual, extraído de `Documento_Service::validar_xlsx()`): ZIP OOXML, sin VBA ni objetos incrustados, límites anti zip bomb y rechazo de cualquier XML con DOCTYPE o ENTITY (desde #307, también en la subida manual);
+  - **tipo del libro según la regla OPC** (ECMA-376 parte 2): Override de `/xl/workbook.xml` y, si no hay, el Default de la extensión `xml`, sin distinguir mayúsculas. Tiene que ser exactamente `…sheet.main+xml`, así que un xlsm se rechaza venga de donde venga, y un Override `macroEnabled` gana a un Default `main`. Dos Override para la misma parte o dos Default para la misma extensión: rechazo (paquete inválido y ambiguo). Antes solo se miraba el Override y se rechazaba el Excel real de SAGE: su librería .NET (estilo OpenXML SDK) declara el tipo del libro con `<Default Extension="xml" …sheet.main+xml/>`, sin Override;
+  - formato SAGE comprobado con un ficticio de estructura idéntica (`tests/generar-347-sage-net.py`): 6 entradas en su orden, `_rels/.rels` sin comprimir, BOM en los `.rels` y en `[Content_Types].xml`, prefijo `x:`, celdas `t="str"` y `t="n"` sin cadenas compartidas, y rutas absolutas en los `.rels`. OpenSpout y SheetJS (visor) lo leen bien y la simulación da lo mismo que con el ficticio de OpenSpout;
+  - hoja «347» y cabeceras por nombre, sin mayúsculas, tildes ni espacios sobrantes. Si falta una columna o hay una duplicada, se rechaza el fichero entero;
+  - límites: 5 MB y 2000 filas;
+  - importes en céntimos. En texto solo valen formatos inequívocos («1.234» es ambiguo y se rechaza). Trimestre vacío = 0 con aviso; DEV vacío o ilegible bloquea la fila;
+  - el temporal se borra antes de redirigir (`redirigir()` hace `exit`, que se salta los `finally`).
+- Simulación (`Modelo_347_Simulacion_Service`). Categorías, por prioridad:
+  - bloquean: `invalido`, `importe_invalido`, `no_cuadra` (±1 céntimo), `repetido` (**todas** las apariciones del identificador), `no_portal`, `ya_vigente` (se omite, nunca se sustituye);
+  - se generan: `sin_cuenta` (cuenta no activa o sin email: carta guardada y publicada, sin correo, y también en el ZIP) y `lista`.
+
+  Avisos que no bloquean: trimestre negativo, trimestre vacío y RECC distinto de 0. Totales DEV del fichero, de «lista» y de «sin cuenta». La huella cubre línea, categoría, farmacia, identificador, nombre, domicilio e importes.
+- Revisar cartas (pantalla de simulación, bajo «Totales para cuadrar con SAGE»):
+  - «Vista previa (hasta 3 cartas, PDF)» y un enlace «Ver carta» en cada fila;
+  - sirven para **cualquier fila con identificador válido y suma correcta**, se genere o no: `Modelo_347_Simulacion_Service::PREVISUALIZABLES` = lista, sin cuenta, no está en el portal, ya vigente y repetido, por ese orden de prioridad en la vista previa global. Las inválidas, con importes ilegibles o descuadradas, no (404 si se fuerza la URL). Antes solo había vista previa si existía alguna fila «lista» o «sin cuenta», y con el Excel real (todo «no está en el portal») el botón no aparecía;
+  - al lado, «Descargar ZIP de las que no se pueden enviar (N)», con las cartas de «sin cuenta» y «no está en el portal»;
+  - todo exige el correo de Administración en Ajustes y se genera al vuelo, sin guardar nada.
+- Qué se guarda (RGPD):
+  - el Excel, nunca;
+  - las filas saneadas, en un transient de simulación de 15 min, consumido al confirmar y borrado al cancelar o al empezar otra simulación;
+  - las filas que se generan, en el transient del trabajo, durante 1 h y borrado al terminar;
+  - la vista previa, el ZIP y la prueba, al vuelo y sin disco.
+- Generación por tandas AJAX de 10 (`Modelo_347_Generacion_Service`) mediante `Documento_Service::guardar_modelo_347_generado()`:
+  - es el mismo camino que la subida (extraído a `registrar()`) y nace **pendiente**, con `notificado_en` en NULL y sin hash;
+  - unicidad con comprobación previa y UNIQUE. Dos tandas a la vez dejan una sola carta (probado);
+  - reprocesar el mismo Excel solo genera lo que falta. Corregir = retirar y reprocesar.
+- Carta (`Modelo_347_Carta` y `includes/plantillas-347/{CIF}.php`):
+  - una sociedad está habilitada si existe su plantilla, así que Formación será añadir `B88471149.php`;
+  - fiel al `.docx`: A4, márgenes de 2,5 y 3 cm, logo local de 4,5 × 3 cm, una página;
+  - **dompdf multiplica `line-height` por la altura de la fuente (1,264 en Liberation Serif)**: se usa 0.91 para obtener los 13,8 pt de Word;
+  - valores escapados con `esc_html` antes de la plantilla; `isRemoteEnabled`, `isPhpEnabled` e `isJavascriptEnabled` desactivados; `chroot` en fuentes e imagen. Probado: ninguna petición remota (CSS, `@import`, fuente, fondo, imagen) y ningún fichero local fuera del `chroot`;
+  - el correo de Administración de la carta es un ajuste obligatorio, sin dirección en el código.
+- Publicar y enviar (`Modelo_347_Publicacion_Service`), en dos pasos con huella:
+  - en una transacción: lote (`filtros` = `{"tipo":"modelo_347","emisor","ejercicio"}`), `cambiar_estado()` con el origen de evento nuevo `modelo_347` y la cola de envíos de las farmacias con cuenta activa y email;
+  - al deshacer el lote se cancelan los envíos aún en cola (`Despublicacion_Lote_Service`). Si después se vuelve a publicar, el cancelado vuelve a la cola y lo ya enviado no se toca.
+- Envíos (`wp_mdf_ca_347_envios`, UNIQUE `documento_id`, sin importes), `Modelo_347_Envio_Service`:
+  - tandas AJAX al ritmo del ajuste (5 correos cada 30 s por defecto). El servidor también exige el intervalo, pero esa comprobación no es atómica y solo es prudencia;
+  - **cada carta se reclama** con un `UPDATE` condicionado `pendiente → enviando`, y eso es lo que impide el doble envío (probado con 4 peticiones simultáneas);
+  - antes de enviar se comprueba de nuevo que sigue publicada y vigente y que la cuenta sigue activa con email; el destinatario es el email actual de la cuenta;
+  - PDF adjunto desde memoria con `phpmailer_init`. Reply-To del ajuste, obligatorio para enviar; el From es el del SMTP.
+- Estados del envío:
+  - `wp_mail()` true → `enviado` y se marca `notificado_en`. False → `fallido`, que solo vuelve a la cola con «Reintentar los fallidos»;
+  - un `enviando` de más de 10 minutos es «interrumpido» y no se reintenta solo;
+  - «Reenviar» (casilla de confirmación) es la única forma de mandar dos veces.
+- El aviso genérico excluye `modelo_347` en `find_pendientes_aviso()`; tampoco avisa de los 347 subidos a mano
+- «Enviarme una prueba»: a la dirección del ajuste, con «[PRUEBA]», sin publicar ni registrar
+- ZIP de «sin cuenta» y «no está en el portal»: `Zip_Stream` (escritor STORE propio, directo a `php://output`, sin ningún temporal)
+- **Contraseña en el PDF: descartada** (se implementó y se quitó antes del commit). dompdf solo cifra con **RC4 de 40 bits** (`/V 1 /R 2` en Cpdf), que se rompe en segundos, y la contraseña prevista era el CIF/NIF del destinatario, un dato que conoce cualquiera que tenga una factura suya. Además solo podía aplicarse al ZIP: las cartas del portal se abren en el visor y se adjuntan tal como se guardaron, y no se pueden volver a cifrar al enviar porque los importes no están en la BD. No aportaba protección y podía dar una falsa sensación de seguridad. Si algún día hiciera falta, tendría que ser AES con otra librería y una contraseña que no sea un dato público
+- `maybe_upgrade()` con cerrojo: comprobación barata y, si hay trabajo pendiente, `GET_LOCK` sin espera (si otra petición lo tiene, esta no migra). Con el cerrojo se vacía la caché de options y se vuelve a comprobar contra la BD; `RELEASE_LOCK` en un `finally`. Toda migración nueva debe añadir su marca a `Activator::MARCAS_MIGRACION`
+- Modo proveedores (sin cruce con el portal, email de la columna «Email», solo correo y sin guardar) y Formación: no implementados; la simulación, la carta y el envío están separados para enchufarlos
+- Pruebas: `tests/generar-347-ficticio.php` (OpenSpout, CIF por argumento), `tests/generar-347-sage-net.py` (estructura exacta de SAGE, mismas filas) y `tests/generar-347-maliciosos.py <origen> <carpeta> [<prefijo>]`. Este último genera 8 variantes malas por formato (DOCTYPE, xlsm renombrado, VBA, zip bomb, sin columna, sin hoja, Override `macroEnabled` y PDF renombrado), con sus ficheros en `tests/fixtures/`. `tests/` no se despliega
+- Plantilla original: `docs/MODELO CARTA 347.docx` (no se despliega: `deploy.sh` excluye `docs/` y `*.docx`, y el `.htaccess` de la raíz deniega `docx` además de `md`, `lock`, `sh`, `yml`, `yaml` y `log`)
 
 **Protección de la carpeta privada** (v0.22.0)
 - `Carpeta_Privada_Proteccion::asegurar()` crea solo lo que falta (carpeta, `.htaccess` de denegación para Apache 2.4 y 2.2, `index.php`, con 0644) abriendo con `fopen('x')`, de modo que nunca sobrescribe. `sondear()` pide por HTTP (`site_url()`, timeout 5 s, sin redirecciones, `sslverify`) una sonda `.txt` temporal que borra siempre, y limpia las huérfanas de más de 10 minutos
 - Solo se da por protegida si el `.htaccess` deniega y la sonda da 403 o 404. Alarma roja solo con prueba (200 con el contenido exacto de la sonda); cualquier otro resultado es aviso suave. Un `.htaccess` existente que no deniega no se toca y se avisa. Caché de 12 h si está bien y 1 h si no. `maybe_upgrade` solo crea lo que falta; la sonda corre en la primera pantalla de administración del plugin. Decisión: solo avisar, sin bloquear la subida
-- `.htaccess` en la raíz del plugin que deniega `md`, `lock`, `sh`, `yml`, `yaml` y `log`, como segunda capa frente a ficheros de trabajo subidos por error
+- `.htaccess` en la raíz del plugin que deniega `md`, `lock`, `sh`, `yml`, `yaml`, `log` y (desde #307) `docx`, como segunda capa frente a ficheros de trabajo subidos por error
 
 ## Estado
 
@@ -180,7 +243,12 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Copia de archivos (`backup.sh`, repo `deploy-script`): `wp-content` y `Clientes/private-docs`, en `~/Backups-MDF/archivos` con permisos 700. La base de datos la copia IONOS a diario
 
 Pendientes:
-- **#307 Generador de Modelo 347**: la parte del plugin (tipo, listado, unicidad, retirada y subida manual, v0.23.0) está hecha y verificada en local, sin desplegar. Falta la importación del Excel de SAGE desde el backoffice y la generación de las cartas en el servidor (espera el Excel y el PDF de ejemplo; lo valida la persona de MDF). Avisar a MKT de las clases del grupo Modelo 347
+- **#307 Generador de Modelo 347**: v0.23.0 (soporte en Documentación) y v0.24.0 (generador desde el Excel de SAGE, solo Mediformplus) hechas y verificadas en local, sin desplegar. Antes de usarlo en producción:
+  - configurar en Ajustes el correo de Administración, el Reply-To y la dirección de prueba;
+  - confirmar el límite del SMTP de IONOS;
+  - probarlo con el Excel real (lo valida la persona de MDF);
+
+  Pendientes: Formación y el modo proveedores. Avisar a MKT de las clases del grupo Modelo 347
 - **#329 Endurecimiento menor:** mensaje de login del robot que delata la cuenta, índice REST de `mdf-ca/v1`, página de ejemplo y temas inactivos, actualizar WP Mail SMTP, retoques de `deploy.sh`, y **borrar los documentos de prueba** de las farmacias piloto (incluido `sol.pdf`, de la Fase 1) antes de que MDF use el portal
 - Sección de Cuota (tarea #254): a la espera del contenido de MKT
 - Avisar a MKT de las clases CSS del listado agrupado

@@ -47,7 +47,7 @@ class Documento_Service {
 		'xlsx'     => self::MIME_XLSX,
 	);
 
-	public const MIME_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+	public const MIME_XLSX = Xlsx_Validator::MIME;
 
 	/** Rango razonable de la fecha del documento: desde esta fecha hasta hoy mas el margen. */
 	private const FECHA_DOCUMENTO_MINIMA     = '2000-01-01';
@@ -55,10 +55,6 @@ class Documento_Service {
 
 	/** Primer ejercicio admitido para un Modelo 347 (#307); el ultimo es el ano en curso. */
 	public const EJERCICIO_MINIMO = 2000;
-
-	/** Limites anti zip-bomb para validar_xlsx(): nunca se descomprime nada, solo se suman los tamanos declarados. */
-	private const XLSX_MAX_ENTRADAS          = 2000;
-	private const XLSX_MAX_DESCOMPRIMIDO_BYTES = 200 * 1024 * 1024;
 
 	private Documento_Repository $repository;
 	private Farmacia_Repository $farmacia_repository;
@@ -299,6 +295,117 @@ class Documento_Service {
 			}
 		}
 
+		$tmp = $archivo['tmp_name'];
+
+		return $this->registrar(
+			$farmacia_id,
+			$nombre,
+			$tipo_documento,
+			$filetype['ext'],
+			$filetype['type'],
+			(int) $archivo['size'],
+			static fn( string $destino ): bool => move_uploaded_file( $tmp, $destino ),
+			$descargable,
+			$notificar,
+			$hash_sha256,
+			$publicar,
+			$fecha_documento,
+			$factura,
+			$modelo_347
+		);
+	}
+
+	/**
+	 * Carta del Modelo 347 generada en el servidor (#307, generador desde el
+	 * Excel de SAGE): mismo camino que la subida manual de un 347 (mismo
+	 * validador de ejercicio y emisor, mismo nombre visible, misma unicidad
+	 * por farmacia, emisor y ejercicio, misma carpeta privada y mismo
+	 * registro), con dos diferencias: el PDF llega en memoria (nunca hubo
+	 * subida HTTP) y el documento nace PENDIENTE de publicar, para que
+	 * Administracion revise alguna carta antes de publicar y enviar. Sin hash:
+	 * cada generacion produce bytes distintos (fecha interna del PDF).
+	 *
+	 * notificado_en queda en NULL: el 347 no entra en el aviso generico
+	 * (Documento_Repository::find_pendientes_aviso() lo excluye) y lo marca el
+	 * envio propio del 347 cuando el correo sale.
+	 *
+	 * @return Documento|\WP_Error
+	 */
+	public function guardar_modelo_347_generado( int $farmacia_id, string $emisor_cif, int $ejercicio, string $pdf ) {
+		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
+			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Farmacia no valida.' );
+		}
+
+		$modelo_347 = self::validar_modelo_347( $ejercicio, $emisor_cif );
+
+		if ( is_wp_error( $modelo_347 ) ) {
+			return $modelo_347;
+		}
+
+		if ( $this->repository->find_modelo_347_vigente( $farmacia_id, $modelo_347['emisor_cif'], $modelo_347['ejercicio'] ) ) {
+			return self::error_modelo_347_ya_existe( $modelo_347 );
+		}
+
+		$tamano = strlen( $pdf );
+
+		if ( $tamano < 1 || $tamano > self::TAMANO_MAXIMO_BYTES || ! str_starts_with( $pdf, '%PDF-' ) || 'application/pdf' !== self::mime_real_buffer( $pdf ) ) {
+			return new \WP_Error( 'mdf_ca_documento_pdf_invalido', 'El fichero no es un PDF valido.' );
+		}
+
+		return $this->registrar(
+			$farmacia_id,
+			self::nombre_modelo_347( $modelo_347 ),
+			'modelo_347',
+			'pdf',
+			'application/pdf',
+			$tamano,
+			static function ( string $destino ) use ( $pdf ): bool {
+				// 'x': nunca sobrescribe (el nombre es aleatorio de 128 bits).
+				$fichero = fopen( $destino, 'xb' );
+
+				if ( false === $fichero ) {
+					return false;
+				}
+
+				$escritos = fwrite( $fichero, $pdf );
+				fclose( $fichero );
+
+				if ( strlen( $pdf ) !== $escritos ) {
+					wp_delete_file( $destino );
+
+					return false;
+				}
+
+				chmod( $destino, 0644 );
+
+				return true;
+			},
+			false,
+			// "true" = notificado_en queda en NULL hasta que salga su correo
+			// (Modelo_347_Envio_Service lo marca entonces). El aviso generico
+			// no lo ve igualmente: excluye el tipo modelo_347.
+			true,
+			null,
+			false,
+			null,
+			null,
+			$modelo_347
+		);
+	}
+
+	/**
+	 * Parte comun de cualquier alta de documento, con el fichero ya validado:
+	 * carpeta privada disponible, transaccion si nace publicado, nombre en
+	 * disco aleatorio, escritura ($escribir: mover la subida o volcar bytes),
+	 * INSERT (con el error de BD silenciado cuando un UNIQUE puede delatar
+	 * datos), evento si nace publicado y vuelta atras si algo falla.
+	 *
+	 * @param callable(string): bool $escribir Recibe la ruta destino; true si el fichero ha quedado escrito.
+	 * @param array{emisor_cif: string, serie: string, numero: string}|null $factura
+	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347
+	 * @return Documento|\WP_Error
+	 */
+	private function registrar( int $farmacia_id, string $nombre, string $tipo_documento, string $extension, string $tipo_mime, int $tamano, callable $escribir, bool $descargable, bool $notificar, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347 ) {
 		$carpeta = Documento_Endpoint::get_carpeta_documentos();
 
 		if ( ! is_dir( $carpeta ) || ! is_writable( $carpeta ) ) {
@@ -321,10 +428,10 @@ class Documento_Service {
 			);
 		}
 
-		$nombre_fichero = self::generar_nombre_fichero( $farmacia_id, $filetype['ext'] );
+		$nombre_fichero = self::generar_nombre_fichero( $farmacia_id, $extension );
 		$ruta_destino   = $carpeta . DIRECTORY_SEPARATOR . $nombre_fichero;
 
-		if ( ! move_uploaded_file( $archivo['tmp_name'], $ruta_destino ) ) {
+		if ( ! $escribir( $ruta_destino ) ) {
 			return new \WP_Error( 'mdf_ca_documento_error_escritura', 'No se pudo guardar el fichero en el servidor.' );
 		}
 
@@ -346,12 +453,12 @@ class Documento_Service {
 				$farmacia_id,
 				$nombre,
 				$nombre_fichero,
-				$filetype['type'],
-				(int) $archivo['size'],
+				$tipo_mime,
+				$tamano,
 				$tipo_documento,
 				// Solo un Excel puede ser descargable; para el resto el flag se
 				// ignora (siempre visor), aunque llegue marcado.
-				$descargable && self::MIME_XLSX === $filetype['type'],
+				$descargable && self::MIME_XLSX === $tipo_mime,
 				! $notificar,
 				$hash_sha256,
 				$publicar,
@@ -423,6 +530,18 @@ class Documento_Service {
 		);
 	}
 
+	/** MIME real de un contenido en memoria (fileinfo), o null si no se puede inspeccionar. */
+	private static function mime_real_buffer( string $contenido ): ?string {
+		if ( ! function_exists( 'finfo_open' ) ) {
+			return null;
+		}
+
+		$finfo = finfo_open( FILEINFO_MIME_TYPE );
+		$mime  = false === $finfo ? false : finfo_buffer( $finfo, $contenido );
+
+		return is_string( $mime ) ? $mime : null;
+	}
+
 	/** MIME real del contenido (fileinfo), o null si no se puede inspeccionar. */
 	private static function mime_real( string $ruta ): ?string {
 		if ( ! function_exists( 'finfo_open' ) ) {
@@ -469,92 +588,13 @@ class Documento_Service {
 	}
 
 	/**
-	 * Un .xlsx es un ZIP (OOXML). WordPress solo mira la extension, asi que
-	 * aqui se comprueba que el contenido lo es de verdad y que no lleva nada
-	 * ejecutable: estructura minima de libro de Excel, sin vbaProject.bin,
-	 * sin objetos OLE embebidos y sin tipo de contenido "macroEnabled"
-	 * (un .xlsm renombrado a .xlsx). Nada se extrae a disco.
+	 * Validacion por contenido de un .xlsx: vive en Xlsx_Validator (la
+	 * comparte el generador del Modelo 347), con el mismo comportamiento.
 	 *
 	 * @return true|\WP_Error
 	 */
 	private static function validar_xlsx( string $ruta ) {
-		$invalido = new \WP_Error( 'mdf_ca_documento_xlsx_invalido', 'El fichero no es un Excel (.xlsx) valido o contiene macros u objetos embebidos.' );
-
-		if ( ! class_exists( \ZipArchive::class ) ) {
-			return new \WP_Error( 'mdf_ca_documento_xlsx_sin_zip', 'El servidor no puede validar ficheros Excel. Contacta con desarrollo antes de seguir.' );
-		}
-
-		$zip = new \ZipArchive();
-
-		if ( true !== $zip->open( $ruta, \ZipArchive::RDONLY ) ) {
-			return $invalido;
-		}
-
-		try {
-			if ( $zip->numFiles < 1 || $zip->numFiles > self::XLSX_MAX_ENTRADAS ) {
-				return $invalido;
-			}
-
-			$nombres      = array();
-			$descomprimido = 0;
-
-			for ( $i = 0; $i < $zip->numFiles; $i++ ) {
-				$stat = $zip->statIndex( $i );
-
-				if ( false === $stat ) {
-					return $invalido;
-				}
-
-				$nombres[]      = strtolower( $stat['name'] );
-				$descomprimido += (int) $stat['size'];
-			}
-
-			if ( $descomprimido > self::XLSX_MAX_DESCOMPRIMIDO_BYTES ) {
-				return $invalido;
-			}
-
-			if ( ! in_array( '[content_types].xml', $nombres, true ) || ! in_array( 'xl/workbook.xml', $nombres, true ) ) {
-				return $invalido;
-			}
-
-			foreach ( $nombres as $nombre ) {
-				if ( str_ends_with( $nombre, 'vbaproject.bin' ) || str_starts_with( $nombre, 'xl/embeddings/' ) || str_contains( $nombre, '..' ) ) {
-					return $invalido;
-				}
-			}
-
-			$content_types = $zip->getFromName( '[Content_Types].xml' );
-
-			if ( false === $content_types ) {
-				return $invalido;
-			}
-
-			// El tipo del libro principal decide si es xlsx o xlsm. No se
-			// busca "macroEnabled" en todo el fichero: hay generadores
-			// legitimos (p. ej. SheetJS) que declaran un Default generico con
-			// ese texto sin que exista ninguna macro.
-			$xml = simplexml_load_string( $content_types, 'SimpleXMLElement', LIBXML_NONET );
-
-			if ( false === $xml ) {
-				return $invalido;
-			}
-
-			$tipo_libro = null;
-
-			foreach ( $xml->children() as $nodo ) {
-				if ( 'Override' === $nodo->getName() && '/xl/workbook.xml' === (string) $nodo['PartName'] ) {
-					$tipo_libro = (string) $nodo['ContentType'];
-				}
-			}
-
-			if ( 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml' !== $tipo_libro ) {
-				return $invalido;
-			}
-		} finally {
-			$zip->close();
-		}
-
-		return true;
+		return Xlsx_Validator::validar( $ruta );
 	}
 
 	/**

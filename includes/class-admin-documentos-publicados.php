@@ -53,6 +53,7 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ORIGEN_DESHACER_LOTE     => 'Al deshacer un lote',
 		Publicacion_Evento_Repository::ORIGEN_RECEPCION         => 'Recepción automática (nació publicado)',
 		Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE => 'Subida desde el backoffice (nació publicado)',
+		Publicacion_Evento_Repository::ORIGEN_MODELO_347        => 'Generador del Modelo 347 («Publicar y enviar»)',
 	);
 
 	public static function register_hooks(): void {

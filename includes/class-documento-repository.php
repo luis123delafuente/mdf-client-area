@@ -100,6 +100,55 @@ class Documento_Repository {
 	}
 
 	/**
+	 * Ids de los Modelo 347 pendientes de publicar y vigentes de este emisor y
+	 * ejercicio cuya farmacia sigue existiendo (#307, "Publicar y enviar"),
+	 * ascendentes. Solo ids: cambiar_estado() vuelve a comprobar el estado.
+	 *
+	 * @return int[]|null null si fallo la consulta.
+	 */
+	public function find_ids_modelo_347_publicables( string $emisor_cif, int $ejercicio ): ?array {
+		global $wpdb;
+
+		$table     = DB_Schema::get_documentos_table_name();
+		$farmacias = DB_Schema::get_farmacias_table_name();
+		$ids       = $wpdb->get_col(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- condicion fija de esta clase.
+				"SELECT d.id FROM {$table} d INNER JOIN {$farmacias} f ON f.id = d.farmacia_id
+				WHERE " . self::PENDIENTE_D . " AND d.tipo_documento = 'modelo_347' AND d.vigente = 1 AND d.emisor_cif = %s AND d.ejercicio = %d
+				ORDER BY d.id",
+				$emisor_cif,
+				$ejercicio
+			)
+		);
+
+		return '' !== $wpdb->last_error ? null : array_map( 'intval', $ids );
+	}
+
+	/**
+	 * Modelo 347 vigentes (publicados o pendientes) de este emisor y
+	 * ejercicio, para la pantalla de envios del generador (#307). Solo
+	 * backoffice: no decide visibilidad.
+	 *
+	 * @return Documento[]
+	 */
+	public function find_modelo_347_vigentes( string $emisor_cif, int $ejercicio, int $limite = 1000 ): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE tipo_documento = 'modelo_347' AND vigente = 1 AND emisor_cif = %s AND ejercicio = %d ORDER BY id LIMIT %d",
+				$emisor_cif,
+				$ejercicio,
+				max( 1, $limite )
+			)
+		);
+
+		return array_map( array( 'MdfClientArea\\Documento', 'from_db_row' ), $rows ?: array() );
+	}
+
+	/**
 	 * Documentos de una farmacia, mas recientes primero. Usado por el
 	 * listado de front (#241): la consulta ya viene acotada a la farmacia,
 	 * asi que quien la consume no necesita repetir la comprobacion de
@@ -245,7 +294,9 @@ class Documento_Repository {
 	 * publicar quedan fuera (no se avisa de algo invisible) y siguen con
 	 * notificado_en NULL: al publicarse entran en el siguiente aviso. Es la
 	 * unica consulta, ademas de Permissions, que mira "publicado", y no
-	 * decide visibilidad: solo elige de que avisar.
+	 * decide visibilidad: solo elige de que avisar. El Modelo 347 nunca entra
+	 * (#307): tiene su propio correo con la carta adjunta (Modelo_347_Envio_
+	 * Service) y nadie debe recibir dos; tampoco los subidos a mano.
 	 *
 	 * @return array<int, array{id: int, farmacia_id: int, tipo_documento: ?string}>
 	 */
@@ -254,7 +305,7 @@ class Documento_Repository {
 
 		$table = DB_Schema::get_documentos_table_name();
 		$rows  = $wpdb->get_results(
-			"SELECT id, farmacia_id, tipo_documento FROM {$table} WHERE notificado_en IS NULL AND publicado = 1 ORDER BY farmacia_id, id",
+			"SELECT id, farmacia_id, tipo_documento FROM {$table} WHERE notificado_en IS NULL AND publicado = 1 AND ( tipo_documento IS NULL OR tipo_documento <> 'modelo_347' ) ORDER BY farmacia_id, id",
 			ARRAY_A
 		);
 
