@@ -32,12 +32,8 @@ class Admin_Subir_Facturas {
 
 	public const MENU_SLUG = 'mdf-ca-subir-facturas';
 
-	/**
-	 * Capacidad de la pantalla y de cada peticion: la misma que el resto de
-	 * Documentos MDF. Unico sitio que la decide (la #337 la cambiara por una
-	 * capacidad propia).
-	 */
-	public const CAPACIDAD = 'manage_options';
+	/** Capacidad de la pantalla y de cada peticion: la de Documentos MDF (Admin_Documentos::CAPACIDAD). */
+	public const CAPACIDAD = Admin_Documentos::CAPACIDAD;
 
 	public const ACCION_AJAX = 'mdf_ca_subir_factura';
 

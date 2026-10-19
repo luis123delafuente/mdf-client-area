@@ -548,6 +548,23 @@ class Documento_Repository {
 	 * Fila de un documento bloqueada (SELECT ... FOR UPDATE) hasta el final de
 	 * la transaccion de quien llama.
 	 */
+	/**
+	 * Borra la fila de un documento NO publicado y que no es un Modelo 347
+	 * (v0.28.0). Las dos condiciones van tambien en el DELETE: aunque quien llama
+	 * ya lo ha comprobado con la fila bloqueada, nunca se borra un publicado.
+	 *
+	 * @return int|false Filas borradas (0 o 1), o false si falla.
+	 */
+	public function eliminar_no_publicado( int $id ) {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return $wpdb->query(
+			$wpdb->prepare( "DELETE FROM {$table} WHERE id = %d AND publicado = 0 AND tipo_documento <> %s", $id, 'modelo_347' )
+		);
+	}
+
 	public function find_by_id_para_actualizar( int $id ): ?Documento {
 		global $wpdb;
 

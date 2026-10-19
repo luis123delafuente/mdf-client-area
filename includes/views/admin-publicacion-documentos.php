@@ -193,6 +193,9 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 								<?php endforeach; ?>
 								<?php submit_button( 'Publicar', 'primary', 'submit', false ); ?>
 							</form>
+							<?php if ( Admin_Documentos::se_puede_eliminar( $documento ) ) : ?>
+								<a class="button-link button-link-delete" href="<?php echo esc_url( Admin_Documentos::url_eliminar( $documento->get_id(), 'pendientes' ) ); ?>">Eliminar</a>
+							<?php endif; ?>
 						</td>
 					</tr>
 				<?php endforeach; ?>

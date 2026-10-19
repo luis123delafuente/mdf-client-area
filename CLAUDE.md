@@ -154,7 +154,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 
 **Trazabilidad y pantallas** (v0.20.0 y v0.21.0, esquema 1.12.0)
 - Tabla de solo añadir `wp_mdf_ca_publicacion_eventos` (documento, acción, origen, usuario, fecha UTC, lote). Un único punto cambia `publicado`: `Documento_Repository::cambiar_estado()`, por tandas con `SELECT … FOR UPDATE`, `UPDATE` e `INSERT` multifila de eventos dentro de la transacción de quien llama; un fallo revierte estado y eventos. Sin `UPDATE`, `DELETE` ni `TRUNCATE` sobre la tabla de eventos
-- Un documento que nace publicado deja un evento `recepcion` o `subida_backoffice`. Desde la #334, una factura de «Subir facturas» deja siempre, en la misma transacción que el alta, un evento `recibido` (no cambia `publicado`) con origen `subida_facturas` y el usuario. La recepción REST no deja evento si nace pendiente, como antes. «Anterior a la versión» se decide por id de documento (`mdf_ca_eventos_desde_doc_id`). Guarda solo ids de usuario, fecha, acción, origen y lote; conservación propuesta de 6 años, a validar en la revisión RGPD
+- Un documento que nace publicado deja un evento `recepcion` o `subida_backoffice`. Desde la #334, una factura de «Subir facturas» deja siempre, en la misma transacción que el alta, un evento `recibido` (no cambia `publicado`) con origen `subida_facturas` y el usuario. La recepción REST no deja evento si nace pendiente, como antes. Eliminar un documento (v0.28.0) deja un evento `eliminado`; sus eventos siguen después de borrar la fila y el historial los muestra. «Anterior a la versión» se decide por id de documento (`mdf_ca_eventos_desde_doc_id`). Guarda solo ids de usuario, fecha, acción, origen y lote; conservación propuesta de 6 años, a validar en la revisión RGPD
 - Submenú Documentos publicados con buscador paginado en SQL (despublicar cualquier documento) e historial por documento
 - Pendientes de publicar paginado por farmacias (20 por página, tope de 50 documentos por grupo); contadores siempre en SQL sobre todos los pendientes, nunca sumando lo pintado. Orden estable por pendiente más antiguo. `Filtro_Listado_Documentos` sanea farmacia, búsqueda y página (`(int)` con mínimos, no `absint()`). Sin índice nuevo (medido)
 
@@ -241,9 +241,30 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Pruebas: `tests/generar-347-ficticio.php` (OpenSpout, CIF por argumento), `tests/generar-347-sage-net.py` (estructura exacta de SAGE, mismas filas) y `tests/generar-347-maliciosos.py <origen> <carpeta> [<prefijo>]`. Este último genera 8 variantes malas por formato (DOCTYPE, xlsm renombrado, VBA, zip bomb, sin columna, sin hoja, Override `macroEnabled` y PDF renombrado), con sus ficheros en `tests/fixtures/`. `tests/` no se despliega
 - Plantilla original: `docs/MODELO CARTA 347.docx` (no se despliega: `deploy.sh` excluye `docs/` y `*.docx`, y el `.htaccess` de la raíz deniega `docx` además de `md`, `lock`, `sh`, `yml`, `yaml` y `log`)
 
+**Eliminar documentos subidos por error** (v0.28.0, sin cambio de esquema)
+- Acción «Eliminar» en Pendientes de publicar (junto a «Publicar») y en una columna nueva «Acciones» de la tabla de Documentos MDF
+- Solo documentos **no publicados** (pendientes o despublicados) y que **no son Modelo 347**. Un publicado hay que despublicarlo antes, para que nunca desaparezca de golpe algo que una farmacia puede estar viendo. Los 347 siguen con «Retirar para corrección». La regla vive en un solo sitio, `Documento_Eliminacion_Service::motivo_no_eliminable()`, y el `DELETE` la repite (`publicado = 0 AND tipo_documento <> 'modelo_347'`)
+- Confirmación en una pantalla propia (`admin.php?page=mdf-ca-documentos&eliminar=ID&volver=pendientes|documentos`): «Se eliminará la factura X de la farmacia Y. No se puede deshacer.» y «Eliminar definitivamente». Funciona sin JS. El borrado es un POST a `admin-post` (`mdf_ca_eliminar_documento`) con nonce por documento y `Admin_Documentos::CAPACIDAD`; vuelve a la pantalla de origen con su aviso
+- `Documento_Eliminacion_Service::eliminar()`, todo o nada:
+  - en una transacción con la fila bloqueada (`FOR UPDATE`);
+  - el fichero se aparta dentro de la carpeta privada con un `rename` a `.eliminando-<aleatorio>` (atómico y reversible);
+  - `DELETE` de la fila e `INSERT` del evento `eliminado` (origen `individual`, usuario y fecha, sin datos del documento);
+  - `COMMIT` y después se borra el fichero apartado. Si algo falla antes, `ROLLBACK` y el fichero vuelve a su nombre.
+
+  Si el fichero ya no estaba en disco, se borra igual la fila y se avisa
+- Al borrar la fila, su hash y su emisor + serie + número dejan de bloquear: la misma factura se puede volver a subir (comprobado con «Subir facturas»)
+- El historial de un documento eliminado muestra sus eventos, el último «Eliminado», con la nota de que ya no existen ni el documento ni su fichero
+- Comprobado en local con datos de prueba:
+  - eliminar desde las dos pantallas, también en Chrome;
+  - negativas: un publicado y un 347 despublicado (ni se ofrece el formulario y el servicio se niega), sin nonce (403), un cliente (fuera del backoffice) y sin sesión (400);
+  - fichero ausente: aviso y fila borrada;
+  - la carpeta privada queda igual que la BD y no quedan apartados;
+  - eventos y volver a subir;
+  - regresión de Pendientes, publicación en bloque, deshacer lote, Subir facturas y el resto de pantallas.
+
 **Subir facturas** (#334; v0.27.0, esquema 1.15.0). Sustituye al programa de envío del Mac
 - Documentos MDF › Subir facturas (`Admin_Subir_Facturas`):
-  - capacidad en un solo sitio, `Admin_Subir_Facturas::CAPACIDAD` (`manage_options`, la de Documentos MDF; la #337 la cambiará);
+  - capacidad: la de Documentos MDF, `Admin_Documentos::CAPACIDAD` (desde la v0.28.0 único sitio para Documentos MDF, Pendientes, Documentos publicados, Subir facturas y Eliminar; la #337 la cambiará);
   - un nonce propio para todas las peticiones de la pantalla;
   - solo `wp_ajax_` (sin `nopriv`). Comprobado: sin sesión, 400; un cliente, sin nonce o con el nonce de otra acción, 403.
 - Selección con `Admin_Zona_Archivos` en modo lote:

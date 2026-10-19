@@ -196,6 +196,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<th>Fecha documento</th>
 					<th>Subido</th>
 					<th>Modelo 347</th>
+					<th>Acciones</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -235,6 +236,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 									<label><input type="checkbox" name="confirmar" value="1" required /> Confirmo</label>
 									<button type="submit" class="button button-small">Retirar para corrección</button>
 								</form>
+							<?php else : ?>
+								-
+							<?php endif; ?>
+						</td>
+						<td>
+							<?php if ( Admin_Documentos::se_puede_eliminar( $documento ) ) : ?>
+								<a class="button button-small" href="<?php echo esc_url( Admin_Documentos::url_eliminar( $documento->get_id(), 'documentos' ) ); ?>">Eliminar</a>
+							<?php elseif ( $documento->is_publicado() && 'modelo_347' !== $documento->get_tipo_documento() ) : ?>
+								<span class="description">Publicado</span>
 							<?php else : ?>
 								-
 							<?php endif; ?>

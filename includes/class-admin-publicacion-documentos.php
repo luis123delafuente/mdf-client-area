@@ -100,14 +100,14 @@ class Admin_Publicacion_Documentos {
 			self::PARENT_SLUG,
 			'Documentos pendientes de publicar',
 			'Pendientes de publicar',
-			'manage_options',
+			Admin_Documentos::CAPACIDAD,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' )
 		);
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -547,7 +547,7 @@ class Admin_Publicacion_Documentos {
 	}
 
 	private static function exigir_capacidad(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 	}
@@ -698,6 +698,11 @@ class Admin_Publicacion_Documentos {
 
 	private static function plural( int $n, string $singular, string $plural ): string {
 		return sprintf( '%d %s', $n, 1 === $n ? $singular : $plural );
+	}
+
+	/** Aviso que se ve al volver a esta pantalla (lo usa "Eliminar", v0.28.0, que vive en Admin_Documentos). */
+	public static function avisar( string $tipo, string $mensaje ): void {
+		self::guardar_aviso( $tipo, $mensaje );
 	}
 
 	private static function guardar_aviso( string $tipo, string $mensaje ): void {

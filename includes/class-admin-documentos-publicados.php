@@ -45,6 +45,7 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ACCION_DESPUBLICADO => 'Despublicado',
 		Publicacion_Evento_Repository::ACCION_RETIRADO     => 'Retirado para corrección',
 		Publicacion_Evento_Repository::ACCION_RECIBIDO     => 'Recibido (pendiente de publicar)',
+		Publicacion_Evento_Repository::ACCION_ELIMINADO    => 'Eliminado',
 	);
 
 	private const ORIGENES = array(
@@ -70,7 +71,7 @@ class Admin_Documentos_Publicados {
 			self::PARENT_SLUG,
 			'Documentos publicados',
 			'Documentos publicados',
-			'manage_options',
+			Admin_Documentos::CAPACIDAD,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' )
 		);
@@ -94,7 +95,7 @@ class Admin_Documentos_Publicados {
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -152,8 +153,10 @@ class Admin_Documentos_Publicados {
 	private static function render_historial( int $documento_id, callable $nombre_farmacia ): void {
 		$documento = ( new Documento_Repository() )->find_by_id( $documento_id );
 		$repo      = new Publicacion_Evento_Repository();
-		$eventos   = $documento ? $repo->find_by_documento( $documento_id ) : array();
-		$total     = $documento ? $repo->contar_por_documento( $documento_id ) : 0;
+		// Un documento eliminado (v0.28.0) ya no tiene fila, pero sus eventos
+		// siguen (libro de solo anadir): se muestran, el ultimo "Eliminado".
+		$eventos   = $documento_id > 0 ? $repo->find_by_documento( $documento_id ) : array();
+		$total     = $documento_id > 0 ? $repo->contar_por_documento( $documento_id ) : 0;
 
 		// Documentos anteriores a la version: no hay registro de lo que paso
 		// antes. Se decide por id (monotono), no por fecha: fecha_subida no
@@ -193,7 +196,7 @@ class Admin_Documentos_Publicados {
 	 * El evento queda en la misma transaccion (Documento_Publicacion_Service).
 	 */
 	public static function gestionar_despublicar(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

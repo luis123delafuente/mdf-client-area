@@ -21,12 +21,28 @@ class Admin_Documentos {
 
 	private const MENU_SLUG    = 'mdf-ca-documentos';
 	private const NONCE_ACTION = 'mdf_ca_subir_documento';
+	/**
+	 * Capacidad de todas las pantallas y acciones de Documentos MDF
+	 * (Documentos MDF, Pendientes de publicar, Documentos publicados, Subir
+	 * facturas y Eliminar documento). Unico sitio que la decide: la #337 la
+	 * cambiara por una capacidad propia.
+	 */
+	public const CAPACIDAD = 'manage_options';
+
+	/** Eliminar un documento no publicado (v0.28.0): admin-post con nonce por documento. */
+	private const ACCION_ELIMINAR = 'mdf_ca_eliminar_documento';
+
+	/** Pantallas desde las que se llega a "Eliminar" y a las que se vuelve. */
+	private const VOLVER_PENDIENTES = 'pendientes';
+	private const VOLVER_DOCUMENTOS = 'documentos';
+
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_documentos_notice_';
 
 	public static function register_hooks(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ) );
 		add_action( 'admin_post_mdf_ca_subir_documento', array( __CLASS__, 'gestionar_subir' ) );
 		add_action( 'admin_post_mdf_ca_retirar_modelo_347', array( __CLASS__, 'gestionar_retirar_modelo_347' ) );
+		add_action( 'admin_post_' . self::ACCION_ELIMINAR, array( __CLASS__, 'gestionar_eliminar' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'encolar_assets' ) );
 	}
 
@@ -34,7 +50,7 @@ class Admin_Documentos {
 		add_menu_page(
 			'Documentos MDF',
 			'Documentos MDF',
-			'manage_options',
+			Admin_Documentos::CAPACIDAD,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' ),
 			'dashicons-media-document',
@@ -84,8 +100,16 @@ class Admin_Documentos {
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
+		}
+
+		// Paso de confirmacion de "Eliminar" (v0.28.0): solo lectura, la accion
+		// es un POST con nonce por documento.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- solo muestra la confirmacion.
+		if ( isset( $_GET['eliminar'] ) ) {
+			self::render_confirmar_eliminar( (int) $_GET['eliminar'], self::volver( $_GET['volver'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
 		}
 
 		$farmacias = ( new Farmacia_Repository() )->find_all();
@@ -106,7 +130,7 @@ class Admin_Documentos {
 	}
 
 	public static function gestionar_subir(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
@@ -152,7 +176,7 @@ class Admin_Documentos {
 	 * vive en Documento_Publicacion_Service::retirar_modelo_347().
 	 */
 	public static function gestionar_retirar_modelo_347(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
@@ -174,6 +198,84 @@ class Admin_Documentos {
 		}
 
 		self::redirigir();
+	}
+
+	/** Enlace al paso de confirmacion de "Eliminar" de un documento (v0.28.0). */
+	public static function url_eliminar( int $documento_id, string $volver ): string {
+		return add_query_arg(
+			array(
+				'page'     => self::MENU_SLUG,
+				'eliminar' => $documento_id,
+				'volver'   => self::volver( $volver ),
+			),
+			admin_url( 'admin.php' )
+		);
+	}
+
+	/** Si en esta pantalla se ofrece "Eliminar" para el documento (no publicado y no Modelo 347). */
+	public static function se_puede_eliminar( Documento $documento ): bool {
+		return null === Documento_Eliminacion_Service::motivo_no_eliminable( $documento );
+	}
+
+	private static function volver( $volver ): string {
+		return self::VOLVER_PENDIENTES === $volver ? self::VOLVER_PENDIENTES : self::VOLVER_DOCUMENTOS;
+	}
+
+	private static function render_confirmar_eliminar( int $documento_id, string $volver ): void {
+		$documento = ( new Documento_Repository() )->find_by_id( $documento_id );
+		$motivo    = Documento_Eliminacion_Service::motivo_no_eliminable( $documento );
+		$farmacia  = $documento ? ( new Farmacia_Repository() )->find_by_id( $documento->get_farmacia_id() ) : null;
+		$que       = $documento && 'factura' === $documento->get_tipo_documento() ? 'la factura' : 'el documento';
+		$accion    = self::ACCION_ELIMINAR;
+		$url_volver = self::url_volver( $volver );
+
+		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-eliminar-documento.php';
+	}
+
+	private static function url_volver( string $volver ): string {
+		return admin_url( 'admin.php?page=' . ( self::VOLVER_PENDIENTES === $volver ? Admin_Publicacion_Documentos::MENU_SLUG : self::MENU_SLUG ) );
+	}
+
+	/**
+	 * Eliminar un documento no publicado (v0.28.0). Capacidad de Documentos MDF y
+	 * nonce por documento; la logica (transaccion, fichero, evento) vive en
+	 * Documento_Eliminacion_Service. Vuelve a la pantalla de la que se vino,
+	 * con su aviso.
+	 */
+	public static function gestionar_eliminar(): void {
+		if ( ! current_user_can( self::CAPACIDAD ) ) {
+			wp_die( 'No tienes permiso para realizar esta accion.', '', array( 'response' => 403 ) );
+		}
+
+		$id     = isset( $_POST['documento_id'] ) ? (int) $_POST['documento_id'] : 0;
+		$volver = self::volver( isset( $_POST['volver'] ) ? sanitize_key( wp_unslash( $_POST['volver'] ) ) : '' );
+
+		check_admin_referer( self::ACCION_ELIMINAR . '_' . $id );
+
+		$resultado = ( new Documento_Eliminacion_Service() )->eliminar( $id, get_current_user_id() );
+
+		if ( is_wp_error( $resultado ) ) {
+			$tipo    = 'error';
+			$mensaje = $resultado->get_error_message();
+		} elseif ( ! $resultado['fichero_estaba'] ) {
+			$tipo    = 'warning';
+			$mensaje = sprintf( 'Documento «%s» eliminado, pero su fichero ya no estaba en la carpeta privada del servidor. Se ha borrado igualmente el registro; avisa a desarrollo por si falta algún otro fichero.', $resultado['nombre'] );
+		} elseif ( ! $resultado['fichero_borrado'] ) {
+			$tipo    = 'warning';
+			$mensaje = sprintf( 'Documento «%s» eliminado, pero su fichero no se ha podido borrar del servidor (sigue en la carpeta privada, inaccesible). Avisa a desarrollo.', $resultado['nombre'] );
+		} else {
+			$tipo    = 'success';
+			$mensaje = sprintf( 'Documento «%s» eliminado. Si era una factura, ya se puede volver a subir.', $resultado['nombre'] );
+		}
+
+		if ( self::VOLVER_PENDIENTES === $volver ) {
+			Admin_Publicacion_Documentos::avisar( $tipo, $mensaje );
+		} else {
+			self::guardar_aviso( $tipo, $mensaje );
+		}
+
+		wp_safe_redirect( self::url_volver( $volver ) );
+		exit;
 	}
 
 	private static function redirigir(): void {

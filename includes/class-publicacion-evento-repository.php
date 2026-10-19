@@ -33,6 +33,11 @@ class Publicacion_Evento_Repository {
 	 * cambia publicado y deja constancia de quien la subio y cuando.
 	 */
 	public const ACCION_RECIBIDO = 'recibido';
+	/**
+	 * Documento no publicado eliminado desde el backoffice (v0.28.0): la fila y
+	 * el fichero ya no existen; queda este evento, sin datos del documento.
+	 */
+	public const ACCION_ELIMINADO = 'eliminado';
 
 	public const ORIGEN_INDIVIDUAL        = 'individual';
 	public const ORIGEN_POR_FARMACIA      = 'por_farmacia';
@@ -59,7 +64,7 @@ class Publicacion_Evento_Repository {
 	public function insertar_para( array $filas, string $accion, string $origen, ?int $usuario_id ) {
 		global $wpdb;
 
-		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO ), true ) || ! $this->origen_valido( $origen ) ) {
+		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO, self::ACCION_ELIMINADO ), true ) || ! $this->origen_valido( $origen ) ) {
 			return false;
 		}
 

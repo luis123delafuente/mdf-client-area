@@ -27,11 +27,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 <div class="wrap">
 	<h1>Historial del documento</h1>
 
-	<?php if ( ! $documento ) : ?>
+	<?php if ( ! $documento && ! $filas ) : ?>
 		<div class="notice notice-error inline">
 			<p>El documento no existe.</p>
 		</div>
 	<?php else : ?>
+		<?php if ( ! $documento ) : ?>
+		<div class="notice notice-info inline">
+			<p>Este documento se eliminó desde el backoffice: ya no existen ni el documento ni su fichero. Queda su registro.</p>
+		</div>
+		<?php else : ?>
 		<table class="form-table" role="presentation">
 			<tbody>
 				<tr>
@@ -52,6 +57,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 				</tr>
 			</tbody>
 		</table>
+		<?php endif; ?>
 
 		<h2>Publicaciones y despublicaciones</h2>
 
@@ -91,7 +97,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<?php endforeach; ?>
 				</tbody>
 			</table>
-		<?php elseif ( ! $sin_registro && ! $documento->is_publicado() ) : ?>
+		<?php elseif ( $documento && ! $sin_registro && ! $documento->is_publicado() ) : ?>
 			<p>Todavía no se ha publicado: llegó pendiente de publicar y sigue así. Nunca ha sido visible para su farmacia.</p>
 		<?php elseif ( ! $sin_registro ) : ?>
 			<p>No hay ningún evento registrado para este documento.</p>
