@@ -108,13 +108,6 @@ class Role_Restrictions {
 			return;
 		}
 
-		// El robot de recepcion (#303) no tiene acceso interactivo ni
-		// siquiera podria iniciar sesion; esto es defensa en profundidad.
-		if ( Roles::user_is_robot( wp_get_current_user() ) ) {
-			wp_safe_redirect( home_url( '/' ) );
-			exit;
-		}
-
 		if ( ! Roles::current_user_is_cliente() ) {
 			return;
 		}

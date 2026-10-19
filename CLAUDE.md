@@ -35,7 +35,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Dos módulos de contenido separados: catálogo compartido por plan (Herramientas, Formación) vs documentos privados por farmacia, vinculados por CIF/NIF, visibles solo por su titular (no dependen del plan)
 - Documentos: carpeta `Clientes/private-docs/` **en la raíz de WordPress** (`ABSPATH`, no en `wp-content`; ruta relativa en `Documento_Endpoint::CARPETA_RELATIVA`), protegida con `.htaccess` de denegación total e `index.php`, que el propio plugin crea si faltan y vigila (`Carpeta_Privada_Proteccion`). Solo se sirven por el script PHP del plugin, que valida permiso antes de leer el fichero
 - Alta de farmacias: un único camino lógico. El importador CSV y el formulario de alta manual comparten el mismo servicio; CIF/NIF es la clave normalizada y validada; importación idempotente (upsert por CIF/NIF, simulación previa antes de escribir)
-- Facturas: el parser (repo hermano `Parser_facturas_SAGE`, Python) lee los PDF en el Mac de MDF y envía el resultado al endpoint autenticado del plugin, que revalida todo en servidor. Desde la #334, MDF las sube desde el backoffice («Subir facturas»): el plugin las lee en el servidor (`Factura_Lectura_Service`, #333, mismas reglas y mismo resultado que Python) y las guarda por el mismo camino que la ruta REST (`Factura_Recepcion_Service`). El robot sigue funcionando hasta la #336; mientras convivan los dos caminos, las reglas se mantienen iguales en los dos lados
+- Facturas: MDF las sube desde el backoffice («Subir facturas», #334): el plugin las lee en el servidor (`Factura_Lectura_Service`, #333, mismas reglas y mismo resultado que el parser de Python del repo hermano `Parser_facturas_SAGE`), las cruza y las guarda con `Factura_Recepcion_Service`; las que no puede asignar van a la Bandeja de facturas (#335). Desde la #336 no hay otra entrada: el robot del Mac, su usuario y la ruta REST se han retirado, y el plugin no tiene ninguna ruta REST propia
 - CRM de MDF aún sin identificar: WordPress es el sistema de registro del MVP, preparado para delegar en un CRM más adelante sin reescritura
 
 ## Decisiones técnicas ya tomadas
@@ -128,17 +128,14 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Pendiente de verificar con cientos de facturas reales de 2026 (solo se han probado unas pocas; el rótulo de las páginas intermedias de Formación no está confirmado)
 - Los PDF reales nunca van al repo (`*.pdf` en .gitignore); los tests usan fixtures sintéticas
 
-**Recepción de documentos** (v0.14.0, esquema 1.7.0; emisor en v0.17.0, esquema 1.10.0)
-- `POST /wp-json/mdf-ca/v1/facturas` (multipart: `pdf`, `resultado` del parser y `notificar` opcional). Application Passwords sobre el usuario técnico `mdf-robot` (rol `mdf_robot`, una sola capacidad `mdf_ca_subir_facturas`); el `permission_callback` es `Recepcion_Autenticacion::autorizar()`, único punto para cambiar de mecanismo
-- El robot solo puede usar el namespace `mdf-ca/v1` (`rest_pre_dispatch`, también `batch`); su login por contraseña está rechazado; las application passwords solo existen para él. Errores uniformes: un filtro sustituye cualquier error del namespace por el mismo cuerpo
+**Recepción de documentos** (v0.14.0, esquema 1.7.0; emisor en v0.17.0, esquema 1.10.0). **La ruta REST y el robot se retiraron en la #336** (ver «Retirada del robot»); sigue vigente lo que comparte «Subir facturas»:
 - `Factura_Emisores` es la lista de emisores y series en código, único sitio que lo decide; nunca se deduce el emisor de la serie. Serie `^[A-Z]{1,3}$/D`, número `^\d{1,20}$/D`
 - Columnas nullable `documentos.hash_sha256` (UNIQUE), `emisor_cif`, `factura_serie` y `factura_numero` (UNIQUE conjunto); los NULL no chocan. Misma factura para la misma farmacia: 200 duplicado idempotente; para otra: 422 `documento_en_otra_farmacia` uniforme. La carrera la pierde el INSERT del segundo, cuyo error de base de datos se silencia para no llevar serie y número al log
 - Nombre visible `{Factura|Abono} {sociedad} {serie} {número}`, abono por el signo del importe revalidado
-- Interruptor `mdf_ca_recepcion_activa` apagado por defecto; `MDF_CA_RECEPCION_DESACTIVADA` lo anula. Tope diario configurable (1000 por defecto) y registro de auditoría solo con recuentos (`wp_mdf_ca_recepcion_registro`). Pantalla: Documentos MDF › Recepción automática
-- Desde la #334, del cruce en adelante (duplicados, guardado, carrera y registro) la ruta usa `Factura_Recepcion_Service`, compartido con «Subir facturas». Respuestas y códigos HTTP sin cambios (comprobado: 201, 200 duplicado, 422, 400 y 503). El interruptor, el tope diario y la aprobación previa siguen siendo solo del robot. El registro tiene columna `origen` (`rest` o `backoffice`, esquema 1.15.0) dentro de la clave primaria; el tope cuenta solo `rest`
+- Registro de auditoría solo con recuentos (`wp_mdf_ca_recepcion_registro`, `Recepcion_Registro`), con columna `origen` dentro de la clave primaria (esquema 1.15.0): hoy solo se escribe `backoffice`; `rest` queda en las filas antiguas del robot. Se ve en «Subir facturas», en «Actividad de los últimos 14 días»
 - La subida de PDF (también la del backoffice) exige el tipo real `application/pdf` con `fileinfo` (confirmada en producción)
 
-**Envío por lotes** (repo `Parser_facturas_SAGE`, paquete `envio_facturas/`; diseño en `docs/robotito.md`)
+**Envío por lotes** (repo `Parser_facturas_SAGE`, paquete `envio_facturas/`; diseño en `docs/robotito.md`). **Obsoleto desde la #336**: la ruta a la que enviaba ya no existe y `docs/robotito.md` está marcado como obsoleto. Se conserva como historia:
 - Recorre una carpeta de PDF, los parsea y los manda al endpoint. Sin `--enviar` es dry-run; `notificar=0` por defecto. Credenciales solo por variables de entorno (`MDF_ENVIO_*`) o fichero `--config` fuera del repo; https obligatorio y TLS nunca desactivado
 - Lo que el parser no resuelve nunca se envía: se copia a `excepciones/<estado>/` con un informe CSV sin CIF, nombres ni importes, y se resuelve subiéndolo a mano desde Documentos MDF (no hay bandeja de excepciones en el servidor). Una factura resuelta a mano no se reenvía (queda sin emisor, serie ni número y el servidor no la detectaría como duplicada)
 - 401, 429 y 503 detienen el lote; 400 y 422 se copian a excepciones; 500 o red se reintentan 3 veces. Registro local `registro.jsonl` de solo añadir, con bloqueo contra dos lotes simultáneos
@@ -146,7 +143,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Operación recomendada: manual tras cada exportación de SAGE (simulación y luego envío), al menos el primer mes. Lo opera la persona de MDF que exporta de SAGE, en un Mac
 
 **Pendiente de publicar, publicación en bloque y deshacer** (v0.15.0 a v0.19.0, esquemas 1.8.0 y 1.11.0)
-- Columna `documentos.publicado` (DEFAULT 1). La recepción crea con publicado = 0 mientras `mdf_ca_recepcion_requiere_aprobacion` esté activa (por defecto activada); la subida de backoffice siempre publica
+- Columna `documentos.publicado` (DEFAULT 1). Las facturas de «Subir facturas» y de la bandeja nacen siempre con publicado = 0 (la aprobación previa configurable era solo de la ruta REST, retirada en #336); la subida de backoffice siempre publica
 - `Permissions::puede_ver_documento()` exige misma farmacia y publicado (un único predicado privado, compartido con `filtrar_documentos_visibles()`); un documento no publicado da el mismo 404 uniforme que uno inexistente o ajeno. Excepción deliberada: `find_pendientes_aviso()` filtra publicado = 1 en SQL
 - Vista previa de admin por `admin-post.php`, sin URL estable al fichero: nonce por documento, token de un solo uso y marca de agua con el login del admin; solo `Permissions::puede_previsualizar_documento()`
 - «Publicar todos los pendientes»: dos pasos; al preparar se guarda en un transient del usuario la huella de los ids publicables; al aplicar se consume, se recalcula y solo se escribe si coincide. Se publica por lista explícita de ids, nunca por filtro, así que lo que llegue después no se publica sin haber sido contado. Tandas de 500 dentro de una transacción
@@ -154,7 +151,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 
 **Trazabilidad y pantallas** (v0.20.0 y v0.21.0, esquema 1.12.0)
 - Tabla de solo añadir `wp_mdf_ca_publicacion_eventos` (documento, acción, origen, usuario, fecha UTC, lote). Un único punto cambia `publicado`: `Documento_Repository::cambiar_estado()`, por tandas con `SELECT … FOR UPDATE`, `UPDATE` e `INSERT` multifila de eventos dentro de la transacción de quien llama; un fallo revierte estado y eventos. Sin `UPDATE`, `DELETE` ni `TRUNCATE` sobre la tabla de eventos
-- Un documento que nace publicado deja un evento `recepcion` o `subida_backoffice`. Desde la #334, una factura de «Subir facturas» deja siempre, en la misma transacción que el alta, un evento `recibido` (no cambia `publicado`) con origen `subida_facturas` y el usuario. La recepción REST no deja evento si nace pendiente, como antes. Una factura asignada a mano desde la Bandeja de facturas (#335) deja `asignado_manual` con origen `bandeja` y el usuario; la que «Volver a comprobar todas» asigna sola deja `recibido` con origen `bandeja` (desde la 1.16.0 `accion` es VARCHAR(20)). Eliminar un documento (v0.28.0) deja un evento `eliminado`; sus eventos siguen después de borrar la fila y el historial los muestra. «Anterior a la versión» se decide por id de documento (`mdf_ca_eventos_desde_doc_id`). Guarda solo ids de usuario, fecha, acción, origen y lote; conservación propuesta de 6 años, a validar en la revisión RGPD
+- Un documento que nace publicado deja un evento `subida_backoffice` (o `recepcion`, solo en los antiguos del robot; el historial lo muestra como «Recibido por el robot (retirado), nació publicado» y ya no se puede escribir). Desde la #334, una factura de «Subir facturas» deja siempre, en la misma transacción que el alta, un evento `recibido` (no cambia `publicado`) con origen `subida_facturas` y el usuario. Lo que el robot recibía pendiente no dejaba evento. Una factura asignada a mano desde la Bandeja de facturas (#335) deja `asignado_manual` con origen `bandeja` y el usuario; la que «Volver a comprobar todas» asigna sola deja `recibido` con origen `bandeja` (desde la 1.16.0 `accion` es VARCHAR(20)). Eliminar un documento (v0.28.0) deja un evento `eliminado`; sus eventos siguen después de borrar la fila y el historial los muestra. «Anterior a la versión» se decide por id de documento (`mdf_ca_eventos_desde_doc_id`). Guarda solo ids de usuario, fecha, acción, origen y lote; conservación propuesta de 6 años, a validar en la revisión RGPD
 - Submenú Documentos publicados con buscador paginado en SQL (despublicar cualquier documento) e historial por documento
 - Pendientes de publicar paginado por farmacias (20 por página, tope de 50 documentos por grupo); contadores siempre en SQL sobre todos los pendientes, nunca sumando lo pintado. Orden estable por pendiente más antiguo. `Filtro_Listado_Documentos` sanea farmacia, búsqueda y página (`(int)` con mínimos, no `absint()`). Sin índice nuevo (medido)
 
@@ -283,7 +280,6 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - el nombre se sanea (`sanitize_file_name`, sin ruta) y solo sirve para contrastar serie y número;
   - `Factura_Lectura_Service` → `Factura_Recepcion_Service` (cruce, duplicados por hash y por emisor + serie + número, nombre visible y fecha de factura), siempre pendiente, sin aviso por email, con evento `recibido` y registro con origen `backoffice`.
 
-  No depende del interruptor ni del tope diario del robot.
 - Respuesta y resumen en lenguaje claro, por grupos:
   - subidas, con la farmacia;
   - ya estaban;
@@ -296,7 +292,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - las dos sociedades, un abono y una de 2 × 3 páginas;
   - un CIF sin farmacia y un número distinto del nombre;
   - maliciosos de la #333 y repetir la carpeta (todo «ya estaban»);
-  - cada fichero da lo mismo que la ruta REST con el resultado de Python;
+  - cada fichero da lo mismo que la ruta REST con el resultado de Python (comprobado antes de retirarla en #336);
   - 200 facturas en 34 s (unos 170 ms por petición con el arranque de WordPress; 51 ms de media dentro de PHP), con un pico de 48 MB por petición, casi todo WordPress;
   - en Chrome: elegir archivos, topes, Parar y Continuar, reintento tras un corte de red y descarga de la lista.
 
@@ -316,6 +312,25 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Seguridad: `Permissions::puede_gestionar_bandeja()` sobre `Admin_Documentos::CAPACIDAD` y un nonce por acción (por factura en ver, asignar y descartar). Sin valores fiscales en los registros: el INSERT duplicado silencia el error de la BD, como en la recepción
 - Comprobado en local con sintéticas (`tests/lectura-facturas/generar_bandeja.py`): cada motivo entra y los maliciosos no; repetir y la misma factura con otros bytes no entran dos veces; ver; asignar con CIF coincidente, con CIF distinto (confirmación) y sin texto (pidiendo los datos); descartar; volver a comprobar tras dar de alta la farmacia; caducidad con el fichero borrado; disco igual que la BD; acceso como cliente, sin sesión, sin nonce y con token de otro ámbito. En Chrome: resumen de Subir facturas, pantalla con el contador, visor, selector y asignar. Regresión: Subir facturas, Pendientes, publicación en bloque y deshacer, eliminar, recepción REST, 347 y todas las pantallas sin errores
 - **Falta probar en Safari** (ver el informe de la #335)
+
+**Retirada del robot y de la ruta REST** (#336; v0.30.0, esquema 1.17.0). Desde «Subir facturas» (#334) y la bandeja (#335) el robot ya no tenía uso y solo dejaba una puerta abierta
+- Quitado del código: la ruta `POST /wp-json/mdf-ca/v1/facturas` (`Recepcion_Documentos_Endpoint`), su autenticación y aislamiento (`Recepcion_Autenticacion`), el rol `mdf_robot` y la capacidad `mdf_ca_subir_facturas` (`Roles`), la redirección del robot en `Role_Restrictions` y la pantalla «Recepción automática» (`Admin_Recepcion_Documentos` y su vista) con el interruptor, el tope diario, la aprobación previa y el alta del usuario robot. Sin rutas, el namespace `mdf-ca/v1` deja de existir: `/wp-json/mdf-ca/v1/` da 404 y el índice `/wp-json/` no lo lista (cierra el hallazgo del índice REST de la #298/#329)
+- **Contraseñas de aplicación desactivadas en todo el sitio** (`Contrasenas_Aplicacion`, filtro `wp_is_application_passwords_available` a false): desaparece la sección del perfil, crearlas por REST da 501 `application_passwords_disabled` y una petición con Basic Auth se trata como anónima aunque la contraseña sea válida (401 `rest_not_logged_in`; por XML-RPC, 403)
+- Migración (`Robot_Retirado::ejecutar()`, en `maybe_upgrade()` con la marca `mdf_ca_robot_retirado_v1`):
+  - busca los usuarios con el rol en la usermeta de capacidades (la búsqueda por rol de WordPress es un LIKE y no exige que el rol siga registrado) y el usuario `mdf-robot`;
+  - a todos les borra las contraseñas de aplicación;
+  - borra el usuario solo si su usermeta de capacidades es exactamente `{mdf_robot: true}` (se mira `$usuario->caps`, porque `$usuario->roles` omite los roles no registrados). Con otro rol o alguna capacidad suelta no se toca: queda en la option `mdf_ca_robot_conservados` y un aviso en todo el backoffice (solo `manage_options` + `delete_users`) lo lista con enlace a su perfil y un botón «Ya lo he revisado» (admin-post con nonce). El aviso se va solo si el usuario se borra o pierde el rol;
+  - `remove_role( 'mdf_robot' )` y borra las options `mdf_ca_recepcion_activa`, `mdf_ca_recepcion_tope_diario`, `mdf_ca_recepcion_requiere_aprobacion` y la marca antigua `mdf_ca_roles_v2`;
+  - idempotente (una segunda ejecución no hace nada) y solo con la API de usuarios y options, igual en MySQL y MariaDB. La constante `MDF_CA_RECEPCION_DESACTIVADA` ya no se lee: si está en el `wp-config.php` de producción se puede quitar.
+- Lo histórico se conserva: la tabla de registro (que usa «Subir facturas») y los eventos. El registro muestra «N por el robot (retirado)» en las filas `rest` y el historial, «Recibido por el robot (retirado), nació publicado» en los eventos `recepcion` (con «usuario borrado (ID N)»). `Publicacion_Evento_Repository` ya no acepta escribir el origen `recepcion` ni `Recepcion_Registro` el origen `rest`
+- «Recepción automática» se funde en «Subir facturas»: al pie, «Actividad de los últimos 14 días», de solo lectura (Subidas, Ya estaban, Sin asignar, No válidas, Publicadas en bloque y Despublicadas al deshacer un lote). Un enlace guardado a `page=mdf-ca-recepcion-documentos` redirige ahí (`admin_page_access_denied`) a quien puede usar «Subir facturas»
+- Simplificado lo que solo existía por la ruta: `Factura_Recepcion_Service::recibir( $archivo, $resultado, $origen_alta, $accion_alta )` y `asignar_manual( $archivo, $farmacia_id, $datos )` sin notificar, publicar ni origen (siempre pendiente, sin aviso y registro `backoffice`); `Documento_Service::subir_factura_recibida()` igual, con fecha y origen del evento obligatorios. El nonce de «Subir facturas» pasa a `mdf_ca_pantalla_subir_facturas` (antes coincidía con el nombre de la capacidad retirada)
+- Producción: el `.htaccess` de la raíz de WordPress pudo recibir a mano la línea que pasa `Authorization` a PHP (para el robot): ya no hace falta y se puede quitar
+- Comprobado en local con usuarios de prueba:
+  - antes de migrar, las contraseñas del robot y de un usuario editor + `mdf_robot` autenticaban (400 frente a 401 sin credenciales) y el namespace respondía 200;
+  - la migración borra el robot y sus contraseñas, conserva y avisa del mixto, quita rol y options, y repetida no hace nada. También desde cero, con un robot recreado a mano;
+  - después: ruta y namespace 404, índice sin `mdf-ca`, Basic Auth con una contraseña válida rechazada, sección del perfil ausente (Chrome);
+  - regresión: Subir facturas con bandeja (recomprobar, asignar, descartar), Pendientes, publicación en bloque y deshacer, eliminar, 347, importador (simulación), visor (token, reutilizado, sin sesión), historial con un evento antiguo de origen `recepcion`, accesos de cliente y sin sesión, todas las pantallas sin errores de PHP.
 
 **Arrastrar y soltar archivos en las subidas** (#339; v0.26.0, sin cambio de esquema)
 - Componente reutilizable `Admin_Zona_Archivos`:
@@ -406,7 +421,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 ## Estado
 
 - Fases 0 a 3 cerradas con batería de seguridad pasada
-- **Fase 4 desplegada en producción el 08/10/2026** (plugin 0.22.0, esquema 1.12.0) y batería de cierre superada: acceso cruzado, sin sesión, enlace directo, cliente fuera del backoffice, API de páginas, ficheros de trabajo no públicos, robot limitado a su ruta y revisión de código sin hallazgos de gravedad alta
+- **Fase 4 desplegada en producción el 08/10/2026** (plugin 0.22.0, esquema 1.12.0) y batería de cierre superada: acceso cruzado, sin sesión, enlace directo, cliente fuera del backoffice, API de páginas, ficheros de trabajo no públicos, robot limitado a su ruta (el robot se retiró después, en la #336) y revisión de código sin hallazgos de gravedad alta
 - Etiquetas de Git: `fase3-prod` (último estado de la Fase 3) y `fase4-prod` / `fase4-327`
 - Copia de archivos (`backup.sh`, repo `deploy-script`): `wp-content` y `Clientes/private-docs`, en `~/Backups-MDF/archivos` con permisos 700. La base de datos la copia IONOS a diario
 
@@ -417,11 +432,11 @@ Pendientes:
   - probarlo con el Excel real (lo valida la persona de MDF);
 
   Pendientes: Formación y el modo proveedores. Avisar a MKT de las clases del grupo Modelo 347
-- **#329 Endurecimiento menor:** mensaje de login del robot que delata la cuenta, índice REST de `mdf-ca/v1`, página de ejemplo y temas inactivos, actualizar WP Mail SMTP, retoques de `deploy.sh`, y **borrar los documentos de prueba** de las farmacias piloto (incluido `sol.pdf`, de la Fase 1) antes de que MDF use el portal
+- **#329 Endurecimiento menor:** página de ejemplo y temas inactivos, actualizar WP Mail SMTP, retoques de `deploy.sh`, y **borrar los documentos de prueba** de las farmacias piloto (incluido `sol.pdf`, de la Fase 1) antes de que MDF use el portal. El mensaje de login del robot y el índice REST de `mdf-ca/v1` quedaron resueltos con la #336
 - **#332/#333 Lectura de facturas en PHP:** hecha y probada con sintéticas y con 6 facturas reales: 6 de 6 campo a campo, 0 palabras desviadas (ver «Lectura de facturas en PHP»). Falta:
   - revisar la licencia LGPL-3.0 de smalot con la de PyMuPDF en la Fase 5.
 
-  «Subir facturas» (#334) y la Bandeja de facturas (#335, v0.29.0) hechas y verificadas en local, sin desplegar; pendientes: retirar el robot y la ruta REST (#336) y una capacidad propia para la pantalla (#337)
+  «Subir facturas» (#334) y la Bandeja de facturas (#335, v0.29.0) y la retirada del robot y de la ruta REST (#336, v0.30.0) hechas y verificadas en local, sin desplegar; pendiente: una capacidad propia para la pantalla (#337)
 - Sección de Cuota (tarea #254): a la espera del contenido de MKT
 - Avisar a MKT de las clases CSS del listado agrupado
 
@@ -433,7 +448,7 @@ Se ejecuta al final de cada fase. Si algo falla, la fase no está cerrada:
 - Sin sesión: ningún recurso privado accesible. Ni documentos, ni endpoints, ni datos vía API de WordPress.
 - Ningún documento privado alcanzable por enlace directo (carpeta y fichero de `Clientes/private-docs` dan 403 o 404).
 - Los usuarios cliente no pueden entrar a `wp-admin` ni acceder a datos de otros por ninguna vía.
-- El usuario robot no puede usar rutas REST fuera de `mdf-ca/v1` (con control positivo: la misma contraseña debe autenticar en su ruta).
+- No hay rutas REST propias (`/wp-json/mdf-ca/v1/` da 404 y el índice `/wp-json/` no menciona `mdf-ca`) y las contraseñas de aplicación están desactivadas (una petición con Basic Auth y una contraseña válida se rechaza).
 - Ningún fichero de trabajo del plugin (`.md`, `docs/`, `.htaccess`) se sirve públicamente.
 - Las comprobaciones de permiso pasan por la función centralizada, no por lógica dispersa (revisión de código de solo lectura).
 - Decisiones de arquitectura de la fase documentadas.
@@ -444,8 +459,7 @@ Se ejecuta al final de cada fase. Si algo falla, la fase no está cerrada:
 - Pasarela de pago online y herramientas de pago
 - Integración con CRM (MDF aún no lo ha seleccionado)
 - SSO con "la Academia" (viabilidad pendiente de datos de MDF; alternativa si no es viable: credenciales sincronizadas en el alta, no sesión compartida)
-- Ejecución programada o carpeta vigilada del envío de facturas (se decide tras el primer mes de operación manual)
 
 ## Fase 5 (siguiente)
 
-Revisión RGPD (tabla de eventos, plazo de borrado de la Bandeja de facturas, copias de excepciones y de backup, plazos de conservación, encargado de tratamiento, política de privacidad, licencia AGPL de PyMuPDF), documentación técnica de traspaso, plan de mantenimiento (Luis y Víctor; copia de archivos manual: quién, cuándo y cuánto se conserva; WP-Cron frente a cron de IONOS; SPF y DKIM), formación a MDF y cuentas individuales de backoffice para cada persona de MDF.
+Revisión RGPD (tabla de eventos, plazo de borrado de la Bandeja de facturas, copias de excepciones y de backup, plazos de conservación, encargado de tratamiento, política de privacidad, licencia AGPL de PyMuPDF si el parser de Python se sigue usando para pruebas), documentación técnica de traspaso, plan de mantenimiento (Luis y Víctor; copia de archivos manual: quién, cuándo y cuánto se conserva; WP-Cron frente a cron de IONOS; SPF y DKIM), formación a MDF y cuentas individuales de backoffice para cada persona de MDF.

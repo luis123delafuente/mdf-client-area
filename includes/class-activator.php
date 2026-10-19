@@ -54,7 +54,7 @@ class Activator {
 	private const MARCAS_MIGRACION = array(
 		'mdf_ca_eventos_desde',
 		'mdf_ca_avisos_backfill_hecho',
-		'mdf_ca_roles_v2',
+		'mdf_ca_robot_retirado_v1',
 		'mdf_ca_cap_347_v1',
 		'mdf_ca_proteccion_carpeta_v1',
 		'mdf_ca_planes_migrados',
@@ -149,12 +149,14 @@ class Activator {
 			update_option( 'mdf_ca_avisos_backfill_hecho', '1' );
 		}
 
-		// Rol del robot de recepcion (#303): activate() ya lo da de alta en
-		// instalaciones nuevas; aqui llega a las que ya estaban activas, una
-		// sola vez, sin tocar mdf_cliente.
-		if ( ! get_option( 'mdf_ca_roles_v2' ) ) {
-			Roles::register_robot();
-			update_option( 'mdf_ca_roles_v2', '1' );
+		// Robot de recepcion retirado (#336, esquema 1.17.0): revoca sus
+		// contrasenas de aplicacion, borra el usuario si solo tiene ese rol,
+		// quita el rol y las options de la recepcion REST. Idempotente; en una
+		// instalacion nueva no encuentra nada. Tambien borra la marca
+		// mdf_ca_roles_v2 de la migracion que daba de alta el rol.
+		if ( ! get_option( 'mdf_ca_robot_retirado_v1' ) ) {
+			Robot_Retirado::ejecutar();
+			update_option( 'mdf_ca_robot_retirado_v1', '1' );
 		}
 
 		// Generador del Modelo 347 (#307): su capacidad propia, al rol
@@ -238,8 +240,9 @@ class Activator {
 	 * clave primaria, asi que se hace aqui, antes de dbDelta, en un solo
 	 * ALTER (atomico en MySQL y MariaDB). Idempotente: si la tabla no existe
 	 * (instalacion nueva, la crea dbDelta) o ya tiene la columna, no hace
-	 * nada. Lo anterior era todo del robot salvo las publicaciones y
-	 * despublicaciones en bloque, que se hacen desde el backoffice.
+	 * nada. Lo anterior era todo del robot (retirado en #336) salvo las
+	 * publicaciones y despublicaciones en bloque, que se hacen desde el
+	 * backoffice.
 	 */
 	private static function migrar_registro_origen(): void {
 		global $wpdb;

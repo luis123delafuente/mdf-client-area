@@ -19,7 +19,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * tambien; si el evento falla, el estado no cambia. Esta clase no abre
  * transacciones.
  *
- * Datos personales: solo usuario_id (una persona de MDF o el robot), fecha,
+ * Datos personales: solo usuario_id (una persona de MDF; en eventos antiguos,
+ * el robot de recepcion, retirado en #336), fecha,
  * accion, origen y lote. Nada de IP, user agent ni datos fiscales.
  */
 class Publicacion_Evento_Repository {
@@ -45,6 +46,7 @@ class Publicacion_Evento_Repository {
 	public const ORIGEN_POR_FARMACIA      = 'por_farmacia';
 	public const ORIGEN_BLOQUE            = 'bloque';
 	public const ORIGEN_DESHACER_LOTE     = 'deshacer_lote';
+	/** Solo en eventos antiguos: documento que nacio publicado por la ruta REST del robot (retirada en #336). Ya no se escribe. */
 	public const ORIGEN_RECEPCION         = 'recepcion';
 	public const ORIGEN_SUBIDA_BACKOFFICE = 'subida_backoffice';
 	/** Publicacion de las cartas del generador del Modelo 347 (#307), en su propio lote. */
@@ -134,7 +136,6 @@ class Publicacion_Evento_Repository {
 				self::ORIGEN_POR_FARMACIA,
 				self::ORIGEN_BLOQUE,
 				self::ORIGEN_DESHACER_LOTE,
-				self::ORIGEN_RECEPCION,
 				self::ORIGEN_SUBIDA_BACKOFFICE,
 				self::ORIGEN_MODELO_347,
 				self::ORIGEN_SUBIDA_FACTURAS,

@@ -222,7 +222,7 @@ class Bandeja_Facturas_Service {
 			return new \WP_Error( 'mdf_ca_bandeja_sin_fichero', 'El fichero de esta factura ya no está en el servidor. Descártala y vuelve a subirla.' );
 		}
 
-		$recepcion = ( new Factura_Recepcion_Service() )->asignar_manual( self::archivo_en_disco( $ruta ), $farmacia->get_id(), $datos, Recepcion_Registro::ORIGEN_BACKOFFICE );
+		$recepcion = ( new Factura_Recepcion_Service() )->asignar_manual( self::archivo_en_disco( $ruta ), $farmacia->get_id(), $datos );
 
 		if ( Factura_Recepcion_Service::ACEPTADO === $recepcion['resultado'] ) {
 			$this->sacar( $fila, $ruta, Bandeja_Facturas_Repository::EVENTO_ASIGNADA, $usuario_id, $recepcion['documento']->get_id() );
@@ -303,7 +303,7 @@ class Bandeja_Facturas_Service {
 				continue;
 			}
 
-			$r = $recepcion->recibir( self::archivo_en_disco( $ruta ), $lectura, false, false, Recepcion_Registro::ORIGEN_BACKOFFICE, Publicacion_Evento_Repository::ORIGEN_BANDEJA );
+			$r = $recepcion->recibir( self::archivo_en_disco( $ruta ), $lectura, Publicacion_Evento_Repository::ORIGEN_BANDEJA );
 
 			if ( Factura_Recepcion_Service::ACEPTADO === $r['resultado'] ) {
 				$this->sacar( $fila, $ruta, Bandeja_Facturas_Repository::EVENTO_ASIGNADA_AUTO, $usuario_id, $r['documento']->get_id() );

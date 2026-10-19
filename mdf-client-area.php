@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       MDF Client Area
  * Description:       Logica de negocio del Area de Clientes de Mediformplus SL (permisos, documentos, catalogo). Elementor solo maqueta, este plugin decide.
- * Version:           0.29.0
+ * Version:           0.30.0
  * Requires at least: 6.4
  * Requires PHP:      8.4
  * Author:            Mediformplus SL
@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.29.0' );
-define( 'MDF_CA_DB_VERSION', '1.16.0' );
+define( 'MDF_CA_VERSION', '0.30.0' );
+define( 'MDF_CA_DB_VERSION', '1.17.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MDF_CA_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );
@@ -62,7 +62,6 @@ add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Importador_Farmacias'
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Planes', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Avisos_Documentos', 'register_hooks' ) );
-add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Recepcion_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Publicacion_Documentos', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Documentos_Publicados', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Subir_Facturas', 'register_hooks' ) );
@@ -71,8 +70,8 @@ add_action( 'plugins_loaded', array( 'MdfClientArea\\Bandeja_Facturas_Service', 
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Modelo_347', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Proteccion_Carpeta', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Requisitos_Servidor', 'register_hooks' ) );
-add_action( 'plugins_loaded', array( 'MdfClientArea\\Recepcion_Autenticacion', 'register_hooks' ) );
-add_action( 'plugins_loaded', array( 'MdfClientArea\\Recepcion_Documentos_Endpoint', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Contrasenas_Aplicacion', 'register_hooks' ) );
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Robot_Retirado', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Aviso_Documentos_Service', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Catalogo', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Invitaciones', 'register_hooks' ) );

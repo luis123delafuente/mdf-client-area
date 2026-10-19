@@ -7,6 +7,8 @@
  * @var string|null $requisitos   Mensaje si al servidor le faltan extensiones.
  * @var int         $max_bytes    Tamano maximo por factura.
  * @var int         $max_facturas Facturas por subida.
+ * @var array<string, array<string, array<string, int>>> $recuentos Actividad: fecha => resultado => origen => total.
+ * @var int         $dias         Dias de la actividad.
  */
 
 namespace MdfClientArea;
@@ -80,5 +82,55 @@ if ( ! defined( 'ABSPATH' ) ) {
 				<button type="button" class="button-link" id="mdf-ca-subir-facturas-otra">Subir otras facturas</button>
 			</p>
 		</div>
+	<?php endif; ?>
+
+	<?php
+	$columnas = array(
+		Recepcion_Registro::ACEPTADO          => 'Subidas',
+		Recepcion_Registro::DUPLICADO         => 'Ya estaban',
+		Recepcion_Registro::EXCEPCION         => 'Sin asignar',
+		Recepcion_Registro::RECHAZADO         => 'No válidas',
+		Recepcion_Registro::PUBLICADO_BLOQUE  => 'Publicadas en bloque',
+		Recepcion_Registro::DESPUBLICADO_LOTE => 'Despublicadas al deshacer un lote',
+	);
+	?>
+	<h2 id="mdf-ca-actividad">Actividad de los últimos <?php echo esc_html( (string) $dias ); ?> días</h2>
+	<p class="description">
+		Recuentos diarios, sin ningún dato de las facturas. Cuentan lo subido aquí y lo asignado desde la Bandeja de facturas:
+		«Sin asignar» son las que no se pudieron asignar a una farmacia (las que fueron a la bandeja y las que ya estaban en otra farmacia),
+		y «No válidas», los ficheros que no son un PDF válido. Las dos últimas columnas son de «Pendientes de publicar».
+	</p>
+	<?php if ( ! $recuentos ) : ?>
+		<p>Sin actividad en estos días.</p>
+	<?php else : ?>
+		<table class="wp-list-table widefat fixed striped" style="max-width:900px">
+			<thead>
+				<tr>
+					<th>Día</th>
+					<?php foreach ( $columnas as $etiqueta ) : ?>
+						<th><?php echo esc_html( $etiqueta ); ?></th>
+					<?php endforeach; ?>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $recuentos as $dia => $resultados ) : ?>
+					<tr>
+						<td><?php echo esc_html( wp_date( 'd/m/Y', strtotime( $dia . ' 12:00:00' ) ) ); ?></td>
+						<?php foreach ( array_keys( $columnas ) as $clave ) : ?>
+							<?php
+							$por_origen = $resultados[ $clave ] ?? array();
+							$robot      = (int) ( $por_origen[ Recepcion_Registro::ORIGEN_REST ] ?? 0 );
+							?>
+							<td>
+								<?php echo esc_html( (string) array_sum( $por_origen ) ); ?>
+								<?php if ( $robot > 0 ) : ?>
+									<br><span class="description"><?php echo esc_html( sprintf( '%d por el robot (retirado)', $robot ) ); ?></span>
+								<?php endif; ?>
+							</td>
+						<?php endforeach; ?>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
 	<?php endif; ?>
 </div>

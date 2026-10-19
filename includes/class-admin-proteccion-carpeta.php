@@ -99,7 +99,7 @@ class Admin_Proteccion_Carpeta {
 			return array(
 				array(
 					'nivel' => 'error',
-					'texto' => "La carpeta {$carpeta} no existe y el plugin no ha podido crearla. No se pueden guardar documentos (ni desde aqui ni los que envia el robot) hasta que exista. Revisa los permisos de la carpeta Clientes del servidor o creala a mano por SFTP, y pulsa \"Volver a comprobar\".",
+					'texto' => "La carpeta {$carpeta} no existe y el plugin no ha podido crearla. No se pueden guardar documentos hasta que exista. Revisa los permisos de la carpeta Clientes del servidor o creala a mano por SFTP, y pulsa \"Volver a comprobar\".",
 				),
 			);
 		}
@@ -131,7 +131,7 @@ class Admin_Proteccion_Carpeta {
 		if ( ! $r['escribible'] ) {
 			$mensajes[] = array(
 				'nivel' => 'error',
-				'texto' => "La carpeta {$carpeta} no admite escritura: no se pueden guardar documentos nuevos (ni desde aqui ni los que envia el robot)" . ( 'falta' === $r['index'] ? ', y el plugin no ha podido crear su index.php' : '' ) . '. Revisa sus permisos y propietario en el servidor (normalmente 0755, del usuario del servidor web) y pulsa "Volver a comprobar".',
+				'texto' => "La carpeta {$carpeta} no admite escritura: no se pueden guardar documentos nuevos" . ( 'falta' === $r['index'] ? ', y el plugin no ha podido crear su index.php' : '' ) . '. Revisa sus permisos y propietario en el servidor (normalmente 0755, del usuario del servidor web) y pulsa "Volver a comprobar".',
 			);
 		}
 

@@ -9,7 +9,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Lectura de una factura SAGE en PDF en el propio servidor (#333), sin
  * Python ni binarios: el mismo resultado que el parser de Python
  * (Parser_facturas_SAGE), con los mismos campos y estados, listo para
- * Factura_Cruce_Service::cruzar() igual que el que envia el robot.
+ * Factura_Cruce_Service::cruzar().
  *
  *     $resultado = ( new Factura_Lectura_Service() )->analizar( $ruta, $nombre_original );
  *     $cruce     = ( new Factura_Cruce_Service() )->cruzar( $resultado );

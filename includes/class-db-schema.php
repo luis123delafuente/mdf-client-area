@@ -322,9 +322,10 @@ class DB_Schema {
 
 		// Eventos de publicacion (#318), de solo anadir. accion: publicado |
 		// despublicado. origen: individual, por_farmacia, bloque,
-		// deshacer_lote, recepcion o subida_backoffice. usuario_id NULL si no
-		// hay usuario (nunca ocurre hoy: el robot y los administradores son
-		// usuarios). fecha en UTC. lote_id: el lote que publica, el que se
+		// deshacer_lote, recepcion (solo antiguos: el robot, retirado en
+		// #336) o subida_backoffice, y los origenes posteriores. usuario_id
+		// NULL si no hay usuario (nunca ocurre hoy: quien actua siempre es un
+		// usuario). fecha en UTC. lote_id: el lote que publica, el que se
 		// deshace o, al despublicar uno a uno, el que habia publicado el
 		// documento (documentos.publicacion_lote_id se pone a NULL, el evento
 		// conserva ese dato). Sin FK, como el resto. El indice sirve el
@@ -368,8 +369,9 @@ class DB_Schema {
 			KEY estado (estado,lote_id)
 		) {$charset_collate};";
 
-		// origen (#334, esquema 1.15.0): "rest" (robot) o "backoffice" (Subir
-		// facturas y las publicaciones y despublicaciones en bloque). Entra en
+		// origen (#334, esquema 1.15.0): "backoffice" (Subir facturas, la
+		// bandeja y las publicaciones y despublicaciones en bloque) o "rest"
+		// (solo filas antiguas: el robot, retirado en #336). Entra en
 		// la clave primaria: una fila por dia, resultado y origen. dbDelta no
 		// cambia una clave primaria: la migracion de las tablas que ya existian
 		// la hace Activator::migrar_registro_origen() antes de dbDelta.

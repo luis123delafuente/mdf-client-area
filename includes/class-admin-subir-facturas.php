@@ -9,8 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Documentos MDF › Subir facturas (#334). Administracion MDF sube aqui las
  * facturas exportadas de SAGE (sustituye al programa de envio del Mac): el
  * portal las lee (Factura_Lectura_Service), las cruza con las farmacias y,
- * si corresponde, las guarda pendientes de publicar por el mismo camino que
- * la recepcion REST (Factura_Recepcion_Service).
+ * si corresponde, las guarda pendientes de publicar (Factura_Recepcion_Service).
+ * Desde #336 es la unica entrada de facturas: el robot y su ruta REST se han
+ * retirado. Al pie, la actividad de los ultimos 14 dias (Recepcion_Registro),
+ * que antes estaba en «Recepcion automatica».
  *
  * - Seleccion con Admin_Zona_Archivos en modo lote: varios PDF, carpetas con
  *   subcarpetas, ocultos y no PDF ignorados, tope de MAX_FACTURAS por subida y
@@ -21,10 +23,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   serie + numero).
  * - Cada factura nace pendiente, sin aviso por email, con un evento
  *   "recibido" con origen subida_facturas y el usuario, y cuenta en el
- *   registro de recepcion con origen backoffice. No depende del interruptor
- *   ni del tope diario del robot, que siguen siendo solo de la ruta REST.
- * - Las no reconocidas no se guardan en el servidor: el resumen y la lista
- *   descargable (nombre de fichero y motivo) se hacen en el navegador.
+ *   registro de recepcion con origen backoffice.
+ * - Las que se leen pero no se pueden asignar van a la Bandeja de facturas
+ *   (#335). Las demas no reconocidas no se guardan en el servidor: el resumen
+ *   y la lista descargable (nombre de fichero y motivo) se hacen en el
+ *   navegador.
  * - Nada se registra con valores de la factura. El nombre del fichero solo se
  *   sanea y se usa para contrastar serie y numero; nunca como ruta.
  */
@@ -38,9 +41,15 @@ class Admin_Subir_Facturas {
 	public const ACCION_AJAX = 'mdf_ca_subir_factura';
 
 	/** Nonce de la pantalla, el mismo para todas sus peticiones. */
-	private const NONCE = 'mdf_ca_subir_facturas';
+	private const NONCE = 'mdf_ca_pantalla_subir_facturas';
 
 	private const PARENT_SLUG = 'mdf-ca-documentos';
+
+	/** «Recepcion automatica», retirada en #336: su direccion lleva aqui. */
+	private const SLUG_ANTIGUO = 'mdf-ca-recepcion-documentos';
+
+	/** Dias de la tabla de actividad. */
+	private const DIAS_ACTIVIDAD = 14;
 
 	/** Facturas por subida. Una exportacion mensual de SAGE ronda las 200 (una por farmacia). */
 	public const MAX_FACTURAS = 500;
@@ -72,6 +81,20 @@ class Admin_Subir_Facturas {
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'encolar_assets' ) );
 		// Solo con sesion: no hay version nopriv.
 		add_action( 'wp_ajax_' . self::ACCION_AJAX, array( __CLASS__, 'ajax_subir' ) );
+		add_action( 'admin_page_access_denied', array( __CLASS__, 'redirigir_pagina_antigua' ) );
+	}
+
+	/**
+	 * Un enlace guardado a «Recepcion automatica» (#336) no acaba en "no
+	 * tienes permiso": quien puede usar esta pantalla va a su actividad.
+	 * WordPress dispara el hook justo antes de negar una pagina que no existe.
+	 */
+	public static function redirigir_pagina_antigua(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- solo lectura del slug.
+		if ( isset( $_GET['page'] ) && self::SLUG_ANTIGUO === $_GET['page'] && current_user_can( self::CAPACIDAD ) ) {
+			wp_safe_redirect( admin_url( 'admin.php?page=' . self::MENU_SLUG . '#mdf-ca-actividad' ) );
+			exit;
+		}
 	}
 
 	public static function registrar_menu(): void {
@@ -107,6 +130,8 @@ class Admin_Subir_Facturas {
 		$requisitos   = Requisitos_Servidor::mensaje( Requisitos_Servidor::LECTURA_FACTURAS );
 		$max_bytes    = Pdf_Limites::MAX_BYTES_FICHERO;
 		$max_facturas = self::MAX_FACTURAS;
+		$recuentos    = Recepcion_Registro::recuentos_recientes( self::DIAS_ACTIVIDAD );
+		$dias         = self::DIAS_ACTIVIDAD;
 
 		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-subir-facturas.php';
 	}
@@ -140,14 +165,8 @@ class Admin_Subir_Facturas {
 
 		$lector    = new Factura_Lectura_Service();
 		$lectura   = $lector->analizar( $archivo['tmp_name'], $archivo['nombre'] );
-		$recepcion = ( new Factura_Recepcion_Service() )->recibir(
-			$archivo,
-			$lectura,
-			false, // sin aviso por email a la farmacia
-			false, // siempre pendiente de publicar
-			Recepcion_Registro::ORIGEN_BACKOFFICE,
-			Publicacion_Evento_Repository::ORIGEN_SUBIDA_FACTURAS
-		);
+		// Siempre pendiente de publicar y sin aviso por email a la farmacia.
+		$recepcion = ( new Factura_Recepcion_Service() )->recibir( $archivo, $lectura, Publicacion_Evento_Repository::ORIGEN_SUBIDA_FACTURAS );
 
 		// responder() termina la peticion.
 		if ( Factura_Recepcion_Service::ACEPTADO === $recepcion['resultado'] ) {

@@ -182,12 +182,15 @@ class Documento_Service {
 	}
 
 	/**
-	 * Factura recibida por la ruta REST de recepcion (#303). Mismo camino que
-	 * la subida de backoffice (validacion de fichero, nombre en disco
-	 * aleatorio, carpeta privada), con tres diferencias: solo PDF, tipo
-	 * "factura" siempre, y se guarda el SHA-256 del fichero (UNIQUE) para que
-	 * reenviar el mismo PDF no lo duplique. La farmacia ya viene cruzada por
-	 * Factura_Cruce_Service: aqui no se decide a quien pertenece.
+	 * Factura recibida desde "Subir facturas" (#334) o la Bandeja de facturas
+	 * (#335), por Factura_Recepcion_Service (nacio con la ruta REST #303,
+	 * retirada en #336). Mismo camino que la subida de backoffice (validacion
+	 * de fichero, nombre en disco aleatorio, carpeta privada), con estas
+	 * diferencias: solo PDF, tipo "factura" siempre, se guarda el SHA-256 del
+	 * fichero (UNIQUE) para que volver a subir el mismo PDF no lo duplique, y
+	 * nace siempre pendiente de publicar (invisible para toda farmacia hasta
+	 * que un administrador la publica, #304) y sin aviso por email. La
+	 * farmacia ya viene decidida: aqui no se decide a quien pertenece.
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
 	 * @param array{emisor_cif: string, serie: string, numero: string} $factura
@@ -195,17 +198,11 @@ class Documento_Service {
 	 *                       Factura_Cruce_Service (#314). UNIQUE: la misma
 	 *                       factura no se guarda dos veces aunque cambien los
 	 *                       bytes del PDF.
-	 * @param bool $publicar false deja el documento pendiente de publicar
-	 *                       (invisible para toda farmacia hasta que un
-	 *                       administrador lo publica, #304).
-	 * @param string|null $fecha_documento La fecha de la factura YA revalidada
-	 *                       por Factura_Cruce_Service (nunca la declarada sin
-	 *                       validar). Obligatoria: guardar() la exige.
-	 * @param string|null $origen_alta null en la recepcion REST (sin evento si
-	 *                       nace pendiente, como siempre). "Subir facturas"
-	 *                       (#334) pasa ORIGEN_SUBIDA_FACTURAS: el alta deja
-	 *                       siempre un evento con ese origen y el usuario,
-	 *                       "recibido" si nace pendiente, en la misma
+	 * @param string $fecha_documento La fecha de la factura YA revalidada
+	 *                       (nunca la declarada sin validar).
+	 * @param string $origen_alta ORIGEN_SUBIDA_FACTURAS o ORIGEN_BANDEJA: el
+	 *                       alta deja siempre un evento con ese origen y el
+	 *                       usuario, "recibido" por defecto, en la misma
 	 *                       transaccion que el INSERT.
 	 * @param string|null $accion_alta Accion de ese evento si nace pendiente
 	 *                       (por defecto "recibido"; la bandeja, #335, usa
@@ -218,7 +215,7 @@ class Documento_Service {
 	 * la pone el codigo del plugin: $_FILES nunca la trae.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, array $factura, bool $notificar = true, bool $publicar = true, ?string $fecha_documento = null, ?string $origen_alta = null, ?string $accion_alta = null ) {
+	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, array $factura, string $fecha_documento, string $origen_alta, ?string $accion_alta = null ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Farmacia no valida.' );
 		}
@@ -241,7 +238,8 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_factura_invalida', 'Emisor, serie o numero de factura no validos.' );
 		}
 
-		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar, $fecha_documento, $factura, null, $origen_alta, $accion_alta );
+		// Sin aviso (notificar = false) y pendiente (publicar = false).
+		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, false, true, $hash_sha256, false, $fecha_documento, $factura, null, $origen_alta, $accion_alta );
 	}
 
 	/**
@@ -249,7 +247,7 @@ class Documento_Service {
 	 * lo mueve a la carpeta privada con nombre aleatorio y registra la fila.
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo
-	 * @param array{emisor_cif: string, serie: string, numero: string}|null $factura Solo la recepcion.
+	 * @param array{emisor_cif: string, serie: string, numero: string}|null $factura Solo las facturas recibidas.
 	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347 Solo el Modelo 347 (#307), ya validado.
 	 * @return Documento|\WP_Error
 	 */
@@ -435,9 +433,9 @@ class Documento_Service {
 
 		// Un documento que nace publicado deja su evento de publicacion en la
 		// misma transaccion que el INSERT (#318): hace falta InnoDB. Se
-		// comprueba antes de tocar el disco. Uno que nace pendiente por la
-		// recepcion REST no escribe evento; con $origen_alta ("Subir
-		// facturas", #334) deja siempre uno, "recibido" si nace pendiente.
+		// comprueba antes de tocar el disco. Con $origen_alta ("Subir
+		// facturas", #334, y la bandeja, #335) deja siempre uno, "recibido"
+		// (o "asignado_manual") porque nace pendiente.
 		$con_evento = $publicar || null !== $origen_alta;
 
 		if ( $con_evento
@@ -456,7 +454,7 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_error_escritura', 'No se pudo guardar el fichero en el servidor.' );
 		}
 
-		// En la recepcion, un INSERT que pierde una carrera choca con un UNIQUE
+		// En una factura recibida, un INSERT que pierde una carrera choca con un UNIQUE
 		// (hash o factura) y $wpdb escribiria en el log "Duplicate entry ..."
 		// con la serie y el numero: se silencia y el error no lleva el texto
 		// de la BD. Quien llama vuelve a buscar y responde duplicado.
@@ -512,9 +510,9 @@ class Documento_Service {
 		}
 
 		if ( $con_evento ) {
-			// Quien lo da de alta: el robot (recepcion sin aprobacion), el
-			// administrador (subida de backoffice) o quien usa "Subir facturas".
-			$origen = $origen_alta ?? ( null !== $factura ? Publicacion_Evento_Repository::ORIGEN_RECEPCION : Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE );
+			// Quien lo da de alta: el administrador (subida de backoffice) o
+			// quien usa "Subir facturas" o la bandeja.
+			$origen = $origen_alta ?? Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE;
 			$evento = $this->eventos->insertar_para(
 				array( $documento->get_id() => null ),
 				$publicar ? Publicacion_Evento_Repository::ACCION_PUBLICADO : ( $accion_alta ?? Publicacion_Evento_Repository::ACCION_RECIBIDO ),

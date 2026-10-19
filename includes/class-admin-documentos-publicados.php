@@ -11,8 +11,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * poder corregir cualquiera, tambien uno antiguo, y el HISTORIAL de
  * publicaciones de un documento. Mismo patron que el resto del backoffice:
  * 'manage_options', admin-post.php con nonce en cada accion, avisos por
- * transient de usuario y salida escapada. mdf_cliente y el robot no llegan
- * aqui por ninguna via.
+ * transient de usuario y salida escapada. mdf_cliente no llega aqui por
+ * ninguna via.
  *
  * - Buscador (GET, solo lectura): farmacia (el selector con filtro de
  *   Documentos MDF) y nombre del documento (LIKE con esc_like). La paginacion
@@ -54,7 +54,7 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ORIGEN_POR_FARMACIA      => 'Todos los de una farmacia',
 		Publicacion_Evento_Repository::ORIGEN_BLOQUE            => 'En bloque («Publicar todos los pendientes»)',
 		Publicacion_Evento_Repository::ORIGEN_DESHACER_LOTE     => 'Al deshacer un lote',
-		Publicacion_Evento_Repository::ORIGEN_RECEPCION         => 'Recepción automática (nació publicado)',
+		Publicacion_Evento_Repository::ORIGEN_RECEPCION         => 'Recibido por el robot (retirado), nació publicado',
 		Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE => 'Subida desde el backoffice (nació publicado)',
 		Publicacion_Evento_Repository::ORIGEN_MODELO_347        => 'Generador del Modelo 347 («Publicar y enviar»)',
 		Publicacion_Evento_Repository::ORIGEN_SUBIDA_FACTURAS   => '«Subir facturas»',

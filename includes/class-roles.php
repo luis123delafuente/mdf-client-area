@@ -15,15 +15,6 @@ class Roles {
 	public const ROLE_CLIENTE = 'mdf_cliente';
 
 	/**
-	 * Usuario tecnico del robot que envia facturas (Fase 4, #303). Una unica
-	 * capacidad propia, sin 'read' ni nada de WordPress: solo puede usar la
-	 * ruta REST de recepcion (Recepcion_Autenticacion). No tiene acceso
-	 * interactivo: ni wp-admin ni login con contrasena.
-	 */
-	public const ROLE_ROBOT          = 'mdf_robot';
-	public const CAP_SUBIR_FACTURAS  = 'mdf_ca_subir_facturas';
-
-	/**
 	 * Generador del Modelo 347 (#307): subir el Excel de SAGE, generar,
 	 * publicar y enviar las cartas, y sus ajustes. Capacidad propia (no
 	 * manage_options) para poder darla mas adelante a una cuenta individual de
@@ -43,18 +34,6 @@ class Roles {
 	public static function register(): void {
 		remove_role( self::ROLE_CLIENTE );
 		add_role( self::ROLE_CLIENTE, 'Cliente MDF', array() );
-
-		self::register_robot();
-	}
-
-	/**
-	 * Aparte de register() para que maybe_upgrade() pueda dar de alta solo
-	 * el rol nuevo en una instalacion ya activa, sin tocar mdf_cliente.
-	 * Idempotente igual que register().
-	 */
-	public static function register_robot(): void {
-		remove_role( self::ROLE_ROBOT );
-		add_role( self::ROLE_ROBOT, 'Robot MDF', array( self::CAP_SUBIR_FACTURAS => true ) );
 	}
 
 	/** Idempotente: add_cap() sobre un rol que ya la tiene no cambia nada. */
@@ -64,10 +43,6 @@ class Roles {
 		if ( $administrador ) {
 			$administrador->add_cap( self::CAP_GESTIONAR_347 );
 		}
-	}
-
-	public static function user_is_robot( \WP_User $user ): bool {
-		return in_array( self::ROLE_ROBOT, (array) $user->roles, true );
 	}
 
 	public static function user_is_cliente( \WP_User $user ): bool {

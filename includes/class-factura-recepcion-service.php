@@ -6,15 +6,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Guardado de una factura recibida (#334, extraido de la ruta REST #303):
- * el unico camino por el que una factura de SAGE entra como documento, lo
- * use el robot (Recepcion_Documentos_Endpoint) o una persona de MDF desde
- * "Subir facturas" (Admin_Subir_Facturas). Mismo cruce, misma unicidad,
- * misma fecha de documento, mismo nombre visible y mismo registro:
+ * Guardado de una factura recibida (#334, extraido de la ruta REST #303,
+ * retirada en #336): el unico camino por el que una factura de SAGE entra
+ * como documento, desde "Subir facturas" (Admin_Subir_Facturas) o la Bandeja
+ * de facturas (#335). Mismo cruce, misma unicidad, misma fecha de documento,
+ * mismo nombre visible y mismo registro. Siempre nace pendiente de publicar y
+ * sin aviso por email, y cuenta en el registro con origen backoffice:
  *
- * 1. Factura_Cruce_Service::cruzar() revalida todo el resultado del parser
- *    (el de Python que manda el robot o el de Factura_Lectura_Service) y
- *    decide la farmacia. Si no es "asignada", excepcion y no se escribe nada.
+ * 1. Factura_Cruce_Service::cruzar() revalida todo el resultado de
+ *    Factura_Lectura_Service y decide la farmacia. Si no es "asignada",
+ *    excepcion y no se escribe nada.
  * 2. Duplicados por SHA-256 del PDF y por emisor + serie + numero: en la
  *    misma farmacia, "duplicado" (idempotente: subir otra vez la misma
  *    carpeta no duplica nada); en otra, excepcion documento_en_otra_farmacia.
@@ -38,7 +39,7 @@ class Factura_Recepcion_Service {
 
 	public const OTRA_FARMACIA = 'documento_en_otra_farmacia';
 
-	/** Errores de Documento_Service que son del servidor, no del fichero (la REST responde 500, como antes de #334). */
+	/** Errores de Documento_Service que son del servidor, no del fichero (en "Subir facturas", se puede reintentar). */
 	private const ERRORES_INTERNOS = array( 'mdf_ca_error_bd', 'mdf_ca_documento_carpeta_no_disponible', 'mdf_ca_documento_error_escritura' );
 
 	private Factura_Cruce_Service $cruce;
@@ -55,21 +56,18 @@ class Factura_Recepcion_Service {
 	 * @param array{tmp_name: string, size: int, error: int, desde_disco?: bool} $archivo
 	 *        Subida HTTP del PDF o, con desde_disco, un PDF que ya esta en la
 	 *        carpeta privada (bandeja, #335). Su nombre no se usa.
-	 * @param array<string, mixed>                            $resultado Resultado del parser (sin validar).
-	 * @param bool        $notificar   false: sin aviso por email a la farmacia.
-	 * @param bool        $publicar    false: nace pendiente de publicar.
-	 * @param string      $origen      Recepcion_Registro::ORIGEN_REST o ORIGEN_BACKOFFICE.
-	 * @param string|null $origen_alta Evento de alta (ver Documento_Service::subir_factura_recibida()).
-	 * @param string|null $accion_alta Accion de ese evento si nace pendiente (por defecto "recibido").
+	 * @param array<string, mixed>                            $resultado Resultado del lector (sin validar).
+	 * @param string      $origen_alta Origen del evento de alta (subida_facturas o bandeja).
+	 * @param string|null $accion_alta Accion de ese evento (por defecto "recibido").
 	 * @return array{resultado: string, estado: ?string, farmacia_id: ?int, documento: ?Documento, interno: bool}
 	 *         estado: el del cruce (o documento_en_otra_farmacia) en una excepcion.
 	 *         interno: en un rechazo, si el fallo es del servidor.
 	 */
-	public function recibir( array $archivo, array $resultado, bool $notificar, bool $publicar, string $origen, ?string $origen_alta = null, ?string $accion_alta = null ): array {
+	public function recibir( array $archivo, array $resultado, string $origen_alta, ?string $accion_alta = null ): array {
 		$cruce = $this->cruce->cruzar( $resultado );
 
 		if ( Factura_Cruce_Service::ASIGNADA !== $cruce['estado'] ) {
-			return $this->excepcion( $cruce['estado'], $origen );
+			return $this->excepcion( $cruce['estado'] );
 		}
 
 		return $this->guardar(
@@ -82,9 +80,6 @@ class Factura_Recepcion_Service {
 			),
 			$cruce['fecha'], // revalidada por Factura_Cruce_Service, nunca la declarada
 			$cruce['importe_total_centimos'] < 0,
-			$notificar,
-			$publicar,
-			$origen,
 			$origen_alta,
 			$accion_alta
 		);
@@ -104,14 +99,14 @@ class Factura_Recepcion_Service {
 	 * @return array{resultado: string, estado: ?string, farmacia_id: ?int, documento: ?Documento, interno: bool}
 	 *         Con datos que no valen: excepcion formato_inesperado.
 	 */
-	public function asignar_manual( array $archivo, int $farmacia_id, array $datos, string $origen ): array {
+	public function asignar_manual( array $archivo, int $farmacia_id, array $datos ): array {
 		$emisor = Identificador_Fiscal_Validator::normalizar( (string) ( $datos['emisor'] ?? '' ) );
 		$serie  = (string) ( $datos['serie'] ?? '' );
 		$numero = (string) ( $datos['numero'] ?? '' );
 		$fecha  = (string) ( $datos['fecha'] ?? '' );
 
 		if ( ! self::datos_validos( $emisor, $serie, $numero, $fecha ) || $farmacia_id <= 0 ) {
-			return $this->excepcion( Factura_Cruce_Service::FORMATO_INESPERADO, $origen );
+			return $this->excepcion( Factura_Cruce_Service::FORMATO_INESPERADO );
 		}
 
 		return $this->guardar(
@@ -124,9 +119,6 @@ class Factura_Recepcion_Service {
 			),
 			$fecha,
 			! empty( $datos['es_abono'] ),
-			false,
-			false,
-			$origen,
 			Publicacion_Evento_Repository::ORIGEN_BANDEJA,
 			Publicacion_Evento_Repository::ACCION_ASIGNADO_MANUAL
 		);
@@ -148,17 +140,17 @@ class Factura_Recepcion_Service {
 	 *
 	 * @param array{emisor_cif: string, serie: string, numero: string} $factura Ya validada.
 	 */
-	private function guardar( array $archivo, int $farmacia_id, array $factura, string $fecha, bool $es_abono, bool $notificar, bool $publicar, string $origen, ?string $origen_alta, ?string $accion_alta ): array {
+	private function guardar( array $archivo, int $farmacia_id, array $factura, string $fecha, bool $es_abono, string $origen_alta, ?string $accion_alta ): array {
 		$hash = hash_file( 'sha256', $archivo['tmp_name'] );
 
 		if ( false === $hash ) {
-			return $this->rechazo( false, $origen );
+			return $this->rechazo( false );
 		}
 
 		$existentes = $this->buscar_existentes( $hash, $factura );
 
 		if ( $existentes ) {
-			return $this->duplicado( $existentes, $farmacia_id, $origen );
+			return $this->duplicado( $existentes, $farmacia_id );
 		}
 
 		$documento = $this->documentos->subir_factura_recibida(
@@ -175,8 +167,6 @@ class Factura_Recepcion_Service {
 			),
 			$hash,
 			$factura,
-			$notificar,
-			$publicar,
 			$fecha,
 			$origen_alta,
 			$accion_alta
@@ -189,13 +179,13 @@ class Factura_Recepcion_Service {
 			$existentes = $this->buscar_existentes( $hash, $factura );
 
 			if ( $existentes ) {
-				return $this->duplicado( $existentes, $farmacia_id, $origen );
+				return $this->duplicado( $existentes, $farmacia_id );
 			}
 
-			return $this->rechazo( in_array( $documento->get_error_code(), self::ERRORES_INTERNOS, true ), $origen );
+			return $this->rechazo( in_array( $documento->get_error_code(), self::ERRORES_INTERNOS, true ) );
 		}
 
-		Recepcion_Registro::registrar( Recepcion_Registro::ACEPTADO, 1, $origen );
+		Recepcion_Registro::registrar( Recepcion_Registro::ACEPTADO, 1, Recepcion_Registro::ORIGEN_BACKOFFICE );
 
 		return self::salida( self::ACEPTADO, null, $farmacia_id, $documento );
 	}
@@ -223,28 +213,28 @@ class Factura_Recepcion_Service {
 	}
 
 	/** @param Documento[] $existentes No vacio. */
-	private function duplicado( array $existentes, int $farmacia_id, string $origen ): array {
+	private function duplicado( array $existentes, int $farmacia_id ): array {
 		// El mismo PDF o la misma factura para otra farmacia no es un
 		// duplicado: es un dato incoherente, y no se escribe nada.
 		foreach ( $existentes as $existente ) {
 			if ( $existente->get_farmacia_id() !== $farmacia_id ) {
-				return $this->excepcion( self::OTRA_FARMACIA, $origen );
+				return $this->excepcion( self::OTRA_FARMACIA );
 			}
 		}
 
-		Recepcion_Registro::registrar( Recepcion_Registro::DUPLICADO, 1, $origen );
+		Recepcion_Registro::registrar( Recepcion_Registro::DUPLICADO, 1, Recepcion_Registro::ORIGEN_BACKOFFICE );
 
 		return self::salida( self::DUPLICADO, null, $farmacia_id, $existentes[0] );
 	}
 
-	private function excepcion( string $estado, string $origen ): array {
-		Recepcion_Registro::registrar( Recepcion_Registro::EXCEPCION, 1, $origen );
+	private function excepcion( string $estado ): array {
+		Recepcion_Registro::registrar( Recepcion_Registro::EXCEPCION, 1, Recepcion_Registro::ORIGEN_BACKOFFICE );
 
 		return self::salida( self::EXCEPCION, $estado, null, null );
 	}
 
-	private function rechazo( bool $interno, string $origen ): array {
-		Recepcion_Registro::registrar( Recepcion_Registro::RECHAZADO, 1, $origen );
+	private function rechazo( bool $interno ): array {
+		Recepcion_Registro::registrar( Recepcion_Registro::RECHAZADO, 1, Recepcion_Registro::ORIGEN_BACKOFFICE );
 
 		return self::salida( self::RECHAZADO, null, null, null, $interno );
 	}
