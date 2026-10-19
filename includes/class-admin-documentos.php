@@ -51,6 +51,8 @@ class Admin_Documentos {
 
 		// Muestra ejercicio y sociedad solo con el tipo Modelo 347, y la fecha
 		// con el resto. Sin JS se ven todos los campos: decide el servidor.
+		Admin_Zona_Archivos::encolar();
+
 		wp_enqueue_script(
 			'mdf-ca-admin-documentos',
 			Recursos::url( 'assets/js/admin-documentos.js' ),

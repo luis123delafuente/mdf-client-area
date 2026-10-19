@@ -222,7 +222,7 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 					<tr>
 						<th scope="row"><label for="mdf-ca-347-excel">Excel (.xlsx)</label></th>
 						<td>
-							<input type="file" id="mdf-ca-347-excel" name="excel" accept=".xlsx" required>
+							<input type="file" id="mdf-ca-347-excel" name="excel" accept=".xlsx" <?php echo Admin_Zona_Archivos::atributos( 'Excel (.xlsx)', Modelo_347_Excel_Lector::MAX_BYTES ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- ya escapados. ?> required>
 							<p class="description">Máximo <?php echo esc_html( (string) ( Modelo_347_Excel_Lector::MAX_BYTES / 1024 / 1024 ) ); ?> MB y <?php echo esc_html( (string) Modelo_347_Excel_Lector::MAX_FILAS ); ?> filas.</p>
 						</td>
 					</tr>

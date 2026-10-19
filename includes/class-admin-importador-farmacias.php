@@ -45,6 +45,14 @@ class Admin_Importador_Farmacias {
 		add_action( 'admin_post_mdf_ca_simular_importacion', array( __CLASS__, 'gestionar_simular' ) );
 		add_action( 'admin_post_mdf_ca_confirmar_importacion', array( __CLASS__, 'gestionar_confirmar' ) );
 		add_action( 'admin_post_mdf_ca_cancelar_importacion', array( __CLASS__, 'gestionar_cancelar' ) );
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'encolar_assets' ) );
+	}
+
+	/** Zona para arrastrar el CSV (#339). */
+	public static function encolar_assets( string $hook_suffix ): void {
+		if ( str_ends_with( $hook_suffix, '_page_' . self::MENU_SLUG ) ) {
+			Admin_Zona_Archivos::encolar();
+		}
 	}
 
 	public static function registrar_menu(): void {

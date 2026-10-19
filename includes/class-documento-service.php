@@ -26,7 +26,7 @@ class Documento_Service {
 	 * del hosting (ver CLAUDE.md) para que el propio PHP nunca trunque la
 	 * subida antes de que este limite se aplique.
 	 */
-	private const TAMANO_MAXIMO_BYTES = 20 * 1024 * 1024;
+	public const TAMANO_MAXIMO_BYTES = 20 * 1024 * 1024;
 
 	/**
 	 * PDF, imagenes rasterizadas comunes y Excel moderno (.xlsx). Se excluye

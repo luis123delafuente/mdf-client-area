@@ -10,7 +10,7 @@ Plugin de WordPress que concentra toda la lógica de negocio del Área de Client
 - Ruta del plugin en ambos entornos: `wp-content/plugins/mdf-client-area/`
 - Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script (`wp-content/plugins/deploy-script/deploy.sh`, carpeta hermana del plugin, **sin control de versiones**) excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md`, `*.docx` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
 - Fechas: objetivo de entrega el 12 de octubre de 2026; fecha límite el 8 de noviembre de 2026
-- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347 y menú de perfil) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
+- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347, zona de arrastrar archivos y menú de perfil) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
 - Versión del plugin: consulta las constantes `MDF_CA_VERSION` y `MDF_CA_DB_VERSION` en el código antes de subirlas; no asumas su valor. **`MDF_CA_VERSION` y la línea `Version:` de la cabecera de `mdf-client-area.php` se actualizan siempre juntas, en el mismo cambio, con el mismo valor** (la cabecera es lo que muestra WordPress en Plugins; hasta la 0.24.0 se quedó en 0.1.0)
 
 ## Reglas no negociables
@@ -239,6 +239,37 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Modo proveedores (sin cruce con el portal, email de la columna «Email», solo correo y sin guardar) y Formación: no implementados; la simulación, la carta y el envío están separados para enchufarlos
 - Pruebas: `tests/generar-347-ficticio.php` (OpenSpout, CIF por argumento), `tests/generar-347-sage-net.py` (estructura exacta de SAGE, mismas filas) y `tests/generar-347-maliciosos.py <origen> <carpeta> [<prefijo>]`. Este último genera 8 variantes malas por formato (DOCTYPE, xlsm renombrado, VBA, zip bomb, sin columna, sin hoja, Override `macroEnabled` y PDF renombrado), con sus ficheros en `tests/fixtures/`. `tests/` no se despliega
 - Plantilla original: `docs/MODELO CARTA 347.docx` (no se despliega: `deploy.sh` excluye `docs/` y `*.docx`, y el `.htaccess` de la raíz deniega `docx` además de `md`, `lock`, `sh`, `yml`, `yaml` y `log`)
+
+**Arrastrar y soltar archivos en las subidas** (#339; v0.26.0, sin cambio de esquema)
+- Componente reutilizable `Admin_Zona_Archivos`:
+  - `encolar()` encola `assets/js/admin-zona-archivos.js` y `assets/css/admin-zona-archivos.css` por `Recursos`;
+  - `atributos( $tipos_en_texto, $max_bytes )` marca un `<input type="file">` para que el JS lo mejore.
+- Uno o varios archivos según el atributo `multiple` del input. Con varios, lo nuevo se suma a lo que ya había, sin repetir. Está pensado para «Subir facturas» (#334)
+- Hoy en tres pantallas, de un solo archivo:
+  - subida manual de Documentos MDF (PDF, imágenes y `.xlsx`, 20 MB: `Documento_Service::TAMANO_MAXIMO_BYTES`, que pasa a ser pública);
+  - Excel del Modelo 347 (`.xlsx`, `Modelo_347_Excel_Lector::MAX_BYTES`);
+  - importador CSV de farmacias (`.csv`, `Farmacia_Csv_Parser::TAMANO_MAXIMO_BYTES`).
+- El formulario y el servidor no cambian. Lo soltado pasa al mismo input con `DataTransfer` (oculto a la vista, fuera del orden de tabulación y con `aria-hidden`), y el envío es el de siempre: mismo nonce, misma capacidad, misma validación. No hay ruta ni acción AJAX nueva
+- Rechazo inmediato en el navegador, solo por comodidad (el servidor valida igual):
+  - tipo que no está en el `accept` del input (por extensión o MIME);
+  - más del tamaño máximo;
+  - varios archivos en un input de uno;
+  - carpetas (con `webkitGetAsEntry()`; sin esa API, un objeto de 0 bytes se rechaza como «vacío o carpeta»).
+
+  Lo rechazado nunca se queda en el input, y lo elegido con el selector pasa por las mismas comprobaciones
+- Soltar un archivo fuera de la zona, en cualquier parte de esas pantallas, se bloquea (`dragover` y `drop` en `document`) y se avisa en la zona
+- Accesibilidad:
+  - la zona es un `role="button"` con `tabindex=0`; Enter y espacio abren el selector;
+  - su nombre accesible es la etiqueta del campo más la instrucción, y la descripción, los tipos, el tamaño y el mensaje;
+  - el resultado y los errores se anuncian en un `role="status"`;
+  - enviar sin archivo lo dice la zona y le da el foco: el input oculto no puede mostrar el aviso del navegador.
+- Sin JS, o sin `DataTransfer` construible (Safari anterior a 14.1), el input se queda como siempre
+- Probado en Chrome, con datos de prueba, en las tres pantallas:
+  - envío arrastrando y con el botón, con el mismo resultado en el servidor: factura con fecha, 347 con ejercicio, Excel, simulación del 347 e importador en simulación;
+  - rechazos de tipo, tamaño, dos archivos, objeto vacío y soltar fuera;
+  - quitar y volver a elegir, orden de tabulación y HTML sin JS.
+
+  El arrastre se simuló con eventos `DragEvent` reales y objetos `File`: falta arrastrar desde el Finder de verdad (sobre todo una carpeta, el cursor y que el navegador no abra el archivo soltado fuera) y probarlo en Safari
 
 **Lectura de facturas en PHP** (#333; v0.25.0, sin cambio de esquema). Sale de la prueba de concepto #332
 - `Factura_Lectura_Service::analizar( $ruta, $nombre_original )` devuelve el mismo array que `ResultadoFactura.a_dict()` de Python, más `paginas`, y nunca lanza. El resultado entra tal cual en `Factura_Cruce_Service::cruzar()`, igual que el del robot (probado: mismo cruce que con Python en las 90 sintéticas, también `asignada`), y también en el endpoint REST

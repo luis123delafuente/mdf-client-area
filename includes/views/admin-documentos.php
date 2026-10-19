@@ -153,6 +153,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 								id="mdf-ca-documento-fichero"
 								name="documento"
 								accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx"
+								<?php echo Admin_Zona_Archivos::atributos( 'PDF, JPG, PNG, WEBP o Excel (.xlsx)', Documento_Service::TAMANO_MAXIMO_BYTES ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- ya escapados. ?>
 								required
 							/>
 							<p class="description">PDF, JPG, PNG, WEBP o Excel (.xlsx, sin macros). Tamano maximo: 20 MB. Los Excel no se muestran en el visor: el cliente los descarga.</p>

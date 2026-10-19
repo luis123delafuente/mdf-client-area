@@ -53,7 +53,7 @@ $etiquetas_accion = array(
 				<tbody>
 					<tr>
 						<th scope="row"><label for="mdf-ca-import-csv">Fichero CSV</label></th>
-						<td><input type="file" id="mdf-ca-import-csv" name="csv" accept=".csv,text/csv" required /></td>
+						<td><input type="file" id="mdf-ca-import-csv" name="csv" accept=".csv,text/csv" <?php echo Admin_Zona_Archivos::atributos( 'CSV (.csv)', Farmacia_Csv_Parser::TAMANO_MAXIMO_BYTES ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- ya escapados. ?> required /></td>
 					</tr>
 				</tbody>
 			</table>

@@ -48,6 +48,7 @@ class Admin_Modelo_347 {
 			return;
 		}
 
+		Admin_Zona_Archivos::encolar();
 		wp_enqueue_script( 'mdf-ca-admin-modelo-347', Recursos::url( 'assets/js/admin-modelo-347.js' ), array(), Recursos::version( 'assets/js/admin-modelo-347.js' ), true );
 	}
 
