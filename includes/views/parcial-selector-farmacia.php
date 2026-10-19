@@ -9,6 +9,7 @@
  * @var string                         $selector_id      id del cuadro de texto (el de la lista es "<id>-lista").
  * @var \MdfClientArea\Farmacia[]      $farmacias        Ordenadas por nombre.
  * @var \MdfClientArea\Farmacia|null   $farmacia_elegida
+ * @var bool|null                      $selector_obligatorio Opcional: true = hay que elegir una (Bandeja de facturas, #335).
  */
 
 namespace MdfClientArea;
@@ -17,14 +18,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 ?>
-<div class="mdf-ca-selector-farmacia" data-mdf-ca-selector-farmacia data-mdf-ca-opcional>
+<?php $selector_obligatorio = ! empty( $selector_obligatorio ); ?>
+<div class="mdf-ca-selector-farmacia" data-mdf-ca-selector-farmacia<?php echo $selector_obligatorio ? '' : ' data-mdf-ca-opcional'; ?>>
 	<div class="mdf-ca-selector-farmacia__filtros">
 		<div class="mdf-ca-selector-farmacia__combo">
 			<input
 				type="text"
 				id="<?php echo esc_attr( $selector_id ); ?>"
 				class="regular-text"
-				placeholder="Todas las farmacias (haz clic para buscar por nombre o CIF/NIF)"
+				placeholder="<?php echo esc_attr( $selector_obligatorio ? 'Haz clic y busca por nombre o CIF/NIF' : 'Todas las farmacias (haz clic para buscar por nombre o CIF/NIF)' ); ?>"
 				autocomplete="off"
 				role="combobox"
 				aria-expanded="false"

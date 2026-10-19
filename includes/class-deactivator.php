@@ -28,5 +28,6 @@ class Deactivator {
 		// El evento de avisos se vuelve a programar solo (en 'init') al
 		// reactivar.
 		Aviso_Documentos_Service::desprogramar();
+		Bandeja_Facturas_Service::desprogramar();
 	}
 }

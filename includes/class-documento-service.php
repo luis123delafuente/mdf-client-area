@@ -207,9 +207,18 @@ class Documento_Service {
 	 *                       siempre un evento con ese origen y el usuario,
 	 *                       "recibido" si nace pendiente, en la misma
 	 *                       transaccion que el INSERT.
+	 * @param string|null $accion_alta Accion de ese evento si nace pendiente
+	 *                       (por defecto "recibido"; la bandeja, #335, usa
+	 *                       "asignado_manual").
+	 *
+	 * $archivo puede ser una subida HTTP o, con 'desde_disco' => true, un PDF
+	 * que ya esta en la carpeta privada (la bandeja de facturas, #335): mismas
+	 * validaciones salvo is_uploaded_file(), y se copia en vez de moverse
+	 * (quien llama borra el original cuando todo ha ido bien). La clave solo
+	 * la pone el codigo del plugin: $_FILES nunca la trae.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, array $factura, bool $notificar = true, bool $publicar = true, ?string $fecha_documento = null, ?string $origen_alta = null ) {
+	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, array $factura, bool $notificar = true, bool $publicar = true, ?string $fecha_documento = null, ?string $origen_alta = null, ?string $accion_alta = null ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Farmacia no valida.' );
 		}
@@ -232,7 +241,7 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_factura_invalida', 'Emisor, serie o numero de factura no validos.' );
 		}
 
-		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar, $fecha_documento, $factura, null, $origen_alta );
+		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar, $fecha_documento, $factura, null, $origen_alta, $accion_alta );
 	}
 
 	/**
@@ -244,7 +253,7 @@ class Documento_Service {
 	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347 Solo el Modelo 347 (#307), ya validado.
 	 * @return Documento|\WP_Error
 	 */
-	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347 = null, ?string $origen_alta = null ) {
+	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347 = null, ?string $origen_alta = null, ?string $accion_alta = null ) {
 		// Antes de tocar el fichero: si viene fecha, tiene que ser valida, y
 		// una factura no se guarda sin ella (la de subida nunca la sustituye).
 		if ( null !== $fecha_documento && ! self::fecha_documento_valida( $fecha_documento ) ) {
@@ -301,7 +310,8 @@ class Documento_Service {
 			}
 		}
 
-		$tmp = $archivo['tmp_name'];
+		$tmp         = $archivo['tmp_name'];
+		$desde_disco = ! empty( $archivo['desde_disco'] );
 
 		return $this->registrar(
 			$farmacia_id,
@@ -310,7 +320,7 @@ class Documento_Service {
 			$filetype['ext'],
 			$filetype['type'],
 			(int) $archivo['size'],
-			static fn( string $destino ): bool => move_uploaded_file( $tmp, $destino ),
+			static fn( string $destino ): bool => $desde_disco ? copy( $tmp, $destino ) : move_uploaded_file( $tmp, $destino ),
 			$descargable,
 			$notificar,
 			$hash_sha256,
@@ -318,7 +328,8 @@ class Documento_Service {
 			$fecha_documento,
 			$factura,
 			$modelo_347,
-			$origen_alta
+			$origen_alta,
+			$accion_alta
 		);
 	}
 
@@ -412,7 +423,7 @@ class Documento_Service {
 	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347
 	 * @return Documento|\WP_Error
 	 */
-	private function registrar( int $farmacia_id, string $nombre, string $tipo_documento, string $extension, string $tipo_mime, int $tamano, callable $escribir, bool $descargable, bool $notificar, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347, ?string $origen_alta = null ) {
+	private function registrar( int $farmacia_id, string $nombre, string $tipo_documento, string $extension, string $tipo_mime, int $tamano, callable $escribir, bool $descargable, bool $notificar, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347, ?string $origen_alta = null, ?string $accion_alta = null ) {
 		$carpeta = Documento_Endpoint::get_carpeta_documentos();
 
 		if ( ! is_dir( $carpeta ) || ! is_writable( $carpeta ) ) {
@@ -506,7 +517,7 @@ class Documento_Service {
 			$origen = $origen_alta ?? ( null !== $factura ? Publicacion_Evento_Repository::ORIGEN_RECEPCION : Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE );
 			$evento = $this->eventos->insertar_para(
 				array( $documento->get_id() => null ),
-				$publicar ? Publicacion_Evento_Repository::ACCION_PUBLICADO : Publicacion_Evento_Repository::ACCION_RECIBIDO,
+				$publicar ? Publicacion_Evento_Repository::ACCION_PUBLICADO : ( $accion_alta ?? Publicacion_Evento_Repository::ACCION_RECIBIDO ),
 				$origen,
 				get_current_user_id()
 			);
@@ -584,7 +595,7 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_error_subida', 'Ha ocurrido un error al subir el fichero. Intentalo de nuevo.' );
 		}
 
-		if ( ! is_uploaded_file( $archivo['tmp_name'] ) ) {
+		if ( empty( $archivo['desde_disco'] ) ? ! is_uploaded_file( $archivo['tmp_name'] ) : ! is_file( $archivo['tmp_name'] ) ) {
 			return new \WP_Error( 'mdf_ca_documento_error_subida', 'Ha ocurrido un error al subir el fichero. Intentalo de nuevo.' );
 		}
 

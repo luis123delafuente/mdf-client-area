@@ -52,35 +52,108 @@ class Factura_Recepcion_Service {
 	}
 
 	/**
-	 * @param array{tmp_name: string, size: int, error: int} $archivo   Subida HTTP del PDF. Su nombre no se usa.
+	 * @param array{tmp_name: string, size: int, error: int, desde_disco?: bool} $archivo
+	 *        Subida HTTP del PDF o, con desde_disco, un PDF que ya esta en la
+	 *        carpeta privada (bandeja, #335). Su nombre no se usa.
 	 * @param array<string, mixed>                            $resultado Resultado del parser (sin validar).
 	 * @param bool        $notificar   false: sin aviso por email a la farmacia.
 	 * @param bool        $publicar    false: nace pendiente de publicar.
 	 * @param string      $origen      Recepcion_Registro::ORIGEN_REST o ORIGEN_BACKOFFICE.
 	 * @param string|null $origen_alta Evento de alta (ver Documento_Service::subir_factura_recibida()).
+	 * @param string|null $accion_alta Accion de ese evento si nace pendiente (por defecto "recibido").
 	 * @return array{resultado: string, estado: ?string, farmacia_id: ?int, documento: ?Documento, interno: bool}
 	 *         estado: el del cruce (o documento_en_otra_farmacia) en una excepcion.
 	 *         interno: en un rechazo, si el fallo es del servidor.
 	 */
-	public function recibir( array $archivo, array $resultado, bool $notificar, bool $publicar, string $origen, ?string $origen_alta = null ): array {
+	public function recibir( array $archivo, array $resultado, bool $notificar, bool $publicar, string $origen, ?string $origen_alta = null, ?string $accion_alta = null ): array {
 		$cruce = $this->cruce->cruzar( $resultado );
 
 		if ( Factura_Cruce_Service::ASIGNADA !== $cruce['estado'] ) {
 			return $this->excepcion( $cruce['estado'], $origen );
 		}
 
-		$farmacia_id = (int) $cruce['farmacia_id'];
-		$hash        = hash_file( 'sha256', $archivo['tmp_name'] );
+		return $this->guardar(
+			$archivo,
+			(int) $cruce['farmacia_id'],
+			array(
+				'emisor_cif' => $cruce['emisor'],
+				'serie'      => $cruce['serie'],
+				'numero'     => $cruce['numero'],
+			),
+			$cruce['fecha'], // revalidada por Factura_Cruce_Service, nunca la declarada
+			$cruce['importe_total_centimos'] < 0,
+			$notificar,
+			$publicar,
+			$origen,
+			$origen_alta,
+			$accion_alta
+		);
+	}
+
+	/**
+	 * Factura de la bandeja (#335) asignada a mano a una farmacia: sin cruce
+	 * por CIF (lo decide la persona), pero con las mismas reglas que una
+	 * asignada por el cruce: emisor y serie de Factura_Emisores, serie de 1 a
+	 * 3 letras, numero de 1 a 20 cifras, fecha de documento valida, misma
+	 * unicidad por hash y por emisor + serie + numero, mismo nombre visible y
+	 * mismo registro. Nace pendiente y sin aviso; el evento de alta es
+	 * "asignado_manual" con origen "bandeja".
+	 *
+	 * @param array{tmp_name: string, size: int, error: int, desde_disco?: bool} $archivo
+	 * @param array{emisor: string, serie: string, numero: string, fecha: string, es_abono: bool} $datos Sin validar.
+	 * @return array{resultado: string, estado: ?string, farmacia_id: ?int, documento: ?Documento, interno: bool}
+	 *         Con datos que no valen: excepcion formato_inesperado.
+	 */
+	public function asignar_manual( array $archivo, int $farmacia_id, array $datos, string $origen ): array {
+		$emisor = Identificador_Fiscal_Validator::normalizar( (string) ( $datos['emisor'] ?? '' ) );
+		$serie  = (string) ( $datos['serie'] ?? '' );
+		$numero = (string) ( $datos['numero'] ?? '' );
+		$fecha  = (string) ( $datos['fecha'] ?? '' );
+
+		if ( ! self::datos_validos( $emisor, $serie, $numero, $fecha ) || $farmacia_id <= 0 ) {
+			return $this->excepcion( Factura_Cruce_Service::FORMATO_INESPERADO, $origen );
+		}
+
+		return $this->guardar(
+			$archivo,
+			$farmacia_id,
+			array(
+				'emisor_cif' => $emisor,
+				'serie'      => $serie,
+				'numero'     => $numero,
+			),
+			$fecha,
+			! empty( $datos['es_abono'] ),
+			false,
+			false,
+			$origen,
+			Publicacion_Evento_Repository::ORIGEN_BANDEJA,
+			Publicacion_Evento_Repository::ACCION_ASIGNADO_MANUAL
+		);
+	}
+
+	/** Las mismas comprobaciones que Factura_Cruce_Service hace con una factura "ok". */
+	public static function datos_validos( string $emisor, string $serie, string $numero, string $fecha ): bool {
+		$fecha_ok = \DateTimeImmutable::createFromFormat( '!Y-m-d', $fecha );
+
+		return 1 === preg_match( '/^[A-Z]{1,3}$/D', $serie )
+			&& 1 === preg_match( '/^\d{1,20}$/D', $numero )
+			&& $fecha_ok && $fecha_ok->format( 'Y-m-d' ) === $fecha && Documento_Service::fecha_documento_valida( $fecha )
+			&& Factura_Emisores::admite( $emisor, $serie );
+	}
+
+	/**
+	 * Duplicados, alta y carrera: el camino comun de recibir() y
+	 * asignar_manual().
+	 *
+	 * @param array{emisor_cif: string, serie: string, numero: string} $factura Ya validada.
+	 */
+	private function guardar( array $archivo, int $farmacia_id, array $factura, string $fecha, bool $es_abono, bool $notificar, bool $publicar, string $origen, ?string $origen_alta, ?string $accion_alta ): array {
+		$hash = hash_file( 'sha256', $archivo['tmp_name'] );
 
 		if ( false === $hash ) {
 			return $this->rechazo( false, $origen );
 		}
-
-		$factura = array(
-			'emisor_cif' => $cruce['emisor'],
-			'serie'      => $cruce['serie'],
-			'numero'     => $cruce['numero'],
-		);
 
 		$existentes = $this->buscar_existentes( $hash, $factura );
 
@@ -88,24 +161,25 @@ class Factura_Recepcion_Service {
 			return $this->duplicado( $existentes, $farmacia_id, $origen );
 		}
 
-		$etiqueta  = $cruce['importe_total_centimos'] < 0 ? 'Abono' : 'Factura';
 		$documento = $this->documentos->subir_factura_recibida(
 			$farmacia_id,
-			sprintf( '%s %s %s %s', $etiqueta, Factura_Emisores::nombre_corto( $cruce['emisor'] ), $cruce['serie'], $cruce['numero'] ),
+			sprintf( '%s %s %s %s', $es_abono ? 'Abono' : 'Factura', Factura_Emisores::nombre_corto( $factura['emisor_cif'] ), $factura['serie'], $factura['numero'] ),
 			array(
 				// El nombre original no se usa para nada; el tipo lo decide el contenido.
-				'name'     => 'factura.pdf',
-				'type'     => 'application/pdf',
-				'tmp_name' => $archivo['tmp_name'],
-				'error'    => (int) $archivo['error'],
-				'size'     => (int) $archivo['size'],
+				'name'        => 'factura.pdf',
+				'type'        => 'application/pdf',
+				'tmp_name'    => $archivo['tmp_name'],
+				'error'       => (int) $archivo['error'],
+				'size'        => (int) $archivo['size'],
+				'desde_disco' => ! empty( $archivo['desde_disco'] ),
 			),
 			$hash,
 			$factura,
 			$notificar,
 			$publicar,
-			$cruce['fecha'], // revalidada por Factura_Cruce_Service, nunca la declarada
-			$origen_alta
+			$fecha,
+			$origen_alta,
+			$accion_alta
 		);
 
 		if ( is_wp_error( $documento ) ) {

@@ -39,7 +39,10 @@ class Documento_Token {
 
 	private const PREFIJO_TRANSIENT = 'mdf_ca_vt_';
 
-	public static function emitir( int $usuario_id, int $documento_id ): string {
+	/** Ambito por defecto: un documento. La bandeja de facturas (#335) usa el suyo, para que sus ids nunca valgan como ids de documento. */
+	public const AMBITO_DOCUMENTO = 'documento';
+
+	public static function emitir( int $usuario_id, int $documento_id, string $ambito = self::AMBITO_DOCUMENTO ): string {
 		$token = bin2hex( random_bytes( 32 ) );
 
 		set_transient(
@@ -47,6 +50,7 @@ class Documento_Token {
 			array(
 				'usuario_id'   => $usuario_id,
 				'documento_id' => $documento_id,
+				'ambito'       => $ambito,
 			),
 			self::TTL_SEGUNDOS
 		);
@@ -59,7 +63,7 @@ class Documento_Token {
 	 * este documento. Cualquier otro caso (formato invalido, inexistente,
 	 * caducado, ya consumido, de otro usuario/documento) es false.
 	 */
-	public static function consumir( string $token, int $usuario_id, int $documento_id ): bool {
+	public static function consumir( string $token, int $usuario_id, int $documento_id, string $ambito = self::AMBITO_DOCUMENTO ): bool {
 		if ( ! preg_match( '/^[0-9a-f]{64}$/', $token ) ) {
 			return false;
 		}
@@ -79,7 +83,8 @@ class Documento_Token {
 		}
 
 		return ( $datos['usuario_id'] ?? null ) === $usuario_id
-			&& ( $datos['documento_id'] ?? null ) === $documento_id;
+			&& ( $datos['documento_id'] ?? null ) === $documento_id
+			&& ( $datos['ambito'] ?? self::AMBITO_DOCUMENTO ) === $ambito;
 	}
 
 	private static function clave( string $token ): string {

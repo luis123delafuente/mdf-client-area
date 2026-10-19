@@ -42,7 +42,8 @@
 
 	var GRUPOS = [
 		{ clave: 'subida', titulo: 'Subidas (pendientes de publicar)', columna: 'Farmacia', abierto: false },
-		{ clave: 'repetida', titulo: 'Ya estaban (no se han duplicado)', columna: 'Farmacia', abierto: false },
+		{ clave: 'repetida', titulo: 'Ya estaban (no se han duplicado)', columna: 'Dónde', abierto: false },
+		{ clave: 'bandeja', titulo: 'Enviadas a la Bandeja de facturas', columna: 'Motivo', abierto: true },
 		{ clave: 'no_reconocida', titulo: 'No reconocidas (no se han guardado)', columna: 'Motivo', abierto: true },
 		{ clave: 'error', titulo: 'Con error (vuelve a intentarlo)', columna: 'Motivo', abierto: true },
 	];
@@ -160,6 +161,7 @@
 			hechas + ' de ' + items.length + ': ' +
 			plural( contar( 'subida' ), 'subida', 'subidas' ) + ', ' +
 			contar( 'repetida' ) + ' ya estaban, ' +
+			contar( 'bandeja' ) + ' a la bandeja, ' +
 			plural( contar( 'no_reconocida' ), 'no reconocida', 'no reconocidas' ) +
 			( contar( 'error' ) ? ', ' + plural( contar( 'error' ), 'con error', 'con error' ) : '' ) + '.'
 		);
@@ -262,7 +264,8 @@
 
 		totales.textContent = plural( items.length - quedan, 'factura procesada', 'facturas procesadas' ) + ' de ' + items.length +
 			' en ' + ( segundos >= 60 ? Math.floor( segundos / 60 ) + ' min ' : '' ) + ( segundos % 60 ) + ' s.' +
-			( quedan ? ' Quedan ' + quedan + ' sin subir.' : '' );
+			( quedan ? ' Quedan ' + quedan + ' sin subir.' : '' ) +
+			( contar( 'bandeja' ) ? ' ' + plural( contar( 'bandeja' ), 'enviada', 'enviadas' ) + ' a la bandeja.' : '' );
 
 		grupos.textContent = '';
 
@@ -299,10 +302,22 @@
 				var fila = cuerpo.insertRow();
 
 				fila.insertCell().textContent = item.archivo.name;
-				fila.insertCell().textContent = 'Farmacia' === g.columna ? ( item.resultado.farmacia || '—' ) : item.resultado.motivo;
+				fila.insertCell().textContent = 'Motivo' === g.columna ? item.resultado.motivo : ( item.resultado.farmacia || '—' );
 			} );
 
 			detalles.appendChild( titulo );
+
+			if ( 'bandeja' === g.clave ) {
+				var enBandeja = document.createElement( 'p' );
+				var enlace = document.createElement( 'a' );
+
+				enBandeja.className = 'description';
+				enBandeja.appendChild( document.createTextNode( filas.length + ( 1 === filas.length ? ' enviada' : ' enviadas' ) + ' a la bandeja: allí puedes verlas y asignarlas a mano o descartarlas. ' ) );
+				enlace.href = datos.urlBandeja;
+				enlace.textContent = 'Ir a la Bandeja de facturas';
+				enBandeja.appendChild( enlace );
+				detalles.appendChild( enBandeja );
+			}
 
 			if ( 'no_reconocida' === g.clave ) {
 				var ayuda = document.createElement( 'p' );

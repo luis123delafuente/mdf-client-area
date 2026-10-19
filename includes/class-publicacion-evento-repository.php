@@ -38,6 +38,8 @@ class Publicacion_Evento_Repository {
 	 * el fichero ya no existen; queda este evento, sin datos del documento.
 	 */
 	public const ACCION_ELIMINADO = 'eliminado';
+	/** Factura de la bandeja asignada a mano a una farmacia (#335); nace pendiente. */
+	public const ACCION_ASIGNADO_MANUAL = 'asignado_manual';
 
 	public const ORIGEN_INDIVIDUAL        = 'individual';
 	public const ORIGEN_POR_FARMACIA      = 'por_farmacia';
@@ -49,6 +51,8 @@ class Publicacion_Evento_Repository {
 	public const ORIGEN_MODELO_347 = 'modelo_347';
 	/** "Subir facturas" del backoffice (#334). */
 	public const ORIGEN_SUBIDA_FACTURAS = 'subida_facturas';
+	/** Bandeja de facturas no reconocidas (#335): asignada a mano o con "Volver a comprobar". */
+	public const ORIGEN_BANDEJA = 'bandeja';
 
 	/** Filas por INSERT (6 columnas cada una). */
 	private const TANDA = 500;
@@ -64,7 +68,7 @@ class Publicacion_Evento_Repository {
 	public function insertar_para( array $filas, string $accion, string $origen, ?int $usuario_id ) {
 		global $wpdb;
 
-		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO, self::ACCION_ELIMINADO ), true ) || ! $this->origen_valido( $origen ) ) {
+		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO, self::ACCION_ELIMINADO, self::ACCION_ASIGNADO_MANUAL ), true ) || ! $this->origen_valido( $origen ) ) {
 			return false;
 		}
 
@@ -134,6 +138,7 @@ class Publicacion_Evento_Repository {
 				self::ORIGEN_SUBIDA_BACKOFFICE,
 				self::ORIGEN_MODELO_347,
 				self::ORIGEN_SUBIDA_FACTURAS,
+				self::ORIGEN_BANDEJA,
 			),
 			true
 		);

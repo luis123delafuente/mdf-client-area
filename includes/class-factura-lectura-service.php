@@ -40,6 +40,8 @@ class Factura_Lectura_Service {
 	public const NO_SE_ABRE = 'el fichero no se puede abrir como PDF';
 	public const CIFRADO    = 'el PDF está cifrado o protegido con contraseña';
 
+	private bool $leido = false;
+
 	/**
 	 * @param string           $ruta           PDF en disco (p. ej. el temporal de la subida).
 	 * @param string           $nombre_fichero Nombre original del fichero: se contrasta con
@@ -48,7 +50,8 @@ class Factura_Lectura_Service {
 	 * @return array{fichero: string, estado: string, motivo: string, emisor: ?string, cif: ?string, serie: ?string, numero: ?string, fecha: ?string, importe_total_centimos: ?int, es_abono: bool, campos_no_extraidos: list<string>, paginas: ?int}
 	 */
 	public function analizar( string $ruta, string $nombre_fichero, ?Pdf_Limites $limites = null ): array {
-		$fichero   = basename( $nombre_fichero );
+		$this->leido = false;
+		$fichero     = basename( $nombre_fichero );
 		$resultado = Factura_Sage_Parser::resultado( $fichero );
 		$falta     = Requisitos_Servidor::mensaje( Requisitos_Servidor::LECTURA_FACTURAS );
 
@@ -130,7 +133,19 @@ class Factura_Lectura_Service {
 			);
 		}
 
+		$this->leido = true;
+
 		return Factura_Sage_Parser::parsear( $palabras, $fichero );
+	}
+
+	/**
+	 * Si en la ultima llamada a analizar() el PDF se leyo entero y el
+	 * resultado sale de las reglas de la factura (sea ok o no). false si se
+	 * corto antes: topes de Pdf_Limites, tamano, cifrado, no se puede abrir o
+	 * faltan extensiones. La bandeja de facturas (#335) solo guarda lo leido.
+	 */
+	public function se_pudo_leer(): bool {
+		return $this->leido;
 	}
 
 	/** La cabecera %PDF- en el primer KB, como exigen los lectores (MuPDF tambien la busca ahi). */

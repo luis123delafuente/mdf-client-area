@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	</p>
 	<p class="description">
 		Puedes soltar una carpeta entera: se toman los PDF de la carpeta y de sus subcarpetas, y el resto se ignora. Volver a
-		subir las mismas facturas no las duplica. Las que no se reconozcan no se guardan: al final tendrás la lista para subirlas
+		subir las mismas facturas no las duplica. Las que no se puedan asignar van a la Bandeja de facturas para asignarlas a mano; las que ni se pueden leer no se guardan: al final tendrás la lista para subirlas
 		a mano desde Documentos MDF.
 	</p>
 

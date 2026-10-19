@@ -94,6 +94,15 @@ class Permissions {
 	}
 
 	/**
+	 * Ver (vista previa), asignar o descartar una factura de la bandeja de no
+	 * reconocidas (#335): la capacidad de Documentos MDF. Ninguna farmacia la
+	 * alcanza: no es todavia de nadie.
+	 */
+	public static function puede_gestionar_bandeja( ?\WP_User $usuario, ?array $fila_bandeja ): bool {
+		return self::usuario_autenticado( $usuario ) && null !== $fila_bandeja && user_can( $usuario, Admin_Documentos::CAPACIDAD );
+	}
+
+	/**
 	 * Descargar el fichero crudo (no verlo en el visor). Un Excel solo se
 	 * descarga si, ademas de poder verlo, se marco como descargable al
 	 * subirlo; el resto de documentos nunca se descargan. Vive aqui, junto

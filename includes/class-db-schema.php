@@ -102,6 +102,28 @@ class DB_Schema {
 		return $wpdb->prefix . 'mdf_ca_347_envios';
 	}
 
+	/**
+	 * Bandeja de facturas no reconocidas (#335): las que "Subir facturas" no
+	 * ha podido asignar, con su fichero en la carpeta privada, el motivo, lo
+	 * que el lector haya podido sacar (emisor, serie, numero, fecha, CIF
+	 * leido, si es abono), el nombre original, el hash y quien y cuando la
+	 * subio. Nunca importes. Se vacia sola tras un plazo (Bandeja_Facturas_Service).
+	 */
+	public static function get_bandeja_facturas_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_bandeja_facturas';
+	}
+
+	/**
+	 * Eventos de la bandeja (#335), de SOLO AÑADIR: entrada, asignada,
+	 * descartada y caducada, con usuario y fecha. Sin datos fiscales; la fila
+	 * de la bandeja puede no existir ya.
+	 */
+	public static function get_bandeja_eventos_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_bandeja_eventos';
+	}
+
 	public static function get_catalogo_table_name() {
 		global $wpdb;
 		return $wpdb->prefix . 'mdf_ca_catalogo';
@@ -144,6 +166,8 @@ class DB_Schema {
 		$lotes_table           = self::get_publicacion_lotes_table_name();
 		$eventos_table         = self::get_publicacion_eventos_table_name();
 		$envios_347_table      = self::get_modelo_347_envios_table_name();
+		$bandeja_table         = self::get_bandeja_facturas_table_name();
+		$bandeja_eventos_table = self::get_bandeja_eventos_table_name();
 
 		// slug es el identificador estable para comparar visibilidad
 		// (Permissions::puede_ver_bloque_por_plan(), atributo "planes" de
@@ -308,7 +332,7 @@ class DB_Schema {
 		$eventos_sql = "CREATE TABLE {$eventos_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			documento_id BIGINT UNSIGNED NOT NULL,
-			accion VARCHAR(12) NOT NULL,
+			accion VARCHAR(20) NOT NULL,
 			origen VARCHAR(20) NOT NULL,
 			usuario_id BIGINT UNSIGNED NULL,
 			fecha DATETIME NOT NULL,
@@ -394,6 +418,42 @@ class DB_Schema {
 			KEY plan_id (plan_id)
 		) {$charset_collate};";
 
-		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql, $lotes_sql, $eventos_sql, $envios_347_sql );
+		// Bandeja de facturas (#335). hash UNIQUE: el mismo PDF no entra dos
+		// veces. UNIQUE factura (emisor_cif, serie, numero): la misma factura
+		// con otros bytes tampoco; los NULL no chocan (las que no se pudieron
+		// leer solo se distinguen por el hash). motivo: el estado del cruce.
+		$bandeja_sql = "CREATE TABLE {$bandeja_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			ruta_fichero VARCHAR(100) NOT NULL,
+			nombre_original VARCHAR(255) NOT NULL,
+			tamano_bytes INT UNSIGNED NOT NULL DEFAULT 0,
+			hash_sha256 CHAR(64) NOT NULL,
+			motivo VARCHAR(30) NOT NULL,
+			emisor_cif VARCHAR(20) NULL,
+			serie VARCHAR(5) NULL,
+			numero VARCHAR(20) NULL,
+			fecha_documento DATE NULL,
+			cif_leido VARCHAR(20) NULL,
+			es_abono TINYINT(1) NULL,
+			usuario_id BIGINT UNSIGNED NULL,
+			subido_en DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY hash_sha256 (hash_sha256),
+			UNIQUE KEY factura (emisor_cif,serie,numero),
+			KEY subido_en (subido_en)
+		) {$charset_collate};";
+
+		$bandeja_eventos_sql = "CREATE TABLE {$bandeja_eventos_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			bandeja_id BIGINT UNSIGNED NOT NULL,
+			accion VARCHAR(20) NOT NULL,
+			usuario_id BIGINT UNSIGNED NULL,
+			documento_id BIGINT UNSIGNED NULL,
+			fecha DATETIME NOT NULL,
+			PRIMARY KEY  (id),
+			KEY bandeja (bandeja_id)
+		) {$charset_collate};";
+
+		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql, $lotes_sql, $eventos_sql, $envios_347_sql, $bandeja_sql, $bandeja_eventos_sql );
 	}
 }

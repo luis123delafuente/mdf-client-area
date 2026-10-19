@@ -51,6 +51,8 @@ class Admin_Subir_Facturas {
 	public const SUBIDA        = 'subida';
 	public const REPETIDA      = 'repetida';
 	public const NO_RECONOCIDA = 'no_reconocida';
+	/** Guardada en la Bandeja de facturas (#335) para asignarla a mano. */
+	public const BANDEJA = 'bandeja';
 	public const ERROR         = 'error';
 
 	/** Motivos de una no reconocida, en lenguaje claro (el estado del cruce no se muestra). */
@@ -92,6 +94,7 @@ class Admin_Subir_Facturas {
 				'nonce'         => wp_create_nonce( self::NONCE ),
 				'maxFacturas'   => self::MAX_FACTURAS,
 				'urlPendientes' => admin_url( 'admin.php?page=' . Admin_Publicacion_Documentos::MENU_SLUG ),
+				'urlBandeja'    => Admin_Bandeja_Facturas::url(),
 			)
 		);
 	}
@@ -110,8 +113,11 @@ class Admin_Subir_Facturas {
 
 	/**
 	 * Una factura por peticion. Responde siempre JSON:
-	 * {grupo, motivo, farmacia, parar}. grupo: subida | repetida |
-	 * no_reconocida | error (se puede reintentar). parar: el navegador debe
+	 * {grupo, motivo, farmacia, parar}. grupo: subida | repetida | bandeja |
+	 * no_reconocida | error (se puede reintentar). bandeja (#335): no se ha
+	 * podido asignar pero se ha leido entera y se guarda en la Bandeja de
+	 * facturas; no_reconocida: ni eso (no es un PDF, supera los topes del
+	 * lector, cifrada, no se abre, o ya esta en otra farmacia), no se guarda. parar: el navegador debe
 	 * dejar de subir (sin permiso, sesion caducada o servidor sin requisitos).
 	 */
 	public static function ajax_subir(): void {
@@ -132,7 +138,8 @@ class Admin_Subir_Facturas {
 			self::responder( self::NO_RECONOCIDA, $archivo );
 		}
 
-		$lectura   = ( new Factura_Lectura_Service() )->analizar( $archivo['tmp_name'], $archivo['nombre'] );
+		$lector    = new Factura_Lectura_Service();
+		$lectura   = $lector->analizar( $archivo['tmp_name'], $archivo['nombre'] );
 		$recepcion = ( new Factura_Recepcion_Service() )->recibir(
 			$archivo,
 			$lectura,
@@ -152,7 +159,28 @@ class Admin_Subir_Facturas {
 		}
 
 		if ( Factura_Recepcion_Service::EXCEPCION === $recepcion['resultado'] ) {
-			self::responder( self::NO_RECONOCIDA, self::motivo( (string) $recepcion['estado'], (string) $lectura['motivo'] ) );
+			$motivo = self::motivo( (string) $recepcion['estado'], (string) $lectura['motivo'] );
+
+			// A la bandeja solo lo que se ha leido entero y no se ha podido asignar.
+			if ( $lector->se_pudo_leer() && in_array( $recepcion['estado'], Bandeja_Facturas_Service::MOTIVOS_QUE_ENTRAN, true ) ) {
+				$bandeja = ( new Bandeja_Facturas_Service() )->entrar( $archivo, $archivo['nombre'], $lectura, (string) $recepcion['estado'], get_current_user_id() );
+
+				if ( Bandeja_Facturas_Service::EN_BANDEJA === $bandeja ) {
+					self::responder( self::BANDEJA, $motivo );
+				}
+
+				if ( Bandeja_Facturas_Service::YA_EN_BANDEJA === $bandeja ) {
+					self::responder( self::REPETIDA, '', 'ya estaba en la Bandeja de facturas' );
+				}
+
+				if ( Bandeja_Facturas_Service::YA_DOCUMENTO === $bandeja ) {
+					self::responder( self::REPETIDA, '', 'ya estaba subida (con otro nombre de fichero)' );
+				}
+
+				self::responder( self::ERROR, 'no se ha podido guardar en la bandeja por un fallo del servidor; vuelve a intentarlo' );
+			}
+
+			self::responder( self::NO_RECONOCIDA, $motivo );
 		}
 
 		if ( $recepcion['interno'] ) {
