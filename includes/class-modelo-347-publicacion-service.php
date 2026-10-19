@@ -117,7 +117,7 @@ class Modelo_347_Publicacion_Service {
 
 		$wpdb->query( 'COMMIT' );
 
-		Recepcion_Registro::registrar( Recepcion_Registro::PUBLICADO_BLOQUE, $publicados );
+		Recepcion_Registro::registrar( Recepcion_Registro::PUBLICADO_BLOQUE, $publicados, Recepcion_Registro::ORIGEN_BACKOFFICE );
 
 		return array(
 			'publicados' => $publicados,

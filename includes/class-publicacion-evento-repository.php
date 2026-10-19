@@ -28,6 +28,11 @@ class Publicacion_Evento_Repository {
 	public const ACCION_DESPUBLICADO = 'despublicado';
 	/** Modelo 347 retirado para correccion (#307). No cambia publicado: deja constancia de la retirada. */
 	public const ACCION_RETIRADO = 'retirado';
+	/**
+	 * Factura recibida desde "Subir facturas" (#334): nace pendiente, no
+	 * cambia publicado y deja constancia de quien la subio y cuando.
+	 */
+	public const ACCION_RECIBIDO = 'recibido';
 
 	public const ORIGEN_INDIVIDUAL        = 'individual';
 	public const ORIGEN_POR_FARMACIA      = 'por_farmacia';
@@ -37,6 +42,8 @@ class Publicacion_Evento_Repository {
 	public const ORIGEN_SUBIDA_BACKOFFICE = 'subida_backoffice';
 	/** Publicacion de las cartas del generador del Modelo 347 (#307), en su propio lote. */
 	public const ORIGEN_MODELO_347 = 'modelo_347';
+	/** "Subir facturas" del backoffice (#334). */
+	public const ORIGEN_SUBIDA_FACTURAS = 'subida_facturas';
 
 	/** Filas por INSERT (6 columnas cada una). */
 	private const TANDA = 500;
@@ -52,7 +59,7 @@ class Publicacion_Evento_Repository {
 	public function insertar_para( array $filas, string $accion, string $origen, ?int $usuario_id ) {
 		global $wpdb;
 
-		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO ), true ) || ! $this->origen_valido( $origen ) ) {
+		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO ), true ) || ! $this->origen_valido( $origen ) ) {
 			return false;
 		}
 
@@ -121,6 +128,7 @@ class Publicacion_Evento_Repository {
 				self::ORIGEN_RECEPCION,
 				self::ORIGEN_SUBIDA_BACKOFFICE,
 				self::ORIGEN_MODELO_347,
+				self::ORIGEN_SUBIDA_FACTURAS,
 			),
 			true
 		);

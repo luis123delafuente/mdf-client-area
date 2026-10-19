@@ -23,6 +23,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   todos los pendientes" ese dia: es el ultimo paso del mismo circuito y
  *   tampoco lleva datos fiscales ni identificadores. despublicado_lote
  *   (#317) suma los documentos despublicados al deshacer un lote.
+ * - Origen (#334): "rest" (el robot, por la ruta REST) o "backoffice"
+ *   ("Subir facturas" y las publicaciones y despublicaciones en bloque). El
+ *   interruptor y el tope diario son solo del robot: "Subir facturas" la usa
+ *   una persona de MDF, con su propio tope por subida.
  */
 class Recepcion_Registro {
 
@@ -47,6 +51,9 @@ class Recepcion_Registro {
 
 	public const PUBLICADO_BLOQUE  = 'publicado_bloque';
 	public const DESPUBLICADO_LOTE = 'despublicado_lote';
+
+	public const ORIGEN_REST       = 'rest';
+	public const ORIGEN_BACKOFFICE = 'backoffice';
 
 	public static function forzada_apagada_por_constante(): bool {
 		return defined( 'MDF_CA_RECEPCION_DESACTIVADA' ) && MDF_CA_RECEPCION_DESACTIVADA;
@@ -84,25 +91,28 @@ class Recepcion_Registro {
 		return true;
 	}
 
+	/** El tope diario es del robot: cuenta solo lo aceptado por la ruta REST. */
 	public static function tope_alcanzado(): bool {
 		return self::total_hoy( self::ACEPTADO ) >= self::get_tope();
 	}
 
-	public static function total_hoy( string $resultado ): int {
+	public static function total_hoy( string $resultado, string $origen = self::ORIGEN_REST ): int {
 		global $wpdb;
 
 		$table = DB_Schema::get_recepcion_registro_table_name();
 
 		return (int) $wpdb->get_var(
-			$wpdb->prepare( "SELECT total FROM {$table} WHERE fecha = %s AND resultado = %s", wp_date( 'Y-m-d' ), $resultado )
+			$wpdb->prepare( "SELECT total FROM {$table} WHERE fecha = %s AND resultado = %s AND origen = %s", wp_date( 'Y-m-d' ), $resultado, $origen )
 		);
 	}
 
-	/** Suma $cantidad (por defecto 1) al recuento de hoy de $resultado, de forma atomica. */
-	public static function registrar( string $resultado, int $cantidad = 1 ): void {
+	/** Suma $cantidad (por defecto 1) al recuento de hoy de $resultado y $origen, de forma atomica. */
+	public static function registrar( string $resultado, int $cantidad = 1, string $origen = self::ORIGEN_REST ): void {
 		global $wpdb;
 
-		if ( $cantidad < 1 || ! in_array( $resultado, array( self::ACEPTADO, self::DUPLICADO, self::RECHAZADO, self::EXCEPCION, self::PUBLICADO_BLOQUE, self::DESPUBLICADO_LOTE ), true ) ) {
+		if ( $cantidad < 1
+			|| ! in_array( $resultado, array( self::ACEPTADO, self::DUPLICADO, self::RECHAZADO, self::EXCEPCION, self::PUBLICADO_BLOQUE, self::DESPUBLICADO_LOTE ), true )
+			|| ! in_array( $origen, array( self::ORIGEN_REST, self::ORIGEN_BACKOFFICE ), true ) ) {
 			return;
 		}
 
@@ -110,9 +120,10 @@ class Recepcion_Registro {
 
 		$wpdb->query(
 			$wpdb->prepare(
-				"INSERT INTO {$table} (fecha, resultado, total) VALUES (%s, %s, %d) ON DUPLICATE KEY UPDATE total = total + %d",
+				"INSERT INTO {$table} (fecha, resultado, origen, total) VALUES (%s, %s, %s, %d) ON DUPLICATE KEY UPDATE total = total + %d",
 				wp_date( 'Y-m-d' ),
 				$resultado,
+				$origen,
 				$cantidad,
 				$cantidad
 			)
@@ -120,9 +131,9 @@ class Recepcion_Registro {
 	}
 
 	/**
-	 * Recuentos de los ultimos $dias dias, mas recientes primero.
+	 * Recuentos de los ultimos $dias dias, mas recientes primero, por origen.
 	 *
-	 * @return array<string, array<string, int>> fecha => resultado => total
+	 * @return array<string, array<string, array<string, int>>> fecha => resultado => origen => total
 	 */
 	public static function recuentos_recientes( int $dias = 14 ): array {
 		global $wpdb;
@@ -130,14 +141,14 @@ class Recepcion_Registro {
 		$table = DB_Schema::get_recepcion_registro_table_name();
 		$desde = wp_date( 'Y-m-d', time() - ( max( 1, $dias ) - 1 ) * DAY_IN_SECONDS );
 		$filas = $wpdb->get_results(
-			$wpdb->prepare( "SELECT fecha, resultado, total FROM {$table} WHERE fecha >= %s ORDER BY fecha DESC", $desde ),
+			$wpdb->prepare( "SELECT fecha, resultado, origen, total FROM {$table} WHERE fecha >= %s ORDER BY fecha DESC", $desde ),
 			ARRAY_A
 		);
 
 		$recuentos = array();
 
 		foreach ( $filas ?: array() as $fila ) {
-			$recuentos[ $fila['fecha'] ][ $fila['resultado'] ] = (int) $fila['total'];
+			$recuentos[ $fila['fecha'] ][ $fila['resultado'] ][ $fila['origen'] ] = (int) $fila['total'];
 		}
 
 		return $recuentos;

@@ -44,6 +44,7 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ACCION_PUBLICADO    => 'Publicado',
 		Publicacion_Evento_Repository::ACCION_DESPUBLICADO => 'Despublicado',
 		Publicacion_Evento_Repository::ACCION_RETIRADO     => 'Retirado para corrección',
+		Publicacion_Evento_Repository::ACCION_RECIBIDO     => 'Recibido (pendiente de publicar)',
 	);
 
 	private const ORIGENES = array(
@@ -54,6 +55,7 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ORIGEN_RECEPCION         => 'Recepción automática (nació publicado)',
 		Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE => 'Subida desde el backoffice (nació publicado)',
 		Publicacion_Evento_Repository::ORIGEN_MODELO_347        => 'Generador del Modelo 347 («Publicar y enviar»)',
+		Publicacion_Evento_Repository::ORIGEN_SUBIDA_FACTURAS   => '«Subir facturas»',
 	);
 
 	public static function register_hooks(): void {

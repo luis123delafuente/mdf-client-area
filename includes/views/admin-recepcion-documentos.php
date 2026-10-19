@@ -11,7 +11,7 @@
  * @var bool                                         $requiere_aprobacion
  * @var int                                          $pendientes_publicacion
  * @var int                                          $aceptados_hoy
- * @var array<string, array<string, int>>            $recuentos
+ * @var array<string, array<string, array<string, int>>> $recuentos fecha => resultado => origen => total
  * @var array{tipo: string, mensaje: string}|null    $aviso
  * @var array{rol_correcto: bool, passwords: int, ultimo_uso: int, enlace: string}|null $robot_info
  */
@@ -44,6 +44,10 @@ $columnas = array(
 		Ruta REST autenticada por la que el robot envia facturas (PDF mas el resultado del parser). Solo el estado
 		"asignada" crea un documento en la farmacia del CIF/NIF. El resto se devuelve como excepcion y no se guarda nada.
 		Con la recepcion apagada, el endpoint rechaza todo y no escribe nada. Los recuentos no incluyen CIF, nombres ni importes.
+	</p>
+	<p class="description">
+		Los recuentos de los ultimos dias incluyen tambien las facturas subidas desde «Subir facturas». El interruptor, el tope
+		diario y la aprobacion previa de esta pantalla son solo del robot: «Subir facturas» deja siempre las facturas pendientes de publicar.
 	</p>
 
 	<table class="form-table" role="presentation">
@@ -142,7 +146,17 @@ $columnas = array(
 					<tr>
 						<td><?php echo esc_html( wp_date( 'd/m/Y', strtotime( $dia . ' 12:00:00' ) ) ); ?></td>
 						<?php foreach ( array_keys( $columnas ) as $clave ) : ?>
-							<td><?php echo esc_html( (string) ( $resultados[ $clave ] ?? 0 ) ); ?></td>
+							<?php
+							$por_origen = $resultados[ $clave ] ?? array();
+							$backoffice = (int) ( $por_origen[ Recepcion_Registro::ORIGEN_BACKOFFICE ] ?? 0 );
+							$es_bloque  = in_array( $clave, array( Recepcion_Registro::PUBLICADO_BLOQUE, Recepcion_Registro::DESPUBLICADO_LOTE ), true );
+							?>
+							<td>
+								<?php echo esc_html( (string) array_sum( $por_origen ) ); ?>
+								<?php if ( $backoffice > 0 && ! $es_bloque ) : ?>
+									<br><span class="description"><?php echo esc_html( sprintf( '%d desde «Subir facturas»', $backoffice ) ); ?></span>
+								<?php endif; ?>
+							</td>
 						<?php endforeach; ?>
 					</tr>
 				<?php endforeach; ?>

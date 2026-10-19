@@ -201,9 +201,15 @@ class Documento_Service {
 	 * @param string|null $fecha_documento La fecha de la factura YA revalidada
 	 *                       por Factura_Cruce_Service (nunca la declarada sin
 	 *                       validar). Obligatoria: guardar() la exige.
+	 * @param string|null $origen_alta null en la recepcion REST (sin evento si
+	 *                       nace pendiente, como siempre). "Subir facturas"
+	 *                       (#334) pasa ORIGEN_SUBIDA_FACTURAS: el alta deja
+	 *                       siempre un evento con ese origen y el usuario,
+	 *                       "recibido" si nace pendiente, en la misma
+	 *                       transaccion que el INSERT.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, array $factura, bool $notificar = true, bool $publicar = true, ?string $fecha_documento = null ) {
+	public function subir_factura_recibida( int $farmacia_id, string $nombre, ?array $archivo, string $hash_sha256, array $factura, bool $notificar = true, bool $publicar = true, ?string $fecha_documento = null, ?string $origen_alta = null ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Farmacia no valida.' );
 		}
@@ -226,7 +232,7 @@ class Documento_Service {
 			return new \WP_Error( 'mdf_ca_documento_factura_invalida', 'Emisor, serie o numero de factura no validos.' );
 		}
 
-		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar, $fecha_documento, $factura );
+		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, $notificar, true, $hash_sha256, $publicar, $fecha_documento, $factura, null, $origen_alta );
 	}
 
 	/**
@@ -238,7 +244,7 @@ class Documento_Service {
 	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347 Solo el Modelo 347 (#307), ya validado.
 	 * @return Documento|\WP_Error
 	 */
-	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347 = null ) {
+	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347 = null, ?string $origen_alta = null ) {
 		// Antes de tocar el fichero: si viene fecha, tiene que ser valida, y
 		// una factura no se guarda sin ella (la de subida nunca la sustituye).
 		if ( null !== $fecha_documento && ! self::fecha_documento_valida( $fecha_documento ) ) {
@@ -311,7 +317,8 @@ class Documento_Service {
 			$publicar,
 			$fecha_documento,
 			$factura,
-			$modelo_347
+			$modelo_347,
+			$origen_alta
 		);
 	}
 
@@ -405,7 +412,7 @@ class Documento_Service {
 	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347
 	 * @return Documento|\WP_Error
 	 */
-	private function registrar( int $farmacia_id, string $nombre, string $tipo_documento, string $extension, string $tipo_mime, int $tamano, callable $escribir, bool $descargable, bool $notificar, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347 ) {
+	private function registrar( int $farmacia_id, string $nombre, string $tipo_documento, string $extension, string $tipo_mime, int $tamano, callable $escribir, bool $descargable, bool $notificar, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347, ?string $origen_alta = null ) {
 		$carpeta = Documento_Endpoint::get_carpeta_documentos();
 
 		if ( ! is_dir( $carpeta ) || ! is_writable( $carpeta ) ) {
@@ -417,9 +424,12 @@ class Documento_Service {
 
 		// Un documento que nace publicado deja su evento de publicacion en la
 		// misma transaccion que el INSERT (#318): hace falta InnoDB. Se
-		// comprueba antes de tocar el disco. Uno que nace pendiente (la
-		// recepcion con aprobacion, el caso por defecto) no escribe evento.
-		if ( $publicar
+		// comprueba antes de tocar el disco. Uno que nace pendiente por la
+		// recepcion REST no escribe evento; con $origen_alta ("Subir
+		// facturas", #334) deja siempre uno, "recibido" si nace pendiente.
+		$con_evento = $publicar || null !== $origen_alta;
+
+		if ( $con_evento
 			&& ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() )
 				|| ! DB_Schema::tabla_es_innodb( DB_Schema::get_publicacion_eventos_table_name() ) ) ) {
 			return new \WP_Error(
@@ -444,7 +454,7 @@ class Documento_Service {
 		$silenciar = null !== $factura || null !== $modelo_347;
 		$errores   = $silenciar ? $wpdb->suppress_errors( true ) : null;
 
-		if ( $publicar ) {
+		if ( $con_evento ) {
 			$wpdb->query( 'START TRANSACTION' );
 		}
 
@@ -473,7 +483,7 @@ class Documento_Service {
 		}
 
 		if ( null === $documento ) {
-			if ( $publicar ) {
+			if ( $con_evento ) {
 				$wpdb->query( 'ROLLBACK' );
 			}
 
@@ -490,13 +500,14 @@ class Documento_Service {
 			);
 		}
 
-		if ( $publicar ) {
-			// Quien lo publica al crearlo: el robot (recepcion sin aprobacion) o
-			// el administrador (subida de backoffice).
+		if ( $con_evento ) {
+			// Quien lo da de alta: el robot (recepcion sin aprobacion), el
+			// administrador (subida de backoffice) o quien usa "Subir facturas".
+			$origen = $origen_alta ?? ( null !== $factura ? Publicacion_Evento_Repository::ORIGEN_RECEPCION : Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE );
 			$evento = $this->eventos->insertar_para(
 				array( $documento->get_id() => null ),
-				Publicacion_Evento_Repository::ACCION_PUBLICADO,
-				null !== $factura ? Publicacion_Evento_Repository::ORIGEN_RECEPCION : Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE,
+				$publicar ? Publicacion_Evento_Repository::ACCION_PUBLICADO : Publicacion_Evento_Repository::ACCION_RECIBIDO,
+				$origen,
 				get_current_user_id()
 			);
 

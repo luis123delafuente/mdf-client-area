@@ -128,7 +128,7 @@ class Despublicacion_Lote_Service {
 
 		$wpdb->query( 'COMMIT' );
 
-		Recepcion_Registro::registrar( Recepcion_Registro::DESPUBLICADO_LOTE, $despublicados );
+		Recepcion_Registro::registrar( Recepcion_Registro::DESPUBLICADO_LOTE, $despublicados, Recepcion_Registro::ORIGEN_BACKOFFICE );
 
 		// Lote del generador del Modelo 347 (#307): lo que aun no se haya
 		// enviado ya no se envia. Lo enviado no se puede retirar. Sin

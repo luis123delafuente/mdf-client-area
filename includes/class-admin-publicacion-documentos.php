@@ -56,7 +56,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Admin_Publicacion_Documentos {
 
-	private const MENU_SLUG         = 'mdf-ca-publicacion-documentos';
+	public const MENU_SLUG          = 'mdf-ca-publicacion-documentos';
 	private const PARENT_SLUG       = 'mdf-ca-documentos';
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_publicacion_notice_';
 

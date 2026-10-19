@@ -20,6 +20,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   varios archivos en un input de uno, carpetas) no sustituye a la
  *   validacion del servidor, que no cambia;
  * - sin JS, el input se ve y funciona como siempre.
+ *
+ * Modo lote (#334, "Subir facturas"): con multiple y $carpetas, admite
+ * carpetas (soltadas, con sus subcarpetas, o con "Elegir carpeta"), ignora
+ * sin error los ficheros ocultos y lo que no es del tipo admitido y aplica un
+ * tope de archivos por subida.
  */
 class Admin_Zona_Archivos {
 
@@ -40,12 +45,16 @@ class Admin_Zona_Archivos {
 	 * @param string $tipos     Tipos admitidos en texto, para los mensajes ("PDF, JPG o Excel (.xlsx)").
 	 *                          Los que se comprueban salen del accept del input.
 	 * @param int    $max_bytes Tamano maximo por archivo (el mismo que exige el servidor).
+	 * @param bool   $carpetas  Modo lote: solo con un input multiple.
+	 * @param int    $max_archivos Tope de archivos a la vez (0, sin tope).
 	 */
-	public static function atributos( string $tipos, int $max_bytes ): string {
+	public static function atributos( string $tipos, int $max_bytes, bool $carpetas = false, int $max_archivos = 0 ): string {
 		return sprintf(
-			'data-mdf-ca-zona-archivos data-mdf-ca-zona-tipos="%s" data-mdf-ca-zona-max-bytes="%d"',
+			'data-mdf-ca-zona-archivos data-mdf-ca-zona-tipos="%s" data-mdf-ca-zona-max-bytes="%d"%s%s',
 			esc_attr( $tipos ),
-			$max_bytes
+			$max_bytes,
+			$carpetas ? ' data-mdf-ca-zona-carpetas' : '',
+			$max_archivos > 0 ? sprintf( ' data-mdf-ca-zona-max-archivos="%d"', $max_archivos ) : ''
 		);
 	}
 }

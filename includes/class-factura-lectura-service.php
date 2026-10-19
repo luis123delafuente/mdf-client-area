@@ -36,7 +36,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Factura_Lectura_Service {
 
-	private const NO_SE_ABRE = 'el fichero no se puede abrir como PDF';
+	/** Motivos fijos que "Subir facturas" (#334) explica a su manera. */
+	public const NO_SE_ABRE = 'el fichero no se puede abrir como PDF';
+	public const CIFRADO    = 'el PDF está cifrado o protegido con contraseña';
 
 	/**
 	 * @param string           $ruta           PDF en disco (p. ej. el temporal de la subida).

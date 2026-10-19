@@ -64,7 +64,7 @@ class Pdf_Parser_Acotado extends \Smalot\PdfParser\Parser {
 		unset( $content );
 
 		if ( isset( $xref['trailer']['encrypt'] ) || 1 === preg_match( self::CLAVE_CIFRADO, $pdfData ) ) {
-			throw new Pdf_Cifrado( 'el PDF está cifrado o protegido con contraseña' );
+			throw new Pdf_Cifrado( Factura_Lectura_Service::CIFRADO );
 		}
 
 		$document      = new Pdf_Documento_Acotado();

@@ -108,6 +108,28 @@
 	font-weight: 600;
 }
 
+/* Modo lote (#334): "Elegir archivos" / "Elegir carpeta" y resumen de una lista larga. */
+.mdf-ca-zona-archivos__botones {
+	margin: 8px 0 0;
+}
+
+.mdf-ca-zona-archivos__resumen {
+	margin: 4px 0 0;
+	color: #3c434a;
+}
+
+/* Input deshabilitado (p. ej. durante una subida): la zona no admite cambios. */
+.mdf-ca-zona-archivos:has(.mdf-ca-zona-archivos__input:disabled) .mdf-ca-zona-archivos__zona {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.mdf-ca-zona-archivos:has(.mdf-ca-zona-archivos__input:disabled) .mdf-ca-zona-archivos__botones .button,
+.mdf-ca-zona-archivos:has(.mdf-ca-zona-archivos__input:disabled) .mdf-ca-zona-archivos__quitar {
+	pointer-events: none;
+	opacity: 0.6;
+}
+
 /* El input sigue en el formulario (es el que se envia), fuera de la vista. */
 .mdf-ca-zona-archivos__input {
 	position: absolute !important;

@@ -344,11 +344,17 @@ class DB_Schema {
 			KEY estado (estado,lote_id)
 		) {$charset_collate};";
 
+		// origen (#334, esquema 1.15.0): "rest" (robot) o "backoffice" (Subir
+		// facturas y las publicaciones y despublicaciones en bloque). Entra en
+		// la clave primaria: una fila por dia, resultado y origen. dbDelta no
+		// cambia una clave primaria: la migracion de las tablas que ya existian
+		// la hace Activator::migrar_registro_origen() antes de dbDelta.
 		$registro_sql = "CREATE TABLE {$registro_table} (
 			fecha DATE NOT NULL,
 			resultado VARCHAR(20) NOT NULL,
+			origen VARCHAR(12) NOT NULL DEFAULT 'rest',
 			total INT UNSIGNED NOT NULL DEFAULT 0,
-			PRIMARY KEY  (fecha,resultado)
+			PRIMARY KEY  (fecha,resultado,origen)
 		) {$charset_collate};";
 
 		// seccion y tipo son VARCHAR de lista fija (ver Catalogo_Secciones y

@@ -10,7 +10,7 @@ Plugin de WordPress que concentra toda la lógica de negocio del Área de Client
 - Ruta del plugin en ambos entornos: `wp-content/plugins/mdf-client-area/`
 - Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script (`wp-content/plugins/deploy-script/deploy.sh`, carpeta hermana del plugin, **sin control de versiones**) excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md`, `*.docx` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
 - Fechas: objetivo de entrega el 12 de octubre de 2026; fecha límite el 8 de noviembre de 2026
-- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347, zona de arrastrar archivos y menú de perfil) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
+- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347, zona de arrastrar archivos, Subir facturas y menú de perfil) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
 - Versión del plugin: consulta las constantes `MDF_CA_VERSION` y `MDF_CA_DB_VERSION` en el código antes de subirlas; no asumas su valor. **`MDF_CA_VERSION` y la línea `Version:` de la cabecera de `mdf-client-area.php` se actualizan siempre juntas, en el mismo cambio, con el mismo valor** (la cabecera es lo que muestra WordPress en Plugins; hasta la 0.24.0 se quedó en 0.1.0)
 
 ## Reglas no negociables
@@ -35,7 +35,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Dos módulos de contenido separados: catálogo compartido por plan (Herramientas, Formación) vs documentos privados por farmacia, vinculados por CIF/NIF, visibles solo por su titular (no dependen del plan)
 - Documentos: carpeta `Clientes/private-docs/` **en la raíz de WordPress** (`ABSPATH`, no en `wp-content`; ruta relativa en `Documento_Endpoint::CARPETA_RELATIVA`), protegida con `.htaccess` de denegación total e `index.php`, que el propio plugin crea si faltan y vigila (`Carpeta_Privada_Proteccion`). Solo se sirven por el script PHP del plugin, que valida permiso antes de leer el fichero
 - Alta de farmacias: un único camino lógico. El importador CSV y el formulario de alta manual comparten el mismo servicio; CIF/NIF es la clave normalizada y validada; importación idempotente (upsert por CIF/NIF, simulación previa antes de escribir)
-- Facturas: el parser (repo hermano `Parser_facturas_SAGE`, Python) lee los PDF en el Mac de MDF y envía el resultado al endpoint autenticado del plugin, que revalida todo en servidor. Desde la #333 el plugin también sabe leerlos en el servidor (`Factura_Lectura_Service`, mismas reglas y mismo resultado que Python), para que MDF los suba desde el backoffice (pantalla en la #334). Mientras convivan los dos caminos, las reglas se mantienen iguales en los dos lados
+- Facturas: el parser (repo hermano `Parser_facturas_SAGE`, Python) lee los PDF en el Mac de MDF y envía el resultado al endpoint autenticado del plugin, que revalida todo en servidor. Desde la #334, MDF las sube desde el backoffice («Subir facturas»): el plugin las lee en el servidor (`Factura_Lectura_Service`, #333, mismas reglas y mismo resultado que Python) y las guarda por el mismo camino que la ruta REST (`Factura_Recepcion_Service`). El robot sigue funcionando hasta la #336; mientras convivan los dos caminos, las reglas se mantienen iguales en los dos lados
 - CRM de MDF aún sin identificar: WordPress es el sistema de registro del MVP, preparado para delegar en un CRM más adelante sin reescritura
 
 ## Decisiones técnicas ya tomadas
@@ -135,6 +135,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Columnas nullable `documentos.hash_sha256` (UNIQUE), `emisor_cif`, `factura_serie` y `factura_numero` (UNIQUE conjunto); los NULL no chocan. Misma factura para la misma farmacia: 200 duplicado idempotente; para otra: 422 `documento_en_otra_farmacia` uniforme. La carrera la pierde el INSERT del segundo, cuyo error de base de datos se silencia para no llevar serie y número al log
 - Nombre visible `{Factura|Abono} {sociedad} {serie} {número}`, abono por el signo del importe revalidado
 - Interruptor `mdf_ca_recepcion_activa` apagado por defecto; `MDF_CA_RECEPCION_DESACTIVADA` lo anula. Tope diario configurable (1000 por defecto) y registro de auditoría solo con recuentos (`wp_mdf_ca_recepcion_registro`). Pantalla: Documentos MDF › Recepción automática
+- Desde la #334, del cruce en adelante (duplicados, guardado, carrera y registro) la ruta usa `Factura_Recepcion_Service`, compartido con «Subir facturas». Respuestas y códigos HTTP sin cambios (comprobado: 201, 200 duplicado, 422, 400 y 503). El interruptor, el tope diario y la aprobación previa siguen siendo solo del robot. El registro tiene columna `origen` (`rest` o `backoffice`, esquema 1.15.0) dentro de la clave primaria; el tope cuenta solo `rest`
 - La subida de PDF (también la del backoffice) exige el tipo real `application/pdf` con `fileinfo` (confirmada en producción)
 
 **Envío por lotes** (repo `Parser_facturas_SAGE`, paquete `envio_facturas/`; diseño en `docs/robotito.md`)
@@ -153,7 +154,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 
 **Trazabilidad y pantallas** (v0.20.0 y v0.21.0, esquema 1.12.0)
 - Tabla de solo añadir `wp_mdf_ca_publicacion_eventos` (documento, acción, origen, usuario, fecha UTC, lote). Un único punto cambia `publicado`: `Documento_Repository::cambiar_estado()`, por tandas con `SELECT … FOR UPDATE`, `UPDATE` e `INSERT` multifila de eventos dentro de la transacción de quien llama; un fallo revierte estado y eventos. Sin `UPDATE`, `DELETE` ni `TRUNCATE` sobre la tabla de eventos
-- Un documento que nace publicado deja un evento `recepcion` o `subida_backoffice`. «Anterior a la versión» se decide por id de documento (`mdf_ca_eventos_desde_doc_id`). Guarda solo ids de usuario, fecha, acción, origen y lote; conservación propuesta de 6 años, a validar en la revisión RGPD
+- Un documento que nace publicado deja un evento `recepcion` o `subida_backoffice`. Desde la #334, una factura de «Subir facturas» deja siempre, en la misma transacción que el alta, un evento `recibido` (no cambia `publicado`) con origen `subida_facturas` y el usuario. La recepción REST no deja evento si nace pendiente, como antes. «Anterior a la versión» se decide por id de documento (`mdf_ca_eventos_desde_doc_id`). Guarda solo ids de usuario, fecha, acción, origen y lote; conservación propuesta de 6 años, a validar en la revisión RGPD
 - Submenú Documentos publicados con buscador paginado en SQL (despublicar cualquier documento) e historial por documento
 - Pendientes de publicar paginado por farmacias (20 por página, tope de 50 documentos por grupo); contadores siempre en SQL sobre todos los pendientes, nunca sumando lo pintado. Orden estable por pendiente más antiguo. `Filtro_Listado_Documentos` sanea farmacia, búsqueda y página (`(int)` con mínimos, no `absint()`). Sin índice nuevo (medido)
 
@@ -240,11 +241,52 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Pruebas: `tests/generar-347-ficticio.php` (OpenSpout, CIF por argumento), `tests/generar-347-sage-net.py` (estructura exacta de SAGE, mismas filas) y `tests/generar-347-maliciosos.py <origen> <carpeta> [<prefijo>]`. Este último genera 8 variantes malas por formato (DOCTYPE, xlsm renombrado, VBA, zip bomb, sin columna, sin hoja, Override `macroEnabled` y PDF renombrado), con sus ficheros en `tests/fixtures/`. `tests/` no se despliega
 - Plantilla original: `docs/MODELO CARTA 347.docx` (no se despliega: `deploy.sh` excluye `docs/` y `*.docx`, y el `.htaccess` de la raíz deniega `docx` además de `md`, `lock`, `sh`, `yml`, `yaml` y `log`)
 
+**Subir facturas** (#334; v0.27.0, esquema 1.15.0). Sustituye al programa de envío del Mac
+- Documentos MDF › Subir facturas (`Admin_Subir_Facturas`):
+  - capacidad en un solo sitio, `Admin_Subir_Facturas::CAPACIDAD` (`manage_options`, la de Documentos MDF; la #337 la cambiará);
+  - un nonce propio para todas las peticiones de la pantalla;
+  - solo `wp_ajax_` (sin `nopriv`). Comprobado: sin sesión, 400; un cliente, sin nonce o con el nonce de otra acción, 403.
+- Selección con `Admin_Zona_Archivos` en modo lote:
+  - varios PDF, carpetas soltadas con sus subcarpetas y botones «Elegir archivos» y «Elegir carpeta»;
+  - ignora sin error los ocultos (`.DS_Store`, carpetas que empiezan por punto) y lo que no es PDF, y dice cuántos;
+  - antes de empezar: «N facturas encontradas (X MB)» y «Subir»;
+  - topes: 500 facturas por subida (`MAX_FACTURAS`) y 10 MB por factura (`Pdf_Limites::MAX_BYTES_FICHERO`); si se superan, no se añade nada y lo dice.
+- Subida de una en una (`admin-subir-facturas.js`, una petición `admin-ajax` `mdf_ca_subir_factura` por factura):
+  - barra de progreso y recuento en vivo;
+  - «Parar», que termina la factura en curso, y «Continuar»;
+  - un fallo de red o del servidor no corta la subida: la factura queda «con error» y se puede reintentar;
+  - sin permiso, con la sesión caducada o con el servidor sin extensiones, se para con el motivo;
+  - aviso al cerrar la página a medias. Volver a subir lo mismo no duplica nada.
+- Cada factura en el servidor:
+  - una sola factura por petición, subida HTTP real, 10 MB como mucho y tipo real `application/pdf` (fileinfo; `fileinfo` pasa a los requisitos de la lectura);
+  - el nombre se sanea (`sanitize_file_name`, sin ruta) y solo sirve para contrastar serie y número;
+  - `Factura_Lectura_Service` → `Factura_Recepcion_Service` (cruce, duplicados por hash y por emisor + serie + número, nombre visible y fecha de factura), siempre pendiente, sin aviso por email, con evento `recibido` y registro con origen `backoffice`.
+
+  No depende del interruptor ni del tope diario del robot.
+- Respuesta y resumen en lenguaje claro, por grupos:
+  - subidas, con la farmacia;
+  - ya estaban;
+  - no reconocidas, con el motivo: «no se encuentra el CIF del cliente», «el CIF no corresponde a ninguna farmacia del portal», «el número de factura no coincide con el nombre del fichero», «no parece una factura de SAGE de Mediformplus o de Formación», «el PDF está protegido con contraseña», «el PDF no se puede abrir», «no es un PDF», «pesa más de 10 MB»…;
+  - con error.
+
+  Las no reconocidas no se guardan (la bandeja será la #335); su lista (nombre de fichero y motivo, `.txt`) se genera en el navegador. Al final, enlace a «Pendientes de publicar»
+- Comprobado con sintéticas (`tests/lectura-facturas/generar_lote_subida.py`):
+  - una carpeta con subcarpetas, `.DS_Store`, un Excel, una carpeta oculta y un PDF que no es factura;
+  - las dos sociedades, un abono y una de 2 × 3 páginas;
+  - un CIF sin farmacia y un número distinto del nombre;
+  - maliciosos de la #333 y repetir la carpeta (todo «ya estaban»);
+  - cada fichero da lo mismo que la ruta REST con el resultado de Python;
+  - 200 facturas en 34 s (unos 170 ms por petición con el arranque de WordPress; 51 ms de media dentro de PHP), con un pico de 48 MB por petición, casi todo WordPress;
+  - en Chrome: elegir archivos, topes, Parar y Continuar, reintento tras un corte de red y descarga de la lista.
+
+  Las carpetas soltadas se probaron con entradas simuladas (la API no deja crear una carpeta real desde una prueba); **falta arrastrar una carpeta real desde el Finder y «Elegir carpeta» en Safari y Chrome**
+
 **Arrastrar y soltar archivos en las subidas** (#339; v0.26.0, sin cambio de esquema)
 - Componente reutilizable `Admin_Zona_Archivos`:
   - `encolar()` encola `assets/js/admin-zona-archivos.js` y `assets/css/admin-zona-archivos.css` por `Recursos`;
   - `atributos( $tipos_en_texto, $max_bytes )` marca un `<input type="file">` para que el JS lo mejore.
 - Uno o varios archivos según el atributo `multiple` del input. Con varios, lo nuevo se suma a lo que ya había, sin repetir. Está pensado para «Subir facturas» (#334)
+- Modo lote (#334, `atributos( ..., $carpetas = true, $max_archivos )`, solo con `multiple`): carpetas soltadas, recorridas con `webkitGetAsEntry()` y `readEntries()` (por tandas de 100, como mucho 10.000 entradas), botón «Elegir carpeta» (input `webkitdirectory` sin `name`), ocultos y otros tipos ignorados y contados, lista resumida a partir de 10 con «Quitar todos», y la zona se bloquea mientras el input esté deshabilitado. El evento `mdf-ca-zona-vaciar` en el input la vacía. El CSS de wp-admin da `display` a `.button` y anula `hidden`: los botones se ocultan también con `style.display`
 - Hoy en tres pantallas, de un solo archivo:
   - subida manual de Documentos MDF (PDF, imágenes y `.xlsx`, 20 MB: `Documento_Service::TAMANO_MAXIMO_BYTES`, que pasa a ser pública);
   - Excel del Modelo 347 (`.xlsx`, `Modelo_347_Excel_Lector::MAX_BYTES`);
@@ -343,7 +385,7 @@ Pendientes:
 - **#332/#333 Lectura de facturas en PHP:** hecha y probada con sintéticas y con 6 facturas reales: 6 de 6 campo a campo, 0 palabras desviadas (ver «Lectura de facturas en PHP»). Falta:
   - revisar la licencia LGPL-3.0 de smalot con la de PyMuPDF en la Fase 5.
 
-  La pantalla «Subir facturas» es la #334
+  «Subir facturas» (#334) hecha; pendientes: la bandeja de no reconocidas (#335), retirar el robot y la ruta REST (#336) y una capacidad propia para la pantalla (#337)
 - Sección de Cuota (tarea #254): a la espera del contenido de MKT
 - Avisar a MKT de las clases CSS del listado agrupado
 

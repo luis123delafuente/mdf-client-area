@@ -200,7 +200,7 @@ class Publicacion_Bloque_Service {
 
 		$wpdb->query( 'COMMIT' );
 
-		Recepcion_Registro::registrar( Recepcion_Registro::PUBLICADO_BLOQUE, $publicados );
+		Recepcion_Registro::registrar( Recepcion_Registro::PUBLICADO_BLOQUE, $publicados, Recepcion_Registro::ORIGEN_BACKOFFICE );
 
 		$resumen['publicados'] = $publicados;
 		$resumen['lote_id']    = (int) $lote_id;

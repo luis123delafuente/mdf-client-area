@@ -13,8 +13,19 @@
  * - Soltar un archivo fuera de la zona no hace que el navegador lo abra.
  * - Teclado: la zona es un boton (Enter o espacio abren el selector); el
  *   resultado se anuncia en una region de estado.
+ * - Mientras el input este deshabilitado (p. ej. durante una subida), la zona
+ *   no admite cambios. El evento "mdf-ca-zona-vaciar" en el input la vacia.
  * - Sin JS, o sin DataTransfer construible (Safari anterior a 14.1), el input
  *   se queda como siempre.
+ *
+ * Modo lote (#334, data-mdf-ca-zona-carpetas, solo con multiple):
+ * - admite carpetas soltadas, con sus subcarpetas (API de entradas), y un
+ *   boton "Elegir carpeta" (input con webkitdirectory, creado aqui y sin
+ *   name: nunca se envia);
+ * - ignora sin error los ficheros y carpetas ocultos (nombre que empieza por
+ *   punto, como .DS_Store) y lo que no es del tipo admitido, y dice cuantos;
+ * - con data-mdf-ca-zona-max-archivos, si el total pasa del tope no se anade
+ *   nada; tampoco si algun archivo pasa del tamano maximo.
  */
 ( function () {
 	'use strict';
@@ -24,6 +35,12 @@
 	if ( ! entradas.length || ! puedeAsignar() ) {
 		return;
 	}
+
+	/** Entradas recorridas como mucho al leer carpetas: soltar el disco entero no cuelga la pagina. */
+	var MAX_ENTRADAS_CARPETA = 10000;
+
+	/** A partir de cuantos archivos la lista se resume. */
+	var LISTA_COMPLETA_HASTA = 10;
 
 	var zonas = [];
 
@@ -89,10 +106,88 @@
 		return ( 0 === i ? String( valor ) : valor.toLocaleString( 'es-ES', { maximumFractionDigits: 1 } ) ) + ' ' + unidades[ i ];
 	}
 
+	function plural( n, uno, varios ) {
+		return n + ' ' + ( 1 === n ? uno : varios );
+	}
+
+	/** Un nombre o algun tramo de la ruta empieza por punto (.DS_Store, .git/...). */
+	function esOculto( ruta ) {
+		return ruta.split( '/' ).some( function ( tramo ) {
+			return '.' === tramo.charAt( 0 );
+		} );
+	}
+
+	/**
+	 * Archivos de unas entradas soltadas (FileSystemEntry), bajando por las
+	 * carpetas. readEntries() devuelve como mucho 100 cada vez: se repite
+	 * hasta que vuelve vacio. Las ocultas no se recorren.
+	 *
+	 * @return Promise<{archivos: File[], ocultos: number}>
+	 */
+	function leerEntradas( entradasRaiz ) {
+		var archivos = [];
+		var ocultos = 0;
+		var vistas = 0;
+
+		function visitar( entrada ) {
+			if ( ++vistas > MAX_ENTRADAS_CARPETA ) {
+				return Promise.reject( new Error( 'demasiadas' ) );
+			}
+
+			if ( '.' === entrada.name.charAt( 0 ) ) {
+				ocultos++;
+				return Promise.resolve();
+			}
+
+			if ( entrada.isFile ) {
+				return new Promise( function ( resolver, rechazar ) {
+					entrada.file( function ( archivo ) {
+						archivos.push( archivo );
+						resolver();
+					}, rechazar );
+				} );
+			}
+
+			if ( ! entrada.isDirectory ) {
+				return Promise.resolve();
+			}
+
+			var lector = entrada.createReader();
+
+			function tanda() {
+				return new Promise( function ( resolver, rechazar ) {
+					lector.readEntries( resolver, rechazar );
+				} ).then( function ( hijas ) {
+					if ( ! hijas.length ) {
+						return null;
+					}
+
+					return hijas.reduce( function ( cadena, hija ) {
+						return cadena.then( function () {
+							return visitar( hija );
+						} );
+					}, Promise.resolve() ).then( tanda );
+				} );
+			}
+
+			return tanda();
+		}
+
+		return entradasRaiz.reduce( function ( cadena, entrada ) {
+			return cadena.then( function () {
+				return visitar( entrada );
+			} );
+		}, Promise.resolve() ).then( function () {
+			return { archivos: archivos, ocultos: ocultos };
+		} );
+	}
+
 	function crearZona( input, n ) {
 		var multiple = input.multiple;
+		var lote = multiple && input.hasAttribute( 'data-mdf-ca-zona-carpetas' );
 		var tipos = input.getAttribute( 'data-mdf-ca-zona-tipos' ) || '';
 		var maxBytes = parseInt( input.getAttribute( 'data-mdf-ca-zona-max-bytes' ), 10 ) || 0;
+		var maxArchivos = parseInt( input.getAttribute( 'data-mdf-ca-zona-max-archivos' ), 10 ) || 0;
 		var aceptados = ( input.getAttribute( 'accept' ) || '' ).split( ',' ).map( function ( t ) {
 			return t.trim().toLowerCase();
 		} ).filter( Boolean );
@@ -100,6 +195,7 @@
 		var etiqueta = input.id ? document.querySelector( 'label[for="' + input.id + '"]' ) : null;
 		var actuales = [];
 		var asignando = false;
+		var selectorCarpeta = null;
 
 		var contenedor = elemento( 'div', 'mdf-ca-zona-archivos' );
 		var zona = elemento( 'div', 'mdf-ca-zona-archivos__zona' );
@@ -107,6 +203,7 @@
 		var texto = elemento( 'span', 'mdf-ca-zona-archivos__texto' );
 		var ayuda = elemento( 'span', 'mdf-ca-zona-archivos__ayuda' );
 		var lista = elemento( 'ul', 'mdf-ca-zona-archivos__lista' );
+		var resumen = elemento( 'p', 'mdf-ca-zona-archivos__resumen' );
 		var mensaje = elemento( 'p', 'mdf-ca-zona-archivos__mensaje' );
 
 		texto.id = base + '-texto';
@@ -116,7 +213,8 @@
 		ayuda.textContent = [
 			tipos ? 'Admite ' + tipos : '',
 			maxBytes ? 'hasta ' + formatearTamano( maxBytes ) + ( multiple ? ' cada uno' : '' ) : '',
-		].filter( Boolean ).join( ', ' ) + '.';
+			maxArchivos ? 'como mucho ' + maxArchivos + ' a la vez' : '',
+		].filter( Boolean ).join( ', ' ) + '.' + ( lote ? ' Puedes soltar una carpeta entera: se toman sus PDF y los de sus subcarpetas.' : '' );
 
 		if ( etiqueta && ! etiqueta.id ) {
 			etiqueta.id = base + '-etiqueta';
@@ -128,6 +226,7 @@
 		zona.setAttribute( 'aria-describedby', ayuda.id + ' ' + mensaje.id );
 		mensaje.setAttribute( 'role', 'status' );
 		lista.hidden = true;
+		resumen.hidden = true;
 
 		zona.appendChild( icono );
 		zona.appendChild( texto );
@@ -135,7 +234,13 @@
 
 		input.parentNode.insertBefore( contenedor, input );
 		contenedor.appendChild( zona );
+
+		if ( lote ) {
+			contenedor.appendChild( crearBotones() );
+		}
+
 		contenedor.appendChild( lista );
+		contenedor.appendChild( resumen );
 		contenedor.appendChild( mensaje );
 		contenedor.appendChild( input );
 
@@ -148,13 +253,13 @@
 		pintar();
 
 		zona.addEventListener( 'click', function () {
-			input.click();
+			abrirSelector( input );
 		} );
 
 		zona.addEventListener( 'keydown', function ( e ) {
 			if ( 'Enter' === e.key || ' ' === e.key ) {
 				e.preventDefault();
-				input.click();
+				abrirSelector( input );
 			}
 		} );
 
@@ -174,15 +279,66 @@
 
 			e.preventDefault();
 			zona.classList.remove( 'mdf-ca-zona-archivos__zona--encima' );
-			recibir( Array.prototype.slice.call( e.dataTransfer.files ), hayCarpeta( e.dataTransfer ) );
+
+			if ( input.disabled ) {
+				return;
+			}
+
+			var archivos = Array.prototype.slice.call( e.dataTransfer.files );
+
+			if ( ! lote ) {
+				recibir( archivos, hayCarpeta( e.dataTransfer ), false );
+				return;
+			}
+
+			// Las entradas solo se pueden pedir durante el propio drop.
+			var raiz = entradasSoltadas( e.dataTransfer );
+
+			if ( ! raiz ) {
+				recibirLote( archivos.map( function ( a ) {
+					return { archivo: a, ruta: a.name };
+				} ), 0 );
+				return;
+			}
+
+			aviso( 'Leyendo lo que has soltado…' );
+			leerEntradas( raiz ).then( function ( leido ) {
+				recibirLote( leido.archivos.map( function ( a ) {
+					return { archivo: a, ruta: a.name };
+				} ), leido.ocultos );
+			}, function ( fallo ) {
+				error( fallo && 'demasiadas' === fallo.message
+					? 'Lo que has soltado tiene más de ' + MAX_ENTRADAS_CARPETA + ' archivos y carpetas. Suelta una carpeta más concreta.'
+					: 'No se ha podido leer lo que has soltado. Prueba con «Elegir carpeta».' );
+			} );
 		} );
 
 		// Lo elegido con el selector pasa por las mismas comprobaciones (el
 		// selector deja elegir "Todos los archivos").
 		input.addEventListener( 'change', function () {
-			if ( ! asignando ) {
-				recibir( Array.prototype.slice.call( input.files ), false, true );
+			if ( asignando ) {
+				return;
 			}
+
+			var elegidos = Array.prototype.slice.call( input.files );
+
+			if ( lote ) {
+				// El selector sustituye la seleccion del input: se recupera la
+				// anterior y lo elegido se suma, como al soltar.
+				asignar( actuales );
+				recibirLote( elegidos.map( function ( a ) {
+					return { archivo: a, ruta: a.name };
+				} ), 0, true );
+				return;
+			}
+
+			recibir( elegidos, false, true );
+		} );
+
+		// Quien usa la zona puede vaciarla (p. ej. "Subir otras facturas").
+		input.addEventListener( 'mdf-ca-zona-vaciar', function () {
+			asignar( [] );
+			anunciar( '', false );
 		} );
 
 		// Enviar sin archivo: el input oculto no puede mostrar el aviso del
@@ -193,12 +349,83 @@
 			zona.focus();
 		} );
 
+		function abrirSelector( destino ) {
+			if ( ! input.disabled ) {
+				destino.click();
+			}
+		}
+
+		function crearBotones() {
+			var botones = elemento( 'p', 'mdf-ca-zona-archivos__botones' );
+			var deArchivos = elemento( 'button', 'button' );
+			var deCarpeta = elemento( 'button', 'button' );
+
+			selectorCarpeta = document.createElement( 'input' );
+			selectorCarpeta.type = 'file';
+			selectorCarpeta.multiple = true;
+			selectorCarpeta.setAttribute( 'webkitdirectory', '' );
+			selectorCarpeta.className = 'mdf-ca-zona-archivos__input';
+			selectorCarpeta.tabIndex = -1;
+			selectorCarpeta.setAttribute( 'aria-hidden', 'true' );
+
+			deArchivos.type = 'button';
+			deArchivos.textContent = 'Elegir archivos';
+			deArchivos.addEventListener( 'click', function () {
+				abrirSelector( input );
+			} );
+
+			deCarpeta.type = 'button';
+			deCarpeta.textContent = 'Elegir carpeta';
+			deCarpeta.addEventListener( 'click', function () {
+				abrirSelector( selectorCarpeta );
+			} );
+
+			// La carpeta elegida trae la ruta relativa de cada archivo: lo que
+			// cuelga de una carpeta oculta tambien se ignora.
+			selectorCarpeta.addEventListener( 'change', function () {
+				var elegidos = Array.prototype.slice.call( selectorCarpeta.files );
+				var ocultos = 0;
+				var visibles = elegidos.filter( function ( a ) {
+					var oculto = esOculto( a.webkitRelativePath || a.name );
+
+					ocultos += oculto ? 1 : 0;
+					return ! oculto;
+				} );
+
+				selectorCarpeta.value = '';
+				recibirLote( visibles.map( function ( a ) {
+					return { archivo: a, ruta: a.webkitRelativePath || a.name };
+				} ), ocultos );
+			} );
+
+			botones.appendChild( deArchivos );
+			botones.appendChild( document.createTextNode( ' ' ) );
+			botones.appendChild( deCarpeta );
+			botones.appendChild( selectorCarpeta );
+
+			return botones;
+		}
+
 		function encima( e ) {
 			if ( llevaArchivos( e ) ) {
 				e.preventDefault();
-				e.dataTransfer.dropEffect = 'copy';
-				zona.classList.add( 'mdf-ca-zona-archivos__zona--encima' );
+				e.dataTransfer.dropEffect = input.disabled ? 'none' : 'copy';
+
+				if ( ! input.disabled ) {
+					zona.classList.add( 'mdf-ca-zona-archivos__zona--encima' );
+				}
 			}
+		}
+
+		function entradasSoltadas( dt ) {
+			var items = Array.prototype.filter.call( dt.items || [], function ( item ) {
+				return 'file' === item.kind && item.webkitGetAsEntry;
+			} );
+			var raiz = items.map( function ( item ) {
+				return item.webkitGetAsEntry();
+			} ).filter( Boolean );
+
+			return raiz.length ? raiz : null;
 		}
 
 		// Con la API de entradas (Chrome, Safari, Firefox) una carpeta soltada
@@ -211,23 +438,26 @@
 			} );
 		}
 
-		function motivoRechazo( archivo ) {
+		function tipoValido( archivo ) {
 			var nombre = archivo.name.toLowerCase();
 			var mime = ( archivo.type || '' ).toLowerCase();
-			var tipoValido = ! aceptados.length || aceptados.some( function ( a ) {
+
+			return ! aceptados.length || aceptados.some( function ( a ) {
 				if ( '.' === a.charAt( 0 ) ) {
 					return nombre.slice( -a.length ) === a;
 				}
 
 				return '/*' === a.slice( -2 ) ? 0 === mime.indexOf( a.slice( 0, -1 ) ) : mime === a;
 			} );
+		}
 
+		function motivoRechazo( archivo ) {
 			// Sin la API de entradas, una carpeta llega como un archivo de 0 bytes.
 			if ( 0 === archivo.size ) {
 				return '«' + archivo.name + '» está vacío o es una carpeta.';
 			}
 
-			if ( ! tipoValido ) {
+			if ( ! tipoValido( archivo ) ) {
 				return '«' + archivo.name + '» no es de un tipo admitido.' + ( tipos ? ' Se admite: ' + tipos + '.' : '' );
 			}
 
@@ -282,13 +512,64 @@
 
 			asignar( nuevos );
 
-			var texto = validos.length ? describir( validos, multiple ? 'Añadido' : 'Elegido' ) : '';
+			var textoAviso = validos.length ? describir( validos, multiple ? 'Añadido' : 'Elegido' ) : '';
 
 			if ( motivos.length ) {
-				error( ( texto ? texto + ' ' : '' ) + 'No se ' + ( 1 === motivos.length ? 'ha añadido' : 'han añadido' ) + ': ' + motivos.join( ' ' ) );
+				error( ( textoAviso ? textoAviso + ' ' : '' ) + 'No se ' + ( 1 === motivos.length ? 'ha añadido' : 'han añadido' ) + ': ' + motivos.join( ' ' ) );
 			} else {
-				aviso( texto );
+				aviso( textoAviso );
 			}
+		}
+
+		/**
+		 * Modo lote: lo que no es del tipo (o esta oculto) se ignora y se
+		 * cuenta; un archivo demasiado grande o pasarse del tope de archivos
+		 * hace que no se anada nada.
+		 *
+		 * @param {{archivo: File, ruta: string}[]} candidatos
+		 */
+		function recibirLote( candidatos, ocultos ) {
+			var ignorados = ocultos;
+			var nuevos = [];
+			var grandes = [];
+
+			candidatos.forEach( function ( c ) {
+				if ( esOculto( c.ruta ) ) {
+					ignorados++;
+				} else if ( ! tipoValido( c.archivo ) || 0 === c.archivo.size ) {
+					ignorados++;
+				} else if ( maxBytes && c.archivo.size > maxBytes ) {
+					grandes.push( c.archivo.name );
+				} else {
+					nuevos.push( c.archivo );
+				}
+			} );
+
+			var textoIgnorados = ignorados ? ' Se ' + ( 1 === ignorados ? 'ha ignorado ' : 'han ignorado ' ) + plural( ignorados, 'archivo que no es', 'archivos que no son' ) + ' ' + ( tipos || 'del tipo admitido' ) + ' o ' + ( 1 === ignorados ? 'está oculto' : 'están ocultos' ) + '.' : '';
+
+			if ( grandes.length ) {
+				error( 'No se ha añadido nada: ' + ( 1 === grandes.length ? '«' + grandes[ 0 ] + '» supera' : grandes.length + ' archivos superan' ) + ' el tamaño máximo de ' + formatearTamano( maxBytes ) + ( 1 === grandes.length ? '' : ' (el primero, «' + grandes[ 0 ] + '»)' ) + '. Quítalos y vuelve a intentarlo.' );
+				return;
+			}
+
+			var total = sinRepetidos( actuales.concat( nuevos ) );
+
+			if ( maxArchivos && total.length > maxArchivos ) {
+				error( 'No se ha añadido nada: serían ' + total.length + ' y el máximo por subida es ' + maxArchivos + '. Súbelos en varias tandas (por ejemplo, carpeta a carpeta).' );
+				return;
+			}
+
+			if ( ! nuevos.length ) {
+				error( 'No hay ningún archivo ' + ( tipos || 'admitido' ) + ' en lo que has elegido.' + textoIgnorados );
+				return;
+			}
+
+			var antes = actuales.length;
+
+			asignar( total );
+			aviso( ( total.length - antes === nuevos.length
+				? 'Añadidos ' + plural( nuevos.length, 'archivo', 'archivos' ) + '.'
+				: 'Añadidos ' + plural( total.length - antes, 'archivo', 'archivos' ) + ( nuevos.length - ( total.length - antes ) ? ' (' + ( nuevos.length - ( total.length - antes ) ) + ' ya estaban en la lista)' : '' ) + '.' ) + textoIgnorados );
 		}
 
 		// Lo rechazado nunca se queda en el input: vuelve lo que habia.
@@ -332,7 +613,8 @@
 
 			asignando = true;
 			input.files = dt.files;
-			// Para quien escuche el input (hoy nadie); la zona ya lo ha comprobado.
+			// Para quien escuche el input (p. ej. "Subir facturas"); la zona ya
+			// lo ha comprobado.
 			input.dispatchEvent( new Event( 'change', { bubbles: true } ) );
 			asignando = false;
 
@@ -343,6 +625,10 @@
 		function quitar( indice ) {
 			var quitado = actuales[ indice ];
 
+			if ( input.disabled ) {
+				return;
+			}
+
 			asignar( actuales.filter( function ( a, i ) {
 				return i !== indice;
 			} ) );
@@ -350,16 +636,30 @@
 			zona.focus();
 		}
 
+		function quitarTodos() {
+			var cuantos = actuales.length;
+
+			if ( input.disabled ) {
+				return;
+			}
+
+			asignar( [] );
+			aviso( 'Quitados ' + plural( cuantos, 'archivo', 'archivos' ) + '. No hay ningún archivo elegido.' );
+			zona.focus();
+		}
+
 		function pintar() {
 			texto.textContent = multiple
-				? 'Arrastra aquí los archivos o haz clic para elegirlos'
+				? ( lote ? 'Arrastra aquí los archivos o una carpeta, o haz clic para elegir archivos' : 'Arrastra aquí los archivos o haz clic para elegirlos' )
 				: ( actuales.length ? 'Arrastra aquí otro archivo para cambiarlo o haz clic para elegirlo' : 'Arrastra aquí el archivo o haz clic para elegirlo' );
 
 			zona.classList.toggle( 'mdf-ca-zona-archivos__zona--con-archivo', actuales.length > 0 );
 			lista.textContent = '';
 			lista.hidden = ! actuales.length;
+			resumen.textContent = '';
+			resumen.hidden = actuales.length <= LISTA_COMPLETA_HASTA;
 
-			actuales.forEach( function ( archivo, i ) {
+			actuales.slice( 0, LISTA_COMPLETA_HASTA ).forEach( function ( archivo, i ) {
 				var item = elemento( 'li', 'mdf-ca-zona-archivos__archivo' );
 				var nombre = elemento( 'span', 'mdf-ca-zona-archivos__nombre' );
 				var tamano = elemento( 'span', 'mdf-ca-zona-archivos__tamano' );
@@ -380,6 +680,16 @@
 				item.appendChild( boton );
 				lista.appendChild( item );
 			} );
+
+			if ( actuales.length > LISTA_COMPLETA_HASTA ) {
+				var todos = elemento( 'button', 'button-link mdf-ca-zona-archivos__quitar' );
+
+				resumen.appendChild( document.createTextNode( '… y ' + plural( actuales.length - LISTA_COMPLETA_HASTA, 'archivo más', 'archivos más' ) + '. ' ) );
+				todos.type = 'button';
+				todos.textContent = 'Quitar todos';
+				todos.addEventListener( 'click', quitarTodos );
+				resumen.appendChild( todos );
+			}
 		}
 
 		// La region de estado solo anuncia cambios: se vacia antes por si el

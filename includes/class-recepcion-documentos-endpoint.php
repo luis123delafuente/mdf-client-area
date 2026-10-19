@@ -71,7 +71,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Orden: autenticacion y capacidad (permission_callback) > interruptor >
  * tope diario > forma de la peticion > cruce con las farmacias > hash y
- * duplicados > guardado. Cada paso que falla corta sin escribir nada.
+ * duplicados > guardado. Cada paso que falla corta sin escribir nada. Desde
+ * el cruce, el camino es Factura_Recepcion_Service, compartido con "Subir
+ * facturas" del backoffice (#334); las respuestas no cambiaron.
  */
 class Recepcion_Documentos_Endpoint {
 
@@ -90,7 +92,7 @@ class Recepcion_Documentos_Endpoint {
 		Factura_Cruce_Service::SIN_CIF            => 'La factura no tiene CIF/NIF de cliente.',
 		Factura_Cruce_Service::CIF_INVALIDO       => 'El CIF/NIF del cliente no es valido.',
 		Factura_Cruce_Service::CIF_SIN_FARMACIA   => 'Ninguna farmacia dada de alta tiene ese CIF/NIF.',
-		'documento_en_otra_farmacia'              => 'El documento ya esta guardado para otra farmacia.',
+		Factura_Recepcion_Service::OTRA_FARMACIA  => 'El documento ya esta guardado para otra farmacia.',
 	);
 
 	public static function register_hooks(): void {
@@ -179,119 +181,50 @@ class Recepcion_Documentos_Endpoint {
 			return self::rechazar();
 		}
 
-		// El cruce revalida todo. Es_abono se recalcula del signo del importe:
-		// no se acepta el que declare el cliente.
-		$cruce = ( new Factura_Cruce_Service() )->cruzar( $resultado );
-
-		if ( Factura_Cruce_Service::ASIGNADA !== $cruce['estado'] ) {
-			return self::excepcion( $cruce['estado'] );
-		}
-
-		$hash = hash_file( 'sha256', $archivo['tmp_name'] );
-
-		if ( false === $hash ) {
-			return self::rechazar();
-		}
-
-		$repositorio = new Documento_Repository();
-		$factura     = array(
-			'emisor_cif' => $cruce['emisor'],
-			'serie'      => $cruce['serie'],
-			'numero'     => $cruce['numero'],
-		);
-		$existentes  = self::buscar_existentes( $repositorio, $hash, $factura );
-
-		if ( $existentes ) {
-			return self::respuesta_duplicado( $existentes, (int) $cruce['farmacia_id'] );
-		}
-
-		$etiqueta  = $cruce['importe_total_centimos'] < 0 ? 'Abono' : 'Factura';
-		$publicar  = ! Recepcion_Registro::requiere_aprobacion();
-		$documento = ( new Documento_Service() )->subir_factura_recibida(
-			(int) $cruce['farmacia_id'],
-			sprintf( '%s %s %s %s', $etiqueta, Factura_Emisores::nombre_corto( $cruce['emisor'] ), $cruce['serie'], $cruce['numero'] ),
+		// Cruce, duplicados y guardado: el mismo camino que "Subir facturas"
+		// (#334). Es_abono se recalcula del signo del importe revalidado.
+		$recepcion = ( new Factura_Recepcion_Service() )->recibir(
 			$archivo,
-			$hash,
-			$factura,
+			$resultado,
 			$notificar,
-			$publicar,
-			$cruce['fecha'] // revalidada por Factura_Cruce_Service, nunca la declarada
+			! Recepcion_Registro::requiere_aprobacion(),
+			Recepcion_Registro::ORIGEN_REST
 		);
 
-		if ( is_wp_error( $documento ) ) {
-			// Dos envios de la misma factura a la vez: el UNIQUE del hash o el
-			// de la factura hace fallar el segundo INSERT. Si ahora existe, es
-			// un duplicado (o la misma factura en otra farmacia).
-			$existentes = self::buscar_existentes( $repositorio, $hash, $factura );
+		switch ( $recepcion['resultado'] ) {
+			case Factura_Recepcion_Service::ACEPTADO:
+				return new \WP_REST_Response(
+					array(
+						'resultado'    => 'aceptado',
+						'documento_id' => $recepcion['documento']->get_id(),
+						'publicado'    => $recepcion['documento']->is_publicado(),
+					),
+					201
+				);
 
-			if ( $existentes ) {
-				return self::respuesta_duplicado( $existentes, (int) $cruce['farmacia_id'] );
-			}
+			case Factura_Recepcion_Service::DUPLICADO:
+				return new \WP_REST_Response(
+					array(
+						'resultado'    => 'duplicado',
+						'documento_id' => $recepcion['documento']->get_id(),
+					),
+					200
+				);
 
-			return self::rechazar( in_array( $documento->get_error_code(), array( 'mdf_ca_error_bd', 'mdf_ca_documento_carpeta_no_disponible', 'mdf_ca_documento_error_escritura' ), true ) ? 500 : 400 );
+			case Factura_Recepcion_Service::EXCEPCION:
+				return self::excepcion( (string) $recepcion['estado'] );
+
+			default:
+				// El servicio ya lo ha contado como rechazado.
+				return self::error( $recepcion['interno'] ? 500 : 400 );
 		}
-
-		Recepcion_Registro::registrar( Recepcion_Registro::ACEPTADO );
-
-		return new \WP_REST_Response(
-			array(
-				'resultado'    => 'aceptado',
-				'documento_id' => $documento->get_id(),
-				'publicado'    => $documento->is_publicado(),
-			),
-			201
-		);
 	}
 
-	/**
-	 * Documentos ya guardados con el mismo PDF (hash) o la misma factura
-	 * (emisor, serie y numero), sin repetir: normalmente uno o ninguno.
-	 *
-	 * @param array{emisor_cif: string, serie: string, numero: string} $factura
-	 * @return Documento[]
-	 */
-	private static function buscar_existentes( Documento_Repository $repositorio, string $hash, array $factura ): array {
-		$existentes = array();
-
-		foreach ( array(
-			$repositorio->find_by_hash( $hash ),
-			$repositorio->find_by_factura( $factura['emisor_cif'], $factura['serie'], $factura['numero'] ),
-		) as $documento ) {
-			if ( $documento ) {
-				$existentes[ $documento->get_id() ] = $documento;
-			}
-		}
-
-		return array_values( $existentes );
-	}
-
-	/** @param Documento[] $existentes No vacio. */
-	private static function respuesta_duplicado( array $existentes, int $farmacia_id ): \WP_REST_Response {
-		// El mismo PDF o la misma factura para otra farmacia no es un
-		// duplicado: es un dato incoherente, y no se escribe nada.
-		foreach ( $existentes as $existente ) {
-			if ( $existente->get_farmacia_id() !== $farmacia_id ) {
-				return self::excepcion( 'documento_en_otra_farmacia' );
-			}
-		}
-
-		Recepcion_Registro::registrar( Recepcion_Registro::DUPLICADO );
-
-		return new \WP_REST_Response(
-			array(
-				'resultado'    => 'duplicado',
-				'documento_id' => $existentes[0]->get_id(),
-			),
-			200
-		);
-	}
-
+	/** El servicio ya la ha contado como excepcion: aqui solo la respuesta. */
 	private static function excepcion( string $estado ): \WP_REST_Response {
 		if ( ! isset( self::MOTIVOS[ $estado ] ) ) {
 			$estado = Factura_Cruce_Service::FORMATO_INESPERADO;
 		}
-
-		Recepcion_Registro::registrar( Recepcion_Registro::EXCEPCION );
 
 		return new \WP_REST_Response(
 			array(

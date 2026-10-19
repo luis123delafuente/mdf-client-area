@@ -15,7 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Sacado de los composer.json de lib/vendor y del codigo propio:
  * - Lectura de facturas en PDF: smalot/pdfparser pide zlib e iconv (y
  *   mbstring, que su polyfill solo emula a medias); el extractor propio usa
- *   zlib (inflate_*), mbstring, iconv (MacRoman) y ctype.
+ *   zlib (inflate_*), mbstring, iconv (MacRoman) y ctype; "Subir facturas"
+ *   (#334) comprueba el tipo real del fichero con fileinfo.
  * - Modelo 347: dompdf pide dom y mbstring; php-css-parser, iconv; Cpdf
  *   necesita gd para el logo PNG; OpenSpout pide dom, filter, libxml,
  *   xmlreader y zip; Xlsx_Validator, zip; el PDF generado se valida con
@@ -27,7 +28,7 @@ class Requisitos_Servidor {
 	public const MODELO_347       = 'modelo_347';
 
 	private const EXTENSIONES = array(
-		self::LECTURA_FACTURAS => array( 'zlib', 'mbstring', 'iconv', 'ctype' ),
+		self::LECTURA_FACTURAS => array( 'zlib', 'mbstring', 'iconv', 'ctype', 'fileinfo' ),
 		self::MODELO_347       => array( 'dom', 'mbstring', 'iconv', 'gd', 'zip', 'xmlreader', 'libxml', 'filter', 'fileinfo', 'ctype' ),
 	);
 

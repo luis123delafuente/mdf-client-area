@@ -225,8 +225,43 @@ class Activator {
 	private static function create_tables() {
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
+		self::migrar_registro_origen();
+
 		foreach ( DB_Schema::get_create_table_statements() as $sql ) {
 			dbDelta( $sql );
+		}
+	}
+
+	/**
+	 * Registro de recepcion (#334, esquema 1.15.0): columna origen dentro de
+	 * la clave primaria. dbDelta anadiria la columna pero no sabe cambiar la
+	 * clave primaria, asi que se hace aqui, antes de dbDelta, en un solo
+	 * ALTER (atomico en MySQL y MariaDB). Idempotente: si la tabla no existe
+	 * (instalacion nueva, la crea dbDelta) o ya tiene la columna, no hace
+	 * nada. Lo anterior era todo del robot salvo las publicaciones y
+	 * despublicaciones en bloque, que se hacen desde el backoffice.
+	 */
+	private static function migrar_registro_origen(): void {
+		global $wpdb;
+
+		$tabla = DB_Schema::get_recepcion_registro_table_name();
+
+		if ( $tabla !== $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $tabla ) ) )
+			|| null !== $wpdb->get_var( $wpdb->prepare( "SHOW COLUMNS FROM {$tabla} LIKE %s", 'origen' ) ) ) {
+			return;
+		}
+
+		$ok = $wpdb->query( "ALTER TABLE {$tabla} ADD COLUMN origen VARCHAR(12) NOT NULL DEFAULT 'rest' AFTER resultado, DROP PRIMARY KEY, ADD PRIMARY KEY (fecha,resultado,origen)" );
+
+		if ( false !== $ok ) {
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$tabla} SET origen = %s WHERE resultado IN (%s, %s)",
+					Recepcion_Registro::ORIGEN_BACKOFFICE,
+					Recepcion_Registro::PUBLICADO_BLOQUE,
+					Recepcion_Registro::DESPUBLICADO_LOTE
+				)
+			);
 		}
 	}
 
