@@ -48,7 +48,7 @@ class Admin_Modelo_347 {
 			return;
 		}
 
-		wp_enqueue_script( 'mdf-ca-admin-modelo-347', plugins_url( 'assets/js/admin-modelo-347.js', MDF_CA_PLUGIN_FILE ), array(), MDF_CA_VERSION, true );
+		wp_enqueue_script( 'mdf-ca-admin-modelo-347', Recursos::url( 'assets/js/admin-modelo-347.js' ), array(), Recursos::version( 'assets/js/admin-modelo-347.js' ), true );
 	}
 
 	/** Toda accion empieza aqui: capacidad o fuera. */

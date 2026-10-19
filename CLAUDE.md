@@ -9,6 +9,7 @@ Plugin de WordPress que concentra toda la lógica de negocio del Área de Client
 - Ruta del plugin en ambos entornos: `wp-content/plugins/mdf-client-area/`
 - Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script (`wp-content/plugins/deploy-script/deploy.sh`, carpeta hermana del plugin, **sin control de versiones**) excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md`, `*.docx` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
 - Fechas: objetivo de entrega el 12 de octubre de 2026; fecha límite el 8 de noviembre de 2026
+- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347 y menú de perfil) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
 - Versión del plugin: consulta las constantes `MDF_CA_VERSION` y `MDF_CA_DB_VERSION` en el código antes de subirlas; no asumas su valor. **`MDF_CA_VERSION` y la línea `Version:` de la cabecera de `mdf-client-area.php` se actualizan siempre juntas, en el mismo cambio, con el mismo valor** (la cabecera es lo que muestra WordPress en Plugins; hasta la 0.24.0 se quedó en 0.1.0)
 
 ## Reglas no negociables
@@ -194,6 +195,14 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - sirven para **cualquier fila con identificador válido y suma correcta**, se genere o no: `Modelo_347_Simulacion_Service::PREVISUALIZABLES` = lista, sin cuenta, no está en el portal, ya vigente y repetido, por ese orden de prioridad en la vista previa global. Las inválidas, con importes ilegibles o descuadradas, no (404 si se fuerza la URL). Antes solo había vista previa si existía alguna fila «lista» o «sin cuenta», y con el Excel real (todo «no está en el portal») el botón no aparecía;
   - al lado, «Descargar ZIP de las que no se pueden enviar (N)», con las cartas de «sin cuenta» y «no está en el portal»;
   - todo exige el correo de Administración en Ajustes y se genera al vuelo, sin guardar nada.
+- Buscador de filas en la simulación, encima de las tablas, con el mismo marcado y textos que el de «Documentos publicados»:
+  - etiqueta «CIF/NIF o nombre», `input type="search" class="regular-text"`, botón primario «Buscar», «Quitar filtros» y un `h2` con «Filas que coinciden: N de M» o «Ninguna fila con estos filtros»;
+  - **filtra en el navegador** (`admin-modelo-347.js`), sin ninguna petición: el término no llega al servidor, a la URL ni al historial. Busca por fragmento en el nombre del Excel y en el de la farmacia del portal, sin mayúsculas ni tildes (NFD), y en el CIF/NIF ignorando además espacios, guiones y puntos;
+  - filtra todas las tablas a la vez. Cada una muestra «N de M» y, si se queda en 0, se colapsa con «Ninguna fila con estos filtros.»;
+  - los recuentos, los totales, la vista previa global y el ZIP siempre son del fichero entero (lo dice la propia pantalla);
+  - nace oculto y lo muestra el JS: sin JS, la pantalla queda como siempre;
+  - el `h2` lleva además `display:none`, porque el CSS de wp-admin (`h1…h6 { display: block }`) anula el atributo `hidden`;
+  - diferencias con «Documentos publicados»: no recarga la página, filtra mientras se escribe, no hay paginación y hay varias tablas en vez de una.
 - Qué se guarda (RGPD):
   - el Excel, nunca;
   - las filas saneadas, en un transient de simulación de 15 min, consumido al confirmar y borrado al cancelar o al empezar otra simulación;

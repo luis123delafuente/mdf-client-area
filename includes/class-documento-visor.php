@@ -143,10 +143,14 @@ class Documento_Visor {
 	 * previa del administrador. Solo marcado: no decide nada.
 	 */
 	private static function pintar( string $endpoint_url, string $token, string $marca_agua, bool $puede_descargar ): void {
-		$pdfjs_base    = plugins_url( 'assets/vendor/pdfjs', MDF_CA_PLUGIN_FILE );
-		$sheetjs_url   = plugins_url( 'assets/vendor/sheetjs/xlsx.mini.min.js', MDF_CA_PLUGIN_FILE );
-		$visor_css_url = plugins_url( 'assets/css/documento-visor.css', MDF_CA_PLUGIN_FILE );
-		$visor_js_url  = add_query_arg( 'ver', MDF_CA_VERSION, plugins_url( 'assets/js/documento-visor.js', MDF_CA_PLUGIN_FILE ) );
+		// Todas con "?ver=" por fecha del fichero (Recursos): tras un despliegue
+		// ningun navegador sigue con una copia vieja. PDF.js va como dos URL
+		// completas (modulo y worker) para que tambien lleven su version.
+		$pdfjs_url        = Recursos::url_versionada( 'assets/vendor/pdfjs/pdf.min.mjs' );
+		$pdfjs_worker_url = Recursos::url_versionada( 'assets/vendor/pdfjs/pdf.worker.min.mjs' );
+		$sheetjs_url      = Recursos::url_versionada( 'assets/vendor/sheetjs/xlsx.mini.min.js' );
+		$visor_css_url    = Recursos::url_versionada( 'assets/css/documento-visor.css' );
+		$visor_js_url     = Recursos::url_versionada( 'assets/js/documento-visor.js' );
 
 		header( 'Content-Type: text/html; charset=UTF-8' );
 		?>
@@ -181,7 +185,8 @@ class Documento_Visor {
 			endpointUrl: <?php echo wp_json_encode( $endpoint_url ); ?>,
 			tokenParam: <?php echo wp_json_encode( Documento_Token::PARAMETRO ); ?>,
 			token: <?php echo wp_json_encode( $token ); ?>,
-			pdfjsBase: <?php echo wp_json_encode( $pdfjs_base ); ?>,
+			pdfjsUrl: <?php echo wp_json_encode( $pdfjs_url ); ?>,
+			pdfjsWorkerUrl: <?php echo wp_json_encode( $pdfjs_worker_url ); ?>,
 			sheetjsUrl: <?php echo wp_json_encode( $sheetjs_url ); ?>,
 			marcaAgua: <?php echo wp_json_encode( $marca_agua ); ?>,
 			puedeDescargar: <?php echo wp_json_encode( $puede_descargar ); ?>

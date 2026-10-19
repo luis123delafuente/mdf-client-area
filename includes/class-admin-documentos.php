@@ -53,9 +53,9 @@ class Admin_Documentos {
 		// con el resto. Sin JS se ven todos los campos: decide el servidor.
 		wp_enqueue_script(
 			'mdf-ca-admin-documentos',
-			plugins_url( 'assets/js/admin-documentos.js', MDF_CA_PLUGIN_FILE ),
+			Recursos::url( 'assets/js/admin-documentos.js' ),
 			array(),
-			MDF_CA_VERSION,
+			Recursos::version( 'assets/js/admin-documentos.js' ),
 			true
 		);
 	}
@@ -67,16 +67,16 @@ class Admin_Documentos {
 	public static function encolar_selector_farmacia(): void {
 		wp_enqueue_style(
 			'mdf-ca-admin-selector-farmacia',
-			plugins_url( 'assets/css/admin-selector-farmacia.css', MDF_CA_PLUGIN_FILE ),
+			Recursos::url( 'assets/css/admin-selector-farmacia.css' ),
 			array(),
-			MDF_CA_VERSION
+			Recursos::version( 'assets/css/admin-selector-farmacia.css' )
 		);
 
 		wp_enqueue_script(
 			'mdf-ca-admin-selector-farmacia',
-			plugins_url( 'assets/js/admin-selector-farmacia.js', MDF_CA_PLUGIN_FILE ),
+			Recursos::url( 'assets/js/admin-selector-farmacia.js' ),
 			array(),
-			MDF_CA_VERSION,
+			Recursos::version( 'assets/js/admin-selector-farmacia.js' ),
 			true
 		);
 	}

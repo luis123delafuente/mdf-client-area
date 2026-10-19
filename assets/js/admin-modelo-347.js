@@ -70,6 +70,100 @@
 	}
 
 	// ---------------------------------------------------------------
+	// Buscador de filas de la simulacion
+	// ---------------------------------------------------------------
+	// Filtra en el navegador las tablas ya pintadas: ninguna peticion, el
+	// termino no va al servidor ni a la URL. Solo cambia lo que se ve; los
+	// recuentos, totales, vista previa y ZIP siguen siendo del fichero entero.
+	var buscador = document.querySelector( '[data-mdf-ca-347-buscador]' );
+
+	if ( buscador ) {
+		var termino = buscador.querySelector( '[data-mdf-ca-347-termino]' );
+		var limpiar = buscador.querySelector( '[data-mdf-ca-347-limpiar]' );
+		var resultado = document.querySelector( '[data-mdf-ca-347-resultado]' );
+
+		// Sin tildes ni mayusculas: "martinez" encuentra "Martínez" y "MARTINEZ".
+		var normalizar = function ( texto ) {
+			return String( texto ).normalize( 'NFD' ).replace( /[̀-ͯ]/g, '' ).toLowerCase().replace( /\s+/g, ' ' ).trim();
+		};
+
+		// Identificador fiscal: ademas sin espacios, guiones ni puntos.
+		var normalizarId = function ( texto ) {
+			return normalizar( texto ).replace( /[\s.\-]/g, '' );
+		};
+
+		var tablas = Array.prototype.map.call( document.querySelectorAll( '[data-mdf-ca-347-tabla]' ), function ( tabla ) {
+			return {
+				nodo: tabla,
+				abierta: tabla.open,
+				recuento: tabla.querySelector( '[data-mdf-ca-347-recuento]' ),
+				vacia: tabla.querySelector( '[data-mdf-ca-347-vacia]' ),
+				filas: Array.prototype.map.call( tabla.querySelectorAll( '[data-mdf-ca-347-fila]' ), function ( fila ) {
+					return { nodo: fila, nombre: normalizar( fila.dataset.nombre || '' ), nif: normalizarId( fila.dataset.nif || '' ) };
+				} )
+			};
+		} );
+
+		var totalFilas = tablas.reduce( function ( n, t ) {
+			return n + t.filas.length;
+		}, 0 );
+
+		var aplicar = function () {
+			var q = normalizar( termino.value );
+			var qId = normalizarId( termino.value );
+			var coinciden = 0;
+
+			tablas.forEach( function ( t ) {
+				var n = 0;
+
+				t.filas.forEach( function ( f ) {
+					var visible = '' === q || ( f.nombre.indexOf( q ) !== -1 ) || ( '' !== qId && f.nif.indexOf( qId ) !== -1 );
+
+					f.nodo.hidden = ! visible;
+					n += visible ? 1 : 0;
+				} );
+
+				coinciden += n;
+
+				if ( '' === q ) {
+					t.recuento.textContent = '(' + t.filas.length + ')';
+					t.vacia.hidden = true;
+					t.nodo.open = t.abierta;
+				} else {
+					t.recuento.textContent = '(' + n + ' de ' + t.filas.length + ')';
+					t.vacia.hidden = n > 0;
+					t.nodo.open = n > 0;
+				}
+			} );
+
+			limpiar.hidden = '' === q;
+			// Ademas de hidden, display: el CSS de wp-admin da display:block a
+			// los h2 y anula el atributo hidden.
+			resultado.hidden = '' === q;
+			resultado.style.display = '' === q ? 'none' : '';
+			resultado.textContent = '' === q
+				? ''
+				: ( 0 === coinciden ? 'Ninguna fila con estos filtros' : 'Filas que coinciden: ' + coinciden + ' de ' + totalFilas );
+		};
+
+		buscador.hidden = false;
+
+		buscador.addEventListener( 'submit', function ( e ) {
+			e.preventDefault(); // nunca se envia: filtra aqui mismo
+			aplicar();
+		} );
+
+		termino.addEventListener( 'input', aplicar );
+
+		limpiar.addEventListener( 'click', function ( e ) {
+			e.preventDefault();
+			termino.value = '';
+			aplicar();
+			termino.focus();
+		} );
+	}
+
+	// ---------------------------------------------------------------
 	// Envio
 	// ---------------------------------------------------------------
 	var env = document.querySelector( '[data-mdf-ca-347-envio]' );

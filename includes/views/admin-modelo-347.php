@@ -105,6 +105,35 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 			</p>
 		<?php endif; ?>
 
+		<?php
+		// Buscador de filas (#307): mismo marcado y textos que el de
+		// «Documentos publicados», pero filtra en el navegador
+		// (admin-modelo-347.js): el termino no viaja al servidor ni queda en
+		// la URL. Nace oculto y solo lo muestra el JS: sin JS, la pantalla
+		// queda como siempre, con todas las filas visibles.
+		?>
+		<form data-mdf-ca-347-buscador hidden>
+			<table class="form-table" role="presentation">
+				<tbody>
+					<tr>
+						<th scope="row"><label for="mdf-ca-347-buscar">CIF/NIF o nombre</label></th>
+						<td>
+							<input type="search" id="mdf-ca-347-buscar" class="regular-text" maxlength="100" autocomplete="off" data-mdf-ca-347-termino />
+							<p class="description">
+								Busca el texto en cualquier parte del CIF/NIF o del nombre, sin distinguir mayúsculas ni tildes; en el CIF/NIF
+								se ignoran espacios, guiones y puntos. Solo filtra lo que ves en las tablas de abajo: los recuentos, los totales,
+								la vista previa y el ZIP siempre son del fichero entero.
+							</p>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+			<?php submit_button( 'Buscar', 'primary', 'submit', false ); ?>
+			<a href="#" style="margin-left:.5em" hidden data-mdf-ca-347-limpiar>Quitar filtros</a>
+		</form>
+		<?php // display:none en linea: el CSS de wp-admin (h1..h6 { display: block }) anula el atributo hidden. ?>
+		<h2 hidden style="display:none" data-mdf-ca-347-resultado aria-live="polite"></h2>
+
 		<?php foreach ( Modelo_347_Simulacion_Service::ETIQUETAS as $clave => $etiqueta ) : ?>
 			<?php
 			$filas_cat = array_filter( $simulacion['filas'], static fn( array $f ): bool => $f['categoria'] === $clave );
@@ -112,13 +141,14 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 				continue;
 			}
 			?>
-			<details <?php echo Modelo_347_Simulacion_Service::LISTA !== $clave ? 'open' : ''; ?> style="margin:1em 0">
-				<summary><strong><?php echo esc_html( $etiqueta . ' (' . count( $filas_cat ) . ')' ); ?></strong></summary>
+			<details <?php echo Modelo_347_Simulacion_Service::LISTA !== $clave ? 'open' : ''; ?> style="margin:1em 0" data-mdf-ca-347-tabla>
+				<summary><strong><?php echo esc_html( $etiqueta ); ?> <span data-mdf-ca-347-recuento data-total="<?php echo esc_attr( (string) count( $filas_cat ) ); ?>">(<?php echo esc_html( (string) count( $filas_cat ) ); ?>)</span></strong></summary>
+				<p hidden data-mdf-ca-347-vacia>Ninguna fila con estos filtros.</p>
 				<table class="widefat striped">
 					<thead><tr><th>Fila</th><th>Nombre</th><th>CIF/NIF</th><th>Importe DEV</th><th>Avisos</th><th>Carta</th></tr></thead>
 					<tbody>
 						<?php foreach ( $filas_cat as $f ) : ?>
-							<tr>
+							<tr data-mdf-ca-347-fila data-nif="<?php echo esc_attr( $f['nif'] ); ?>" data-nombre="<?php echo esc_attr( $f['nombre'] . ( isset( $f['farmacia_nombre'] ) ? ' ' . $f['farmacia_nombre'] : '' ) ); ?>">
 								<td><?php echo esc_html( (string) $f['linea'] ); ?></td>
 								<td><?php echo esc_html( $f['nombre'] ); ?><?php echo isset( $f['farmacia_nombre'] ) && $f['farmacia_nombre'] !== $f['nombre'] ? '<br><small>' . esc_html( 'En el portal: ' . $f['farmacia_nombre'] ) . '</small>' : ''; ?></td>
 								<td><?php echo esc_html( '' !== $f['nif'] ? $f['nif'] : '—' ); ?></td>

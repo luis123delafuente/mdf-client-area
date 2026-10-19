@@ -44,8 +44,8 @@ class Menu_Perfil {
 			return;
 		}
 
-		wp_enqueue_style( self::HANDLE, plugins_url( 'assets/css/menu-perfil.css', MDF_CA_PLUGIN_FILE ), array(), MDF_CA_VERSION );
-		wp_enqueue_script( self::HANDLE, plugins_url( 'assets/js/menu-perfil.js', MDF_CA_PLUGIN_FILE ), array(), MDF_CA_VERSION, true );
+		wp_enqueue_style( self::HANDLE, Recursos::url( 'assets/css/menu-perfil.css' ), array(), Recursos::version( 'assets/css/menu-perfil.css' ) );
+		wp_enqueue_script( self::HANDLE, Recursos::url( 'assets/js/menu-perfil.js' ), array(), Recursos::version( 'assets/js/menu-perfil.js' ), true );
 	}
 
 	public static function render(): void {

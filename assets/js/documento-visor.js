@@ -206,9 +206,10 @@
 			return Promise.resolve();
 		}
 
-		return import( config.pdfjsBase + '/pdf.min.mjs' ).then( function ( modulo ) {
+		// URLs completas con su "?ver=" (Documento_Visor, Recursos).
+		return import( config.pdfjsUrl ).then( function ( modulo ) {
 			pdfjsLib = modulo;
-			pdfjsLib.GlobalWorkerOptions.workerSrc = config.pdfjsBase + '/pdf.worker.min.mjs';
+			pdfjsLib.GlobalWorkerOptions.workerSrc = config.pdfjsWorkerUrl;
 		} );
 	}
 
