@@ -73,5 +73,23 @@
             'aliases' => array(),
             'dev_requirement' => false,
         ),
+        'smalot/pdfparser' => array(
+            'pretty_version' => 'v2.13.1',
+            'version' => '2.13.1.0',
+            'reference' => 'a71c6dd38e60a995fdb4d36e4433b8b3557c65dc',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../smalot/pdfparser',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'symfony/polyfill-mbstring' => array(
+            'pretty_version' => 'v1.43.0',
+            'version' => '1.43.0.0',
+            'reference' => '4d5d331bf731e0aedbc6b2f5e61135b7b7996a72',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../symfony/polyfill-mbstring',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
     ),
 );

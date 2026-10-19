@@ -2,10 +2,13 @@
   "name": "mdf/mdf-client-area-lib",
   "require": {
     "dompdf/dompdf": "^3.1",
-    "openspout/openspout": "^4.28 || ^5.0"
+    "openspout/openspout": "^4.28 || ^5.0",
+    "smalot/pdfparser": "^2.13"
   },
   "config": {
-    "platform": { "php": "8.4.0" },
+    "platform": {
+      "php": "8.4.0"
+    },
     "optimize-autoloader": true,
     "classmap-authoritative": true,
     "sort-packages": true

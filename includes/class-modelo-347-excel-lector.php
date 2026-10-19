@@ -59,6 +59,12 @@ class Modelo_347_Excel_Lector {
 	 *         vacios tomados como 0), recc_importe (centimos o null), recc_activo (bool).
 	 */
 	public function leer( string $ruta ) {
+		$requisitos = Requisitos_Servidor::error( Requisitos_Servidor::MODELO_347 );
+
+		if ( null !== $requisitos ) {
+			return $requisitos;
+		}
+
 		$error = new \WP_Error( 'mdf_ca_347_excel_invalido', 'El fichero no es un Excel (.xlsx) valido o contiene macros u objetos embebidos.' );
 
 		if ( ! is_file( $ruta ) || filesize( $ruta ) > self::MAX_BYTES ) {

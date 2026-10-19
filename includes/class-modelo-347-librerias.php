@@ -7,7 +7,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Carga perezosa de las librerias vendorizadas en lib/ (dompdf y OpenSpout,
- * #307) y rutas de disco que usa dompdf. Solo se cargan cuando el generador
+ * #307; el autoload es el comun de Librerias) y rutas de disco que usa dompdf. Solo se cargan cuando el generador
  * del Modelo 347 las necesita, nunca en cada peticion. lib/.htaccess deniega
  * todo: ningun fichero de lib/ se sirve ni se ejecuta por HTTP. Como se
  * reconstruye lib/ esta en lib/LEEME.md.
@@ -47,13 +47,9 @@ class Modelo_347_Librerias {
 		'liberation_sans_bold_12a2795b985ede3fffba399ee54a255c',
 	);
 
+	/** El autoload de lib/ es comun a todas las librerias (Librerias, #333). */
 	public static function cargar(): void {
-		static $cargado = false;
-
-		if ( ! $cargado ) {
-			require_once MDF_CA_PLUGIN_DIR . 'lib/vendor/autoload.php';
-			$cargado = true;
-		}
+		Librerias::cargar();
 	}
 
 	/** Fuentes ya instaladas para dompdf (solo lectura en ejecucion). */

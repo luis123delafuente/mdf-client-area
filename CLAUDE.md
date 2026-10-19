@@ -5,7 +5,8 @@ Plugin de WordPress que concentra toda la lógica de negocio del Área de Client
 - Cliente: Mediformplus SL (MDF), grupo de farmacias (unas 200 farmacias previstas)
 - Stack: WordPress + Elementor + este plugin propio
 - Entorno local: WordPress con Local (by WP Engine), PHP 8.4.18, Apache, MySQL 8.4.0, site `mdf-client-area.local`
-- Producción: `clientes.mediformplus.com`, hosting IONOS (servidor dedicado gestionado), PHP 8.4.24 (el plugin exige **PHP 8.4**: `Requires PHP: 8.4`, por OpenSpout), WordPress 7.1, base de datos **MariaDB 11.8** (distinta del MySQL local: cualquier SQL nuevo debe funcionar en los dos)
+- Producción: `clientes.mediformplus.com`, hosting IONOS (servidor dedicado gestionado), PHP 8.4.26 (el plugin exige **PHP 8.4**: `Requires PHP: 8.4`, por OpenSpout), WordPress 7.1, base de datos **MariaDB 11.8** (distinta del MySQL local: cualquier SQL nuevo debe funcionar en los dos)
+- Límites de PHP en producción (Salud del sitio, comprobados el 19/10/2026): `memory_limit` -1 (sin límite), `max_execution_time` 50000, `upload_max_filesize` y `post_max_size` 64M. Extensiones: solo falta imagick (no se usa; mbstring, zlib e iconv presentes). `max_file_uploads` no aparece, pero la #334 sube las facturas de una en una. Con `memory_limit` -1, la parada por memoria de `Pdf_Limites` no actúa: la memoria de una lectura la acotan los demás topes (flujos, objetos, valores, códigos, palabras), y el tiempo, sus 10 s (no el `max_execution_time`)
 - Ruta del plugin en ambos entornos: `wp-content/plugins/mdf-client-area/`
 - Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script (`wp-content/plugins/deploy-script/deploy.sh`, carpeta hermana del plugin, **sin control de versiones**) excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md`, `*.docx` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
 - Fechas: objetivo de entrega el 12 de octubre de 2026; fecha límite el 8 de noviembre de 2026
@@ -34,7 +35,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Dos módulos de contenido separados: catálogo compartido por plan (Herramientas, Formación) vs documentos privados por farmacia, vinculados por CIF/NIF, visibles solo por su titular (no dependen del plan)
 - Documentos: carpeta `Clientes/private-docs/` **en la raíz de WordPress** (`ABSPATH`, no en `wp-content`; ruta relativa en `Documento_Endpoint::CARPETA_RELATIVA`), protegida con `.htaccess` de denegación total e `index.php`, que el propio plugin crea si faltan y vigila (`Carpeta_Privada_Proteccion`). Solo se sirven por el script PHP del plugin, que valida permiso antes de leer el fichero
 - Alta de farmacias: un único camino lógico. El importador CSV y el formulario de alta manual comparten el mismo servicio; CIF/NIF es la clave normalizada y validada; importación idempotente (upsert por CIF/NIF, simulación previa antes de escribir)
-- Facturas: el parser (repo hermano `Parser_facturas_SAGE`, Python) lee los PDF en el Mac de MDF y envía el resultado al endpoint autenticado del plugin; el plugin nunca lee PDF y revalida todo en servidor
+- Facturas: el parser (repo hermano `Parser_facturas_SAGE`, Python) lee los PDF en el Mac de MDF y envía el resultado al endpoint autenticado del plugin, que revalida todo en servidor. Desde la #333 el plugin también sabe leerlos en el servidor (`Factura_Lectura_Service`, mismas reglas y mismo resultado que Python), para que MDF los suba desde el backoffice (pantalla en la #334). Mientras convivan los dos caminos, las reglas se mantienen iguales en los dos lados
 - CRM de MDF aún sin identificar: WordPress es el sistema de registro del MVP, preparado para delegar en un CRM más adelante sin reescritura
 
 ## Decisiones técnicas ya tomadas
@@ -239,6 +240,55 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Pruebas: `tests/generar-347-ficticio.php` (OpenSpout, CIF por argumento), `tests/generar-347-sage-net.py` (estructura exacta de SAGE, mismas filas) y `tests/generar-347-maliciosos.py <origen> <carpeta> [<prefijo>]`. Este último genera 8 variantes malas por formato (DOCTYPE, xlsm renombrado, VBA, zip bomb, sin columna, sin hoja, Override `macroEnabled` y PDF renombrado), con sus ficheros en `tests/fixtures/`. `tests/` no se despliega
 - Plantilla original: `docs/MODELO CARTA 347.docx` (no se despliega: `deploy.sh` excluye `docs/` y `*.docx`, y el `.htaccess` de la raíz deniega `docx` además de `md`, `lock`, `sh`, `yml`, `yaml` y `log`)
 
+**Lectura de facturas en PHP** (#333; v0.25.0, sin cambio de esquema). Sale de la prueba de concepto #332
+- `Factura_Lectura_Service::analizar( $ruta, $nombre_original )` devuelve el mismo array que `ResultadoFactura.a_dict()` de Python, más `paginas`, y nunca lanza. El resultado entra tal cual en `Factura_Cruce_Service::cruzar()`, igual que el del robot (probado: mismo cruce que con Python en las 90 sintéticas, también `asignada`), y también en el endpoint REST
+- Por partes:
+  - `Pdf_Parser_Acotado` (smalot/pdfparser 2.13.1, vendorizado en `lib/`) abre el PDF y resuelve objetos y fuentes;
+  - `Pdf_Palabras` interpreta el contenido (con el lector propio `Pdf_Contenido`, CTM, Form XObjects y CropBox) y saca las palabras con caja como `page.get_text("words")`;
+  - `Pdf_Fuente` y `Pdf_Metricas_Base14` dan anchos, métricas y Unicode;
+  - `Factura_Sage_Parser` es el port línea a línea de `parser.py`.
+- Reglas reutilizadas: sociedades y series de `Factura_Emisores`, CIF/NIF de `Identificador_Fiscal_Validator`. No contradicen las de Python, que son una copia; el plugin es más estricto en serie (≤ 3 letras), número (≤ 20 cifras) y fecha (rango), pero eso lo sigue aplicando el cruce, igual que con el robot
+- Diferencias deliberadas con Python:
+  - los motivos nunca llevan valores (Python cita serie y número en dos);
+  - cifras solo ASCII;
+  - un importe que no cabe en un entero de PHP no se extrae;
+  - más de 50 páginas, más de 10 MB, un fichero sin `%PDF-` en el primer KB (p. ej. una imagen renombrada, que MuPDF abriría como `sin_texto`) y un PDF cifrado (aunque se abra sin contraseña, que Python sí lee) dan `formato_inesperado`.
+- Topes (`Pdf_Limites`, una instancia por factura), revisados en cada camino de smalot:
+  - 10 MB de fichero; 50 páginas (contadas antes de pedirlas, con tope de nodos del árbol); 20.000 objetos, incluidos los de un object stream, contados antes de que smalot los cree; 100.000 valores en diccionarios y arrays;
+  - 16 MB descomprimidos por flujo y 48 MB en total. FlateDecode va por trozos de 4 KB con `inflate_add()` (`Pdf_Filtros_Acotados`), sin el `tmpfile()` de smalot;
+  - xref streams: hasta 256 KB, `/W` en línea con anchos ≤ 8 y `/Columns` ≤ 64;
+  - ToUnicode: 8 planos de 65.536 códigos (dompdf declara un plano entero por fuente);
+  - contenido: 1.000.000 de operaciones, 64 operandos seguidos, arrays de 65.536 elementos y 32 niveles; 20.000 palabras por página; Form XObjects hasta 8 niveles, sin reentrar en uno que ya se está ejecutando, como MuPDF;
+  - 10 s por factura y parada si la memoria se acerca a `memory_limit` a menos de 24 MB.
+- Fallos de smalot encontrados y acotados (todos daban error fatal o bucle sin fin):
+  - un ToUnicode `<00000000> <FFFFFFFF>` recorre 4.000 millones de códigos;
+  - `unpack`/`array_fill` y los bucles de `/W` de un xref stream;
+  - `Document::init()` cuenta las páginas sin tope (un árbol con nodos compartidos explota). Por eso `Pdf_Parser_Acotado::parseContent()` es una copia que usa `Pdf_Documento_Acotado`;
+  - un `/Encrypt` en línea no se detecta y el PDF cifrado se lee como basura; ahora se detecta y se rechaza (`Pdf_Cifrado`);
+  - además, ya en la #332: vacía un `TJ` que empieza por número.
+- Causa del desfase de la primera prueba con reales (#332, x desviada casi un ancho de página con la misma vertical): un fallo real de posición del extractor antiguo con la matriz volteada. Todo el texto de SAGE va con CTM [1, 0, 0, -1, …] y el extractor antiguo lo colocaba mal. **No era un artefacto del emparejamiento**, como se supuso. El diagnóstico con las facturas reales dio «robusto: desviadas 100 %» con el extractor antiguo y 0 con el nuevo (`Pdf_Palabras`)
+
+  Si se actualiza smalot, hay que revisar las subclases (ver `lib/LEEME.md`) y repetir la regresión.
+- También corregido respecto a la prueba de concepto: MacRoman con `iconv` (`mb_convert_encoding` lanza `ValueError`), rangos de `/W` acotados a 16 bits y caché de fuentes por documento (la estática se podía equivocar entre dos PDF de la misma petición)
+- Nada se ejecuta ni se incluye a partir del PDF ni se escribe en disco (probado con un `TMPDIR` propio). No registra nada: los avisos de PHP se silencian mientras dura la lectura y los motivos son textos fijos. Al terminar, `gc_collect_cycles()`: tras 340 análisis seguidos la memoria en uso sigue en 2,2 MB
+- Rendimiento con sintéticas: de 7 a 30 ms y de 2 a 4 MB por factura; la carta de dompdf, 63 ms y 11 MB
+- **Con las 6 facturas reales de SAGE, sobre el servicio del plugin:** `comparar.py` da 6 de 6 coincidencias campo a campo con Python, de 11 a 27 ms y 2,5 MB como máximo por factura. El diagnóstico de palabras da 0 desviadas
+- Extensiones (`Requisitos_Servidor`, único sitio): lectura de facturas, zlib, mbstring, iconv y ctype; generador del 347, dom, mbstring, iconv, gd, zip, xmlreader, libxml, filter, fileinfo y ctype. Si falta alguna:
+  - `Admin_Requisitos_Servidor` lo avisa en las pantallas del plugin y en Plugins (adonde vuelve WordPress tras activar), solo a `manage_options`;
+  - el 347 (`Modelo_347_Carta::pdf()` y `Modelo_347_Excel_Lector::leer()`) devuelve un `WP_Error` con el mensaje;
+  - la lectura devuelve `formato_inesperado` con el mensaje.
+
+  Para probarlo en local: filtro `mdf_ca_requisitos_faltan`
+- `Librerias::cargar()`: un único autoload de `lib/` para dompdf, OpenSpout y smalot (`Modelo_347_Librerias::cargar()` delega en él)
+- Regresión en `tests/lectura-facturas/` (no se despliega; sustituye a `tests/poc-facturas`, borrada). Todo sin WordPress salvo el cruce, y nunca imprimen valores salvo con los PDF maliciosos, que son sintéticos:
+  - `comparar.py` (campos contra Python);
+  - `comparar_palabras.py` (palabras contra PyMuPDF; empareja por fila y por la x más cercana, para que dos palabras repetidas en una fila no se crucen; con `--diagnostico`, informe por página);
+  - `comparar_cruce.py` (cruce contra Python con wp-cli; `--crear-farmacias` solo en local);
+  - `generar_maliciosos.py` y `probar_maliciosos.py` (30 casos, `memory_limit` 128M);
+  - `fuzz.py` (1.500 variantes, en lotes de 25 por proceso).
+
+  Resultado: 91 de 91 PDF campo a campo (sintéticas del parser, Chrome, dompdf, hipótesis y `~/Pruebas-robotito`), 90 de 90 palabra a palabra (el que falta no es un PDF) a 0,00 pt y en el mismo orden; maliciosos y fuzz sin ningún fallo (peor caso: 1,1 s y 55 MB)
+
 **Protección de la carpeta privada** (v0.22.0)
 - `Carpeta_Privada_Proteccion::asegurar()` crea solo lo que falta (carpeta, `.htaccess` de denegación para Apache 2.4 y 2.2, `index.php`, con 0644) abriendo con `fopen('x')`, de modo que nunca sobrescribe. `sondear()` pide por HTTP (`site_url()`, timeout 5 s, sin redirecciones, `sslverify`) una sonda `.txt` temporal que borra siempre, y limpia las huérfanas de más de 10 minutos
 - Solo se da por protegida si el `.htaccess` deniega y la sonda da 403 o 404. Alarma roja solo con prueba (200 con el contenido exacto de la sonda); cualquier otro resultado es aviso suave. Un `.htaccess` existente que no deniega no se toca y se avisa. Caché de 12 h si está bien y 1 h si no. `maybe_upgrade` solo crea lo que falta; la sonda corre en la primera pantalla de administración del plugin. Decisión: solo avisar, sin bloquear la subida
@@ -259,6 +309,10 @@ Pendientes:
 
   Pendientes: Formación y el modo proveedores. Avisar a MKT de las clases del grupo Modelo 347
 - **#329 Endurecimiento menor:** mensaje de login del robot que delata la cuenta, índice REST de `mdf-ca/v1`, página de ejemplo y temas inactivos, actualizar WP Mail SMTP, retoques de `deploy.sh`, y **borrar los documentos de prueba** de las farmacias piloto (incluido `sol.pdf`, de la Fase 1) antes de que MDF use el portal
+- **#332/#333 Lectura de facturas en PHP:** hecha y probada con sintéticas y con 6 facturas reales: 6 de 6 campo a campo, 0 palabras desviadas (ver «Lectura de facturas en PHP»). Falta:
+  - revisar la licencia LGPL-3.0 de smalot con la de PyMuPDF en la Fase 5.
+
+  La pantalla «Subir facturas» es la #334
 - Sección de Cuota (tarea #254): a la espera del contenido de MKT
 - Avisar a MKT de las clases CSS del listado agrupado
 

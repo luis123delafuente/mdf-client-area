@@ -88,6 +88,12 @@ class Modelo_347_Carta {
 	 * @return string|\WP_Error Bytes del PDF.
 	 */
 	public static function pdf( string $emisor_cif, int $ejercicio, array $filas ) {
+		$requisitos = Requisitos_Servidor::error( Requisitos_Servidor::MODELO_347 );
+
+		if ( null !== $requisitos ) {
+			return $requisitos;
+		}
+
 		if ( ! self::emisor_habilitado( $emisor_cif ) ) {
 			return new \WP_Error( 'mdf_ca_347_emisor', 'Sociedad no habilitada para el generador.' );
 		}
