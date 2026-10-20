@@ -561,7 +561,10 @@ class Documento_Repository {
 		$table = DB_Schema::get_documentos_table_name();
 
 		return $wpdb->query(
-			$wpdb->prepare( "DELETE FROM {$table} WHERE id = %d AND publicado = 0 AND tipo_documento <> %s", $id, 'modelo_347' )
+			// tipo_documento es NULL en los documentos anteriores a la Fase 3 ("Sin
+			// tipo"): en SQL "NULL <> 'modelo_347'" no es verdadero, y sin el
+			// IS NULL el DELETE no borraba nada (v0.32.1).
+			$wpdb->prepare( "DELETE FROM {$table} WHERE id = %d AND publicado = 0 AND ( tipo_documento IS NULL OR tipo_documento <> %s )", $id, 'modelo_347' )
 		);
 	}
 

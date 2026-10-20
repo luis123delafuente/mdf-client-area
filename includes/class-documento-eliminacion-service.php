@@ -25,6 +25,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Al desaparecer la fila, su hash y su emisor + serie + numero dejan de
  * bloquear: la misma factura se puede volver a subir. Si el fichero ya no
  * estaba en disco, se borra igual la fila y se avisa.
+ *
+ * Documentos antiguos (Fase 1, anteriores a varias migraciones): tipo, MIME,
+ * tamano, hash y fecha en NULL. Se eliminan igual (v0.32.1: el DELETE trata
+ * tipo NULL como "no es un 347"). Si algo falla, el mensaje dice en que paso
+ * y el registro de errores guarda el motivo tecnico (id, paso, publicado,
+ * tipo y error de la BD), nunca el nombre ni datos de la factura.
  */
 class Documento_Eliminacion_Service {
 
@@ -89,27 +95,29 @@ class Documento_Eliminacion_Service {
 
 			if ( ! @rename( $fichero, $apartado ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename -- el aviso lo da el WP_Error.
 				$wpdb->query( 'ROLLBACK' );
+				self::registrar_fallo( $documento_id, 'rename del fichero a .eliminando-* fallido', $documento );
 
 				return new \WP_Error( 'mdf_ca_eliminar_fichero', 'No se ha podido borrar el fichero en el servidor (permisos de la carpeta privada). No se ha eliminado nada.' );
 			}
 		}
 
-		$ok = 1 === $this->repository->eliminar_no_publicado( $documento_id )
-			&& 1 === $this->eventos->insertar_para(
-				array( $documento_id => null ),
-				Publicacion_Evento_Repository::ACCION_ELIMINADO,
-				Publicacion_Evento_Repository::ORIGEN_INDIVIDUAL,
-				$usuario_id
-			);
+		$fallo = $this->borrar_fila_y_registrar( $documento, $usuario_id );
 
-		if ( ! $ok || false === $wpdb->query( 'COMMIT' ) ) {
+		if ( null === $fallo && false === $wpdb->query( 'COMMIT' ) ) {
+			$fallo = array( 'commit', 'La base de datos no ha confirmado el borrado.' );
+		}
+
+		if ( null !== $fallo ) {
+			$error_bd = (string) $wpdb->last_error;
 			$wpdb->query( 'ROLLBACK' );
 
 			if ( null !== $apartado ) {
 				@rename( $apartado, $fichero ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
 			}
 
-			return new \WP_Error( 'mdf_ca_publicacion_error_bd', 'No se pudo eliminar el documento. No se ha eliminado nada.' );
+			self::registrar_fallo( $documento_id, $fallo[0] . ( '' !== $error_bd ? ' | BD: ' . $error_bd : '' ), $documento );
+
+			return new \WP_Error( 'mdf_ca_publicacion_error_bd', $fallo[1] . ' No se ha eliminado nada.' );
 		}
 
 		if ( null !== $apartado ) {
@@ -120,6 +128,55 @@ class Documento_Eliminacion_Service {
 			'nombre'          => $documento->get_nombre(),
 			'fichero_estaba'  => null !== $apartado,
 			'fichero_borrado' => null !== $apartado && ! file_exists( $apartado ),
+		);
+	}
+
+	/**
+	 * DELETE de la fila e INSERT del evento, dentro de la transaccion de
+	 * eliminar(). Devuelve null si los dos han ido bien, o el paso que fallo
+	 * (para el registro) y el mensaje para el administrador.
+	 *
+	 * @return array{0: string, 1: string}|null
+	 */
+	private function borrar_fila_y_registrar( Documento $documento, int $usuario_id ): ?array {
+		$borradas = $this->repository->eliminar_no_publicado( $documento->get_id() );
+
+		if ( false === $borradas ) {
+			return array( 'DELETE con error de la BD', 'La base de datos ha rechazado el borrado del documento. Avisa a desarrollo: el detalle está en el registro de errores.' );
+		}
+
+		if ( 1 !== $borradas ) {
+			return array( sprintf( 'DELETE afecto a %d filas', $borradas ), 'El documento ha cambiado mientras se eliminaba (puede que alguien lo haya publicado o eliminado a la vez). Recarga la página y vuelve a intentarlo.' );
+		}
+
+		$evento = $this->eventos->insertar_para(
+			array( $documento->get_id() => null ),
+			Publicacion_Evento_Repository::ACCION_ELIMINADO,
+			Publicacion_Evento_Repository::ORIGEN_INDIVIDUAL,
+			$usuario_id
+		);
+
+		if ( 1 !== $evento ) {
+			return array( 'INSERT del evento eliminado fallido', 'No se ha podido apuntar la eliminación en el historial del documento, así que no se ha borrado. Avisa a desarrollo: el detalle está en el registro de errores.' );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Motivo tecnico al registro de errores: id, paso, estado del documento y
+	 * error de la BD. Nunca el nombre del documento ni datos de la factura
+	 * (serie, numero, CIF, importes).
+	 */
+	private static function registrar_fallo( int $documento_id, string $paso, Documento $documento ): void {
+		error_log( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- solo en un fallo, sin datos personales ni fiscales.
+			sprintf(
+				'[mdf-client-area] Eliminar documento %d: %s (publicado=%d, tipo=%s)',
+				$documento_id,
+				substr( $paso, 0, 300 ),
+				$documento->is_publicado() ? 1 : 0,
+				$documento->get_tipo_documento() ?? 'NULL'
+			)
 		);
 	}
 
