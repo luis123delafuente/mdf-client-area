@@ -85,6 +85,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - PDF.js vendorizado (solo `pdf.min.mjs` + `pdf.worker.min.mjs`, sin su viewer), nunca desde CDN. `assets/.htaccess` fuerza `AddType application/javascript .mjs`
 - Dos capas: `Documento_Visor` (ruta `/mdf-ca-visor/{id}/`) solo exige sesión; la validación real pasa por `Documento_Endpoint` cuando el JS hace `fetch()`. El listado de documentos enlaza siempre al visor, no al endpoint
 - PDF e imágenes se pintan en `<canvas>`; la marca de agua (CIF + nombre de farmacia) va horneada en los mismos píxeles, no como capa CSS. Espaciado calculado con `ctx.measureText()`
+- Desde la #321 (v0.34.0) un documento puede ir **sin marca de agua** (`documentos.sin_marca`): el visor la deja vacía solo si el documento lo tiene guardado así; ver «Marca de agua por documento»
 - `Ctrl/Cmd+P` y `Ctrl/Cmd+S` bloqueados por `keydown`; `beforeprint` vacía el canvas y `afterprint` lo restaura. PrintScreen del sistema no se puede bloquear
 - **Un documento no descargable solo se entrega al visor**: `Documento_Token` emite un token de un solo uso (transient con hash, ligado a usuario + documento, TTL 120 s, consumo atómico) que el `fetch()` manda en `?mdf_t=`. Sin token válido, o con `Sec-Fetch-Dest: document`, el endpoint da el mismo 404 uniforme. Un documento descargable no exige token
 - **Límite asumido:** los bytes llegan al navegador por `fetch()`; quien tiene sesión y DevTools puede sacarlos o reproducir la petición. La protección es disuasión y trazabilidad (sin botón, sin texto copiable, marca de agua con CIF y nombre), no DRM
@@ -453,6 +454,24 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - `fuzz.py` (1.500 variantes, en lotes de 25 por proceso).
 
   Resultado: 91 de 91 PDF campo a campo (sintéticas del parser, Chrome, dompdf, hipótesis y `~/Pruebas-robotito`), 90 de 90 palabra a palabra (el que falta no es un PDF) a 0,00 pt y en el mismo orden; maliciosos y fuzz sin ningún fallo (peor caso: 1,1 s y 55 MB)
+
+**Marca de agua por documento** (#321; v0.34.0, esquema 1.20.0)
+- Columna `documentos.sin_marca TINYINT(1) NOT NULL DEFAULT 0`: todo documento lleva marca salvo que se quite expresamente. La añade dbDelta con el valor por defecto, así que lo existente queda con marca (sin marca de migración propia)
+- **El visor decide con el valor guardado**, nunca con un parámetro de la petición: `Documento_Visor::renderizar()` deja `marcaAgua` vacío si `Documento::is_sin_marca_de_agua()`, y el JS no pinta nada con el texto vacío. Lo mismo en la vista previa del administrador (`Admin_Publicacion_Documentos::gestionar_vista_previa()`): lo que ve MDF es lo que verá la farmacia. El resto del visor no cambia (canvas, sin descarga ni impresión, token de un solo uso, permiso en el servidor). La vista previa de la Bandeja de facturas sigue con su marca «BANDEJA» (todavía no es un documento)
+- Dónde se elige, al dar de alta:
+  - subida manual: casilla «Mostrar sin marca de agua»;
+  - «Subir facturas»: casilla para toda la tanda, en el bloque de «Subir»; el JS la fija al pulsar «Subir» (también al continuar tras «Parar») y la manda en cada factura; el servidor solo acepta `sin_marca=1`. Las que van a la bandeja se deciden al asignarlas;
+  - bandeja, al asignar: casilla (se conserva en una vuelta con error, como el resto del formulario). «Volver a comprobar todas» asigna siempre con marca;
+  - Modelo 347, al confirmar la generación: casilla para todas las cartas; se guarda en el trabajo (transient) y no se vuelve a leer de las tandas AJAX.
+
+  Todas pasan por `Documento_Service::sin_marca_de_agua( bool )` (opción de la instancia; `Factura_Recepcion_Service` la fija en cada llamada porque reutiliza su instancia) y `registrar()`: un alta sin marca abre transacción y deja, además del evento de alta, el evento `marca_quitada` con el mismo origen (`subida_backoffice`, `subida_facturas`, `bandeja` o `modelo_347`) y el usuario
+- Después, en cualquier momento: columna «Marca de agua» en Documentos MDF (todos los documentos, pendientes o publicados) y en Pendientes de publicar, con «Quitar marca» / «Poner marca» (`parcial-marca-agua.php`). POST a `admin-post` `mdf_ca_cambiar_marca` con `Admin_Documentos::CAPACIDAD` y nonce por documento; vuelve a la misma pantalla con sus filtros. `Documento_Marca_Service::cambiar()`: transacción, `FOR UPDATE`, `UPDATE … WHERE sin_marca <> X` y evento `marca_quitada` o `marca_puesta` (origen `individual`); si ya estaba así, no cambia nada ni deja evento. El historial los muestra como «Marca de agua quitada» / «Marca de agua puesta»
+- Publicar, despublicar, publicar todos, deshacer lote y eliminar no tocan el ajuste. El PDF adjunto del envío del 347 no cambia (la marca es del visor, no del fichero)
+- Comprobado en local, como gestor y con datos de prueba:
+  - un documento de cada vía con y sin marca (subida manual PDF y Excel, Subir facturas, bandeja y 347), con sus eventos;
+  - visor del cliente con y sin marca en PDF y Excel; vista previa igual que el cliente; quitar y poner la marca de un documento publicado cambia el visor del cliente al momento;
+  - el cliente no puede cambiarlo: el visor ignora `?sin_marca=1`, `?marcaAgua=` y similares; la acción le saca a Documentación (también con el nonce del gestor); sin sesión, 400; el gestor sin nonce, 403;
+  - regresión: publicar todos y deshacer lote conservan el ajuste, eliminar (también uno sin marca), bandeja, 347 y las pantallas del plugin y del área del cliente sin errores
 
 **Endurecimiento: descubrir usuarios y versión** (#329, parte de código; v0.33.0, sin cambio de esquema). Los nombres de usuario de las farmacias son su CIF/NIF: descubrir usuarios desde fuera revela la cartera de clientes. Todo en `Endurecimiento`, salvo el `.htaccess` del plugin
 - Antes (sin sesión, en local): `/wp/v2/users` listaba al administrador y `/users/<id>` daba 401 si el usuario existía y 404 si no; `?author=1` redirigía a `/author/<login>/`, y `?author=N` y `/author/<slug>/` daban 200 si existía y 404 si no (con farmacias, el slug es su CIF); feed y oEmbed con el autor; XML-RPC vivo (79 métodos); versión de WordPress en `generator` y en los `ver=` del front y del login; `X-Powered-By` con la de PHP; login y «He olvidado mi contraseña» con mensajes distintos si existía el usuario o el correo; las carpetas del plugin listaban sus ficheros

@@ -47,6 +47,8 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ACCION_RECIBIDO     => 'Recibido (pendiente de publicar)',
 		Publicacion_Evento_Repository::ACCION_ELIMINADO    => 'Eliminado',
 		Publicacion_Evento_Repository::ACCION_ASIGNADO_MANUAL => 'Asignado a mano (pendiente de publicar)',
+		Publicacion_Evento_Repository::ACCION_MARCA_QUITADA   => 'Marca de agua quitada',
+		Publicacion_Evento_Repository::ACCION_MARCA_PUESTA    => 'Marca de agua puesta',
 	);
 
 	private const ORIGENES = array(

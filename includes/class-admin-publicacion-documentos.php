@@ -522,10 +522,12 @@ class Admin_Publicacion_Documentos {
 			admin_url( 'admin-post.php' )
 		);
 
+		// Lo que ve MDF es lo que vera la farmacia (#321): sin marca si el
+		// documento la tiene quitada.
 		Documento_Visor::renderizar_vista_previa(
 			$endpoint_url,
 			Documento_Token::emitir( (int) $usuario->ID, $id ),
-			sprintf( 'VISTA PREVIA - %s - %s', $usuario->user_login, wp_date( 'd/m/Y H:i' ) )
+			$documento->is_sin_marca_de_agua() ? '' : sprintf( 'VISTA PREVIA - %s - %s', $usuario->user_login, wp_date( 'd/m/Y H:i' ) )
 		);
 		exit;
 	}

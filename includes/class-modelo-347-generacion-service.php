@@ -114,9 +114,12 @@ class Modelo_347_Generacion_Service {
 	 * coincide, guarda la simulacion recalculada (para ensenarla) y devuelve
 	 * ERROR_CAMBIADO con el id nuevo en los datos del error.
 	 *
+	 * $sin_marca (#321): todas las cartas de esta generacion nacen sin marca
+	 * de agua; se guarda en el trabajo y no se vuelve a leer de la peticion.
+	 *
 	 * @return array{job_id: string, total: int}|\WP_Error
 	 */
-	public function confirmar( int $usuario_id, string $sim_id, string $huella ) {
+	public function confirmar( int $usuario_id, string $sim_id, string $huella, bool $sin_marca = false ) {
 		$sim = self::consumir_simulacion( $usuario_id, $sim_id );
 
 		if ( ! $sim ) {
@@ -155,6 +158,7 @@ class Modelo_347_Generacion_Service {
 				'creadas'    => 0,
 				'omitidas'   => 0,
 				'errores'    => array(),
+				'sin_marca'  => $sin_marca,
 			),
 			self::TTL_JOB
 		);
@@ -182,7 +186,7 @@ class Modelo_347_Generacion_Service {
 			return new \WP_Error( 'mdf_ca_347_trabajo_caducado', 'El trabajo de generación ha caducado o ya terminó. Si faltan cartas, vuelve a subir el Excel: solo se generan las que no existan.' );
 		}
 
-		$servicio = new Documento_Service();
+		$servicio = ( new Documento_Service() )->sin_marca_de_agua( ! empty( $job['sin_marca'] ) );
 		$tanda    = array_slice( $job['filas'], $job['cursor'], self::POR_TANDA );
 
 		foreach ( $tanda as $fila ) {

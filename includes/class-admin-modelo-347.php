@@ -213,7 +213,9 @@ class Admin_Modelo_347 {
 		$resultado = ( new Modelo_347_Generacion_Service() )->confirmar(
 			get_current_user_id(),
 			sanitize_key( wp_unslash( $_POST['sim'] ?? '' ) ),
-			sanitize_key( wp_unslash( $_POST['huella'] ?? '' ) )
+			sanitize_key( wp_unslash( $_POST['huella'] ?? '' ) ),
+			// Casilla "Mostrar sin marca de agua" (#321), para toda la generacion.
+			! empty( $_POST['sin_marca'] )
 		);
 
 		if ( is_wp_error( $resultado ) ) {

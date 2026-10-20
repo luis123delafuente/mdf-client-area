@@ -30,6 +30,9 @@ class Admin_Documentos {
 	 */
 	public const CAPACIDAD = Roles::CAP_GESTIONAR_DOCUMENTOS;
 
+	/** Poner o quitar la marca de agua (#321): admin-post con nonce por documento. */
+	public const ACCION_MARCA = 'mdf_ca_cambiar_marca';
+
 	/** Eliminar un documento no publicado (v0.28.0): admin-post con nonce por documento. */
 	private const ACCION_ELIMINAR = 'mdf_ca_eliminar_documento';
 
@@ -44,6 +47,7 @@ class Admin_Documentos {
 		add_action( 'admin_post_mdf_ca_subir_documento', array( __CLASS__, 'gestionar_subir' ) );
 		add_action( 'admin_post_mdf_ca_retirar_modelo_347', array( __CLASS__, 'gestionar_retirar_modelo_347' ) );
 		add_action( 'admin_post_' . self::ACCION_ELIMINAR, array( __CLASS__, 'gestionar_eliminar' ) );
+		add_action( 'admin_post_' . self::ACCION_MARCA, array( __CLASS__, 'gestionar_cambiar_marca' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'encolar_assets' ) );
 	}
 
@@ -160,7 +164,10 @@ class Admin_Documentos {
 		$emisor_cif = isset( $_POST['emisor_cif'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['emisor_cif'] ) ) ) : '';
 		$emisor_cif = '' === $emisor_cif ? null : $emisor_cif;
 
-		$resultado = ( new Documento_Service() )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, true, $fecha_documento, $ejercicio, $emisor_cif );
+		// Checkbox "Mostrar sin marca de agua" (#321): sin marcar, con marca.
+		$sin_marca = ! empty( $_POST['sin_marca'] );
+
+		$resultado = ( new Documento_Service() )->sin_marca_de_agua( $sin_marca )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, true, $fecha_documento, $ejercicio, $emisor_cif );
 
 		if ( is_wp_error( $resultado ) ) {
 			self::guardar_aviso( 'error', $resultado->get_error_message() );
@@ -277,6 +284,47 @@ class Admin_Documentos {
 		}
 
 		wp_safe_redirect( self::url_volver( $volver ) );
+		exit;
+	}
+
+	/**
+	 * Poner o quitar la marca de agua de un documento (#321), desde Documentos
+	 * MDF o Pendientes de publicar. Capacidad de documentos y nonce por
+	 * documento; vuelve a la misma pantalla (con sus filtros) con su aviso.
+	 */
+	public static function gestionar_cambiar_marca(): void {
+		if ( ! current_user_can( self::CAPACIDAD ) ) {
+			wp_die( 'No tienes permiso para realizar esta accion.', '', array( 'response' => 403 ) );
+		}
+
+		$id        = isset( $_POST['documento_id'] ) ? (int) $_POST['documento_id'] : 0;
+		$sin_marca = isset( $_POST['sin_marca'] ) && '1' === $_POST['sin_marca'];
+		$volver    = self::volver( isset( $_POST['volver'] ) ? sanitize_key( wp_unslash( $_POST['volver'] ) ) : '' );
+
+		check_admin_referer( self::ACCION_MARCA . '_' . $id );
+
+		$resultado = ( new Documento_Marca_Service() )->cambiar( $id, $sin_marca, get_current_user_id() );
+
+		if ( is_wp_error( $resultado ) ) {
+			$tipo    = 'error';
+			$mensaje = $resultado->get_error_message();
+		} elseif ( ! $resultado['cambiado'] ) {
+			$tipo    = 'warning';
+			$mensaje = sprintf( '«%s» ya estaba %s marca de agua: no se ha cambiado nada.', $resultado['nombre'], $sin_marca ? 'sin' : 'con' );
+		} else {
+			$tipo    = 'success';
+			$mensaje = $sin_marca
+				? sprintf( 'Marca de agua quitada de «%s»: la farmacia lo verá sin marca.', $resultado['nombre'] )
+				: sprintf( 'Marca de agua puesta en «%s»: la farmacia lo verá con su CIF y nombre.', $resultado['nombre'] );
+		}
+
+		if ( self::VOLVER_PENDIENTES === $volver ) {
+			Admin_Publicacion_Documentos::avisar( $tipo, $mensaje );
+		} else {
+			self::guardar_aviso( $tipo, $mensaje );
+		}
+
+		wp_safe_redirect( wp_get_referer() ?: self::url_volver( $volver ) );
 		exit;
 	}
 

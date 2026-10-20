@@ -212,7 +212,8 @@ class Documento_Repository {
 		bool $publicado = true,
 		?string $fecha_documento = null,
 		?array $factura = null,
-		?array $modelo_347 = null
+		?array $modelo_347 = null,
+		bool $sin_marca = false
 	): ?Documento {
 		global $wpdb;
 
@@ -242,6 +243,9 @@ class Documento_Repository {
 
 		$data['descargable'] = $descargable ? 1 : 0;
 		$format[]            = '%d';
+
+		$data['sin_marca'] = $sin_marca ? 1 : 0;
+		$format[]          = '%d';
 
 		// Subida que no debe generar aviso (p. ej. ingesta del historico):
 		// nace ya marcada, y Aviso_Documentos_Service nunca la ve.
@@ -565,6 +569,22 @@ class Documento_Repository {
 			// tipo"): en SQL "NULL <> 'modelo_347'" no es verdadero, y sin el
 			// IS NULL el DELETE no borraba nada (v0.32.1).
 			$wpdb->prepare( "DELETE FROM {$table} WHERE id = %d AND publicado = 0 AND ( tipo_documento IS NULL OR tipo_documento <> %s )", $id, 'modelo_347' )
+		);
+	}
+
+	/**
+	 * Pone o quita la marca de agua (#321). Solo cambia si el valor es otro:
+	 * devuelve las filas cambiadas (0 si ya estaba asi) o false si falla.
+	 *
+	 * @return int|false
+	 */
+	public function cambiar_marca( int $id, bool $sin_marca ) {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return $wpdb->query(
+			$wpdb->prepare( "UPDATE {$table} SET sin_marca = %d WHERE id = %d AND sin_marca <> %d", $sin_marca ? 1 : 0, $id, $sin_marca ? 1 : 0 )
 		);
 	}
 

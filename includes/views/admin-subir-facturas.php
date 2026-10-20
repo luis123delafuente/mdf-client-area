@@ -58,6 +58,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<div id="mdf-ca-subir-facturas-preparado" hidden>
 			<p id="mdf-ca-subir-facturas-encontradas" class="mdf-ca-subir-facturas__encontradas"></p>
 			<p>
+				<label for="mdf-ca-subir-facturas-sin-marca">
+					<input type="checkbox" id="mdf-ca-subir-facturas-sin-marca" value="1" />
+					Mostrar sin marca de agua (toda esta subida)
+				</label>
+				<br><span class="description">Por defecto la farmacia ve sus facturas con su CIF y nombre de marca de agua. Se puede cambiar después, factura a factura, en «Pendientes de publicar» o en Documentos MDF. Las que vayan a la bandeja se deciden al asignarlas.</span>
+			</p>
+			<p>
 				<button type="button" class="button button-primary" id="mdf-ca-subir-facturas-subir">Subir</button>
 			</p>
 		</div>

@@ -10,7 +10,7 @@
  * @var \MdfClientArea\Farmacia[]                 $farmacias
  * @var \MdfClientArea\Farmacia|null              $farmacia_elegida
  * @var bool                                      $cif_distinto
- * @var array{emisor: string, serie: string, numero: string, fecha: string, es_abono: bool} $previo
+ * @var array{emisor: string, serie: string, numero: string, fecha: string, es_abono: bool, sin_marca: bool} $previo
  *      Lo escrito en el intento anterior, si el servidor lo devolvio con un error.
  * @var string                                    $accion
  */
@@ -118,6 +118,11 @@ $url_bandeja = Admin_Bandeja_Facturas::url();
 							<td><label><input type="checkbox" name="es_abono" value="1" <?php checked( $previo['es_abono'] ); ?> /> Es un abono (importe negativo)</label></td>
 						</tr>
 					<?php endif; ?>
+
+					<tr>
+						<th scope="row">Marca de agua</th>
+						<td><label><input type="checkbox" name="sin_marca" value="1" <?php checked( $previo['sin_marca'] ); ?> /> Mostrar sin marca de agua</label></td>
+					</tr>
 
 					<?php if ( $cif_distinto ) : ?>
 						<tr>

@@ -59,11 +59,12 @@ class Factura_Recepcion_Service {
 	 * @param array<string, mixed>                            $resultado Resultado del lector (sin validar).
 	 * @param string      $origen_alta Origen del evento de alta (subida_facturas o bandeja).
 	 * @param string|null $accion_alta Accion de ese evento (por defecto "recibido").
+	 * @param bool        $sin_marca   El documento nace sin marca de agua (#321).
 	 * @return array{resultado: string, estado: ?string, farmacia_id: ?int, documento: ?Documento, interno: bool}
 	 *         estado: el del cruce (o documento_en_otra_farmacia) en una excepcion.
 	 *         interno: en un rechazo, si el fallo es del servidor.
 	 */
-	public function recibir( array $archivo, array $resultado, string $origen_alta, ?string $accion_alta = null ): array {
+	public function recibir( array $archivo, array $resultado, string $origen_alta, ?string $accion_alta = null, bool $sin_marca = false ): array {
 		$cruce = $this->cruce->cruzar( $resultado );
 
 		if ( Factura_Cruce_Service::ASIGNADA !== $cruce['estado'] ) {
@@ -81,7 +82,8 @@ class Factura_Recepcion_Service {
 			$cruce['fecha'], // revalidada por Factura_Cruce_Service, nunca la declarada
 			$cruce['importe_total_centimos'] < 0,
 			$origen_alta,
-			$accion_alta
+			$accion_alta,
+			$sin_marca
 		);
 	}
 
@@ -99,7 +101,7 @@ class Factura_Recepcion_Service {
 	 * @return array{resultado: string, estado: ?string, farmacia_id: ?int, documento: ?Documento, interno: bool}
 	 *         Con datos que no valen: excepcion formato_inesperado.
 	 */
-	public function asignar_manual( array $archivo, int $farmacia_id, array $datos ): array {
+	public function asignar_manual( array $archivo, int $farmacia_id, array $datos, bool $sin_marca = false ): array {
 		$emisor = Identificador_Fiscal_Validator::normalizar( (string) ( $datos['emisor'] ?? '' ) );
 		$serie  = (string) ( $datos['serie'] ?? '' );
 		$numero = (string) ( $datos['numero'] ?? '' );
@@ -120,7 +122,8 @@ class Factura_Recepcion_Service {
 			$fecha,
 			! empty( $datos['es_abono'] ),
 			Publicacion_Evento_Repository::ORIGEN_BANDEJA,
-			Publicacion_Evento_Repository::ACCION_ASIGNADO_MANUAL
+			Publicacion_Evento_Repository::ACCION_ASIGNADO_MANUAL,
+			$sin_marca
 		);
 	}
 
@@ -140,7 +143,7 @@ class Factura_Recepcion_Service {
 	 *
 	 * @param array{emisor_cif: string, serie: string, numero: string} $factura Ya validada.
 	 */
-	private function guardar( array $archivo, int $farmacia_id, array $factura, string $fecha, bool $es_abono, string $origen_alta, ?string $accion_alta ): array {
+	private function guardar( array $archivo, int $farmacia_id, array $factura, string $fecha, bool $es_abono, string $origen_alta, ?string $accion_alta, bool $sin_marca = false ): array {
 		$hash = hash_file( 'sha256', $archivo['tmp_name'] );
 
 		if ( false === $hash ) {
@@ -153,7 +156,9 @@ class Factura_Recepcion_Service {
 			return $this->duplicado( $existentes, $farmacia_id );
 		}
 
-		$documento = $this->documentos->subir_factura_recibida(
+		// Sin marca de agua (#321) si se pidio en "Subir facturas" o al asignar
+		// desde la bandeja; se fija en cada llamada (la instancia se reutiliza).
+		$documento = $this->documentos->sin_marca_de_agua( $sin_marca )->subir_factura_recibida(
 			$farmacia_id,
 			sprintf( '%s %s %s %s', $es_abono ? 'Abono' : 'Factura', Factura_Emisores::nombre_corto( $factura['emisor_cif'] ), $factura['serie'], $factura['numero'] ),
 			array(

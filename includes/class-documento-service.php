@@ -60,10 +60,25 @@ class Documento_Service {
 	private Farmacia_Repository $farmacia_repository;
 	private Publicacion_Evento_Repository $eventos;
 
+	/** Lo que se de de alta con esta instancia nace sin marca de agua (#321). */
+	private bool $sin_marca = false;
+
 	public function __construct( ?Documento_Repository $repository = null, ?Farmacia_Repository $farmacia_repository = null, ?Publicacion_Evento_Repository $eventos = null ) {
 		$this->repository          = $repository ?? new Documento_Repository();
 		$this->farmacia_repository = $farmacia_repository ?? new Farmacia_Repository();
 		$this->eventos             = $eventos ?? new Publicacion_Evento_Repository();
+	}
+
+	/**
+	 * Sin marca de agua (#321) para lo que se de de alta a continuacion con
+	 * esta instancia (subida manual, factura recibida o carta del 347). El
+	 * alta deja, en su misma transaccion, el evento "marca_quitada". Por
+	 * defecto, con marca.
+	 */
+	public function sin_marca_de_agua( bool $sin_marca ): self {
+		$this->sin_marca = $sin_marca;
+
+		return $this;
 	}
 
 	/**
@@ -435,8 +450,9 @@ class Documento_Service {
 		// misma transaccion que el INSERT (#318): hace falta InnoDB. Se
 		// comprueba antes de tocar el disco. Con $origen_alta ("Subir
 		// facturas", #334, y la bandeja, #335) deja siempre uno, "recibido"
-		// (o "asignado_manual") porque nace pendiente.
-		$con_evento = $publicar || null !== $origen_alta;
+		// (o "asignado_manual") porque nace pendiente. Si nace sin marca de agua
+		// (#321), tambien: el evento "marca_quitada" va en la misma transaccion.
+		$con_evento = $publicar || null !== $origen_alta || $this->sin_marca;
 
 		if ( $con_evento
 			&& ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() )
@@ -483,7 +499,8 @@ class Documento_Service {
 				$publicar,
 				$fecha_documento,
 				$factura,
-				$modelo_347
+				$modelo_347,
+				$this->sin_marca
 			);
 		} finally {
 			if ( $silenciar ) {
@@ -512,13 +529,28 @@ class Documento_Service {
 		if ( $con_evento ) {
 			// Quien lo da de alta: el administrador (subida de backoffice) o
 			// quien usa "Subir facturas" o la bandeja.
-			$origen = $origen_alta ?? Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE;
-			$evento = $this->eventos->insertar_para(
-				array( $documento->get_id() => null ),
-				$publicar ? Publicacion_Evento_Repository::ACCION_PUBLICADO : ( $accion_alta ?? Publicacion_Evento_Repository::ACCION_RECIBIDO ),
-				$origen,
-				get_current_user_id()
-			);
+			// Una carta del 347 generada nace pendiente y sin evento de alta; si
+			// nace sin marca, su evento lleva el origen del generador.
+			$origen = $origen_alta ?? ( null !== $modelo_347 && ! $publicar ? Publicacion_Evento_Repository::ORIGEN_MODELO_347 : Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE );
+			$evento = 0;
+
+			if ( $publicar || null !== $origen_alta ) {
+				$evento = $this->eventos->insertar_para(
+					array( $documento->get_id() => null ),
+					$publicar ? Publicacion_Evento_Repository::ACCION_PUBLICADO : ( $accion_alta ?? Publicacion_Evento_Repository::ACCION_RECIBIDO ),
+					$origen,
+					get_current_user_id()
+				);
+			}
+
+			if ( false !== $evento && $this->sin_marca ) {
+				$evento = $this->eventos->insertar_para(
+					array( $documento->get_id() => null ),
+					Publicacion_Evento_Repository::ACCION_MARCA_QUITADA,
+					$origen,
+					get_current_user_id()
+				);
+			}
 
 			if ( false === $evento ) {
 				$wpdb->query( 'ROLLBACK' );

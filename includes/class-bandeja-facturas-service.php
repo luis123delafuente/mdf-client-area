@@ -191,7 +191,8 @@ class Bandeja_Facturas_Service {
 	 * $formulario. Si el CIF leido no es el de la farmacia, hace falta
 	 * $confirmar_cif.
 	 *
-	 * @param array{emisor?: string, serie?: string, numero?: string, fecha?: string, es_abono?: bool} $formulario
+	 * @param array{emisor?: string, serie?: string, numero?: string, fecha?: string, es_abono?: bool, sin_marca?: bool} $formulario
+	 *        sin_marca: el documento nace sin marca de agua (#321).
 	 * @return array{documento: Documento, ya_existia: bool}|\WP_Error
 	 */
 	public function asignar( int $id, int $farmacia_id, array $formulario, bool $confirmar_cif, int $usuario_id ) {
@@ -222,7 +223,7 @@ class Bandeja_Facturas_Service {
 			return new \WP_Error( 'mdf_ca_bandeja_sin_fichero', 'El fichero de esta factura ya no está en el servidor. Descártala y vuelve a subirla.' );
 		}
 
-		$recepcion = ( new Factura_Recepcion_Service() )->asignar_manual( self::archivo_en_disco( $ruta ), $farmacia->get_id(), $datos );
+		$recepcion = ( new Factura_Recepcion_Service() )->asignar_manual( self::archivo_en_disco( $ruta ), $farmacia->get_id(), $datos, ! empty( $formulario['sin_marca'] ) );
 
 		if ( Factura_Recepcion_Service::ACEPTADO === $recepcion['resultado'] ) {
 			$this->sacar( $fila, $ruta, Bandeja_Facturas_Repository::EVENTO_ASIGNADA, $usuario_id, $recepcion['documento']->get_id() );

@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       MDF Client Area
  * Description:       Logica de negocio del Area de Clientes de Mediformplus SL (permisos, documentos, catalogo). Elementor solo maqueta, este plugin decide.
- * Version:           0.33.0
+ * Version:           0.34.0
  * Requires at least: 6.4
  * Requires PHP:      8.4
  * Author:            Mediformplus SL
@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.33.0' );
-define( 'MDF_CA_DB_VERSION', '1.19.0' );
+define( 'MDF_CA_VERSION', '0.34.0' );
+define( 'MDF_CA_DB_VERSION', '1.20.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MDF_CA_PLUGIN_BASENAME', plugin_basename( __FILE__ ) );

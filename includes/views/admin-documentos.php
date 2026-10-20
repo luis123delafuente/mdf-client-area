@@ -167,9 +167,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 								Permitir que la farmacia descargue el fichero
 							</label>
 							<p class="description">
-								Solo aplica a Excel. El cliente siempre lo ve en el visor, con marca
-								de agua. Con la casilla marcada aparece ademas un boton "Descargar";
-								sin marcar (por defecto), no hay forma de descargarlo.
+								Solo aplica a Excel. El cliente siempre lo ve en el visor. Con la casilla
+								marcada aparece ademas un boton "Descargar"; sin marcar (por defecto),
+								no hay forma de descargarlo.
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Marca de agua</th>
+						<td>
+							<label for="mdf-ca-documento-sin-marca">
+								<input type="checkbox" id="mdf-ca-documento-sin-marca" name="sin_marca" value="1" />
+								Mostrar sin marca de agua
+							</label>
+							<p class="description">
+								Por defecto el visor pinta el CIF y el nombre de la farmacia sobre el documento. Se puede
+								cambiar después desde esta lista o desde «Pendientes de publicar».
 							</p>
 						</td>
 					</tr>
@@ -196,6 +209,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<th>Fecha documento</th>
 					<th>Subido</th>
 					<th>Modelo 347</th>
+					<th>Marca de agua</th>
 					<th>Acciones</th>
 				</tr>
 			</thead>
@@ -239,6 +253,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 							<?php else : ?>
 								-
 							<?php endif; ?>
+						</td>
+						<td>
+							<?php
+							$volver = 'documentos';
+							require MDF_CA_PLUGIN_DIR . 'includes/views/parcial-marca-agua.php';
+							?>
 						</td>
 						<td>
 							<?php if ( Admin_Documentos::se_puede_eliminar( $documento ) ) : ?>

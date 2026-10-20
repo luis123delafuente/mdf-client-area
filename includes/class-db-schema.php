@@ -270,6 +270,9 @@ class DB_Schema {
 		// notificados los documentos ya existentes vive en
 		// Activator::maybe_upgrade(), con su propia option. El indice
 		// cubre la consulta de pendientes agrupados por farmacia.
+		// sin_marca (#321, esquema 1.20.0): 1 = el visor (de la farmacia y la
+		// vista previa del administrador) no pinta la marca de agua. DEFAULT 0:
+		// todo lo existente y todo lo nuevo la lleva salvo que se quite a mano.
 		$documentos_sql = "CREATE TABLE {$documentos_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			farmacia_id BIGINT UNSIGNED NOT NULL,
@@ -279,6 +282,7 @@ class DB_Schema {
 			tipo_mime VARCHAR(100) NULL,
 			tamano_bytes BIGINT UNSIGNED NULL,
 			descargable TINYINT(1) NOT NULL DEFAULT 0,
+			sin_marca TINYINT(1) NOT NULL DEFAULT 0,
 			fecha_subida DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			notificado_en DATETIME NULL,
 			hash_sha256 CHAR(64) NULL,

@@ -35,6 +35,7 @@ class Documento {
 	private ?int $ejercicio;
 	private bool $vigente;
 	private bool $retirado;
+	private bool $sin_marca;
 
 	public function __construct(
 		int $id,
@@ -51,7 +52,8 @@ class Documento {
 		?string $emisor_cif = null,
 		?int $ejercicio = null,
 		bool $vigente = false,
-		bool $retirado = false
+		bool $retirado = false,
+		bool $sin_marca = false
 	) {
 		$this->id             = $id;
 		$this->farmacia_id    = $farmacia_id;
@@ -68,6 +70,7 @@ class Documento {
 		$this->ejercicio       = $ejercicio;
 		$this->vigente         = $vigente;
 		$this->retirado        = $retirado;
+		$this->sin_marca       = $sin_marca;
 	}
 
 	public static function from_db_row( object $row ): self {
@@ -87,8 +90,18 @@ class Documento {
 			! empty( $row->emisor_cif ) ? (string) $row->emisor_cif : null,
 			isset( $row->ejercicio ) && null !== $row->ejercicio ? (int) $row->ejercicio : null,
 			! empty( $row->vigente ),
-			! empty( $row->retirado_en )
+			! empty( $row->retirado_en ),
+			// Sin la columna (fila anterior a #321) lleva marca.
+			! empty( $row->sin_marca )
 		);
+	}
+
+	/**
+	 * Sin marca de agua (#321): el visor no la pinta. Lo decide siempre este
+	 * valor guardado, nunca un parametro de la peticion.
+	 */
+	public function is_sin_marca_de_agua(): bool {
+		return $this->sin_marca;
 	}
 
 	public function get_id(): int {

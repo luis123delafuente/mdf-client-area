@@ -105,10 +105,12 @@ class Documento_Visor {
 		nocache_headers();
 
 		$endpoint_url = home_url( 'mdf-ca-documento/' . $documento_id . '/' );
-		$marca_agua   = self::get_marca_agua_texto();
 		// Boton de descarga solo si Permissions lo permite (hoy: Excel marcado
 		// como descargable). La decision no se repite aqui, se pregunta.
 		$documento       = ( new Documento_Repository() )->find_by_id( $documento_id );
+		// Sin marca de agua (#321) solo si el documento lo tiene guardado asi;
+		// ningun parametro de la peticion lo decide.
+		$marca_agua      = $documento && $documento->is_sin_marca_de_agua() ? '' : self::get_marca_agua_texto();
 		$usuario         = wp_get_current_user();
 		$puede_descargar = Permissions::puede_descargar_documento( $usuario, $documento );
 
