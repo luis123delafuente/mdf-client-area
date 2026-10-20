@@ -7,8 +7,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Primera pantalla propia de backoffice del plugin: CRUD de planes para el
- * administrador de WordPress. Capacidad Roles::CAP_ADMINISTRAR (manage_options; ni
- * el gestor, #337, ni mdf_cliente la tienen), que mdf_cliente
+ * backoffice. Capacidad Roles::CAP_GESTIONAR_CATALOGO ("Catalogo y planes":
+ * el rol Gestion MDF y el administrador), que mdf_cliente
  * nunca tiene (Roles::register() lo da de alta sin capacidades) -- doble
  * barrera junto con Role_Restrictions::bloquear_acceso_admin(), que ya
  * saca a mdf_cliente de todo wp-admin antes de llegar aqui.
@@ -26,7 +26,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Admin_Planes {
 
-	private const MENU_SLUG    = 'mdf-ca-planes';
+	public const MENU_SLUG     = 'mdf-ca-planes';
 	private const NONCE_ACTION = 'mdf_ca_guardar_plan';
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_planes_notice_';
 
@@ -40,7 +40,7 @@ class Admin_Planes {
 		add_menu_page(
 			'Planes MDF',
 			'Planes MDF',
-			Roles::CAP_ADMINISTRAR,
+			Roles::CAP_GESTIONAR_CATALOGO,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' ),
 			'dashicons-tag',
@@ -49,7 +49,7 @@ class Admin_Planes {
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
+		if ( ! current_user_can( Roles::CAP_GESTIONAR_CATALOGO ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -69,7 +69,7 @@ class Admin_Planes {
 	}
 
 	public static function gestionar_guardar(): void {
-		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
+		if ( ! current_user_can( Roles::CAP_GESTIONAR_CATALOGO ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
@@ -91,7 +91,7 @@ class Admin_Planes {
 	}
 
 	public static function gestionar_eliminar(): void {
-		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
+		if ( ! current_user_can( Roles::CAP_GESTIONAR_CATALOGO ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

@@ -36,6 +36,8 @@ class Admin_Inicio {
 		Admin_Documentos::MENU_SLUG,
 		Admin_Farmacias::MENU_SLUG,
 		Admin_Invitaciones::MENU_SLUG,
+		Admin_Planes::MENU_SLUG,
+		Admin_Catalogo::MENU_SLUG,
 		'profile.php',
 	);
 

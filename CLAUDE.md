@@ -72,7 +72,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Nombre en disco generado (`{farmacia_id}-{16 bytes hex}.{ext}`), nunca el original; el nombre visible vive solo en `wp_mdf_ca_documentos.nombre`
 - Tipos permitidos: PDF, JPG/JPEG, PNG, WEBP y XLSX, validados con `wp_check_filetype_and_ext()` (contenido real, no extensión). Tamaño máximo 20 MB. Se excluyen SVG y los formatos Office con macros
 - Tipo/etiqueta de documento (`Documento_Tipos`: contrato, factura, presupuesto, entregable, otro) es una lista fija en código, no una entidad de datos
-- Admin de Documentos y de Planes: menú propio, capacidad + `admin-post.php` con nonce (aquí sí interesa el gate de capacidad de `admin-post.php`). Desde la #337, Documentos usa `Admin_Documentos::CAPACIDAD` (`mdf_ca_gestionar_documentos`) y Planes sigue siendo solo del administrador (`Roles::CAP_ADMINISTRAR`)
+- Admin de Documentos y de Planes: menú propio, capacidad + `admin-post.php` con nonce (aquí sí interesa el gate de capacidad de `admin-post.php`). Desde la #337, Documentos usa `Admin_Documentos::CAPACIDAD` (`mdf_ca_gestionar_documentos`) y Planes y Catálogo, desde la v0.32.0, `Roles::CAP_GESTIONAR_CATALOGO` (`mdf_ca_gestionar_catalogo`)
 - Caso límite documentado: no existe borrado de farmacias; si se añade, la pantalla de documentos ya muestra "Farmacia ya no existe (ID N)"
 
 **Excel (.xlsx)**
@@ -339,13 +339,14 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - `CAP_GESTIONAR_DOCUMENTOS` (`mdf_ca_gestionar_documentos`, = `Admin_Documentos::CAPACIDAD`): Documentos MDF y subida manual, Subir facturas, Bandeja, Pendientes (publicar, despublicar, publicar todos, deshacer lote), Eliminar, Documentos publicados e historial, y la vista previa (`Permissions::puede_previsualizar_documento()`);
   - `CAP_GESTIONAR_347` (`mdf_ca_gestionar_347`): el Modelo 347 completo, ajustes incluidos. «Retirar para corrección» exige esta y la de documentos;
   - `CAP_GESTIONAR_FARMACIAS` (`mdf_ca_gestionar_farmacias`, = `Admin_Farmacias::CAPACIDAD`): Farmacias MDF (listado y alta), importador CSV e invitaciones;
-  - `CAP_ADMINISTRAR` (= `manage_options`): lo que sigue siendo solo del administrador: Planes, Catálogo, Avisos por email (interruptor de todo el sitio), avisos de protección de la carpeta y de requisitos del servidor, y el aviso del robot retirado.
-- Rol `mdf_gestor`: `read` + las cuatro primeras, nada más (ni `upload_files`, `edit_posts`, `list_users`, `create_users` ni `promote_users`). El administrador recibe las cuatro y no pierde nada. Migración `mdf_ca_rol_gestor_v1` (`Roles::registrar_gestor()`, idempotente con `remove_role` + `add_role`, y `conceder_capacidades_administrador()`); solo la API de roles, igual en MySQL y MariaDB. `uninstall.php` quita el rol y las capacidades `mdf_ca_*` del administrador
+  - `CAP_GESTIONAR_CATALOGO` (`mdf_ca_gestionar_catalogo`, «Catálogo y planes», desde la v0.32.0): Planes MDF y Catálogo MDF (crear, editar y borrar planes y elementos, y asignar planes a los elementos). Lo que ve cada farmacia lo sigue decidiendo `Permissions::puede_ver_item_catalogo()` / `puede_ver_bloque_por_plan()` con el plan de la farmacia;
+  - `CAP_ADMINISTRAR` (= `manage_options`): lo que sigue siendo solo del administrador: Avisos por email (interruptor de todo el sitio), avisos de protección de la carpeta y de requisitos del servidor, y el aviso del robot retirado.
+- Rol `mdf_gestor`: `read` + las cinco primeras (`Roles::CAPACIDADES_PLUGIN`), nada más (ni `upload_files`, `edit_posts`, `list_users`, `create_users` ni `promote_users`). El administrador recibe las cinco y no pierde nada. Migración `mdf_ca_rol_gestor_v1` (`Roles::registrar_gestor()`, idempotente con `remove_role` + `add_role`, y `conceder_capacidades_administrador()`); solo la API de roles, igual en MySQL y MariaDB. `uninstall.php` quita el rol y las capacidades `mdf_ca_*` del administrador
 - Las invitaciones siguen creando siempre `mdf_cliente` (fijo en `Invitacion_Service`; ningún campo de la petición llega a `wp_insert_user()`). Nuevo: reinvitar una farmacia cuyo usuario vinculado no es `mdf_cliente` se rechaza sin generar clave (`mdf_ca_invitacion_usuario_no_cliente`), para que el gestor nunca dispare el restablecimiento de contraseña de una cuenta de personal
 - `Admin_Inicio`:
   - «Inicio» (`admin.php?page=mdf-ca-inicio`): tarjetas de Subir facturas, Bandeja (N), Pendientes de publicar (N), Modelo 347, Alta de farmacia e Invitaciones, solo las que el usuario puede usar. El administrador también la tiene, junto a los menús del plugin;
-  - vista simplificada (`Admin_Inicio::vista_simplificada()`: `CAP_BACKOFFICE` sin `CAP_ADMINISTRAR`): tras el login va a Inicio si no pidió una página concreta (`login_redirect`) y el Escritorio redirige a Inicio (`load-index.php`); el menú lateral es una lista blanca (Inicio, Documentos MDF, Farmacias MDF, Invitaciones MDF y Perfil), también frente a menús de otros plugins; la barra superior pierde logo, «Añadir», comentarios, edición, actualizaciones, buscador y paleta de comandos;
-  - todo esto es presentación: lo que deniega es la capacidad. WordPress da 403 «no tienes permisos» en cualquier otra pantalla (500 en `user-edit.php` y las acciones de administrador, que es el `wp_die()` por defecto; «No se ha podido cargar» en Planes y Catálogo, cuyo menú no se registra sin la capacidad).
+  - vista simplificada (`Admin_Inicio::vista_simplificada()`: `CAP_BACKOFFICE` sin `CAP_ADMINISTRAR`): tras el login va a Inicio si no pidió una página concreta (`login_redirect`) y el Escritorio redirige a Inicio (`load-index.php`); el menú lateral es una lista blanca (Inicio, Documentos MDF, Farmacias MDF, Invitaciones MDF, Planes MDF, Catálogo MDF y Perfil), también frente a menús de otros plugins; la barra superior pierde logo, «Añadir», comentarios, edición, actualizaciones, buscador y paleta de comandos;
+  - todo esto es presentación: lo que deniega es la capacidad. WordPress da 403 «no tienes permisos» en cualquier otra pantalla (500 en `user-edit.php` y las acciones de administrador, que es el `wp_die()` por defecto; «No se ha podido cargar» en una pantalla del plugin cuyo menú no se registra sin la capacidad).
 - `Role_Restrictions` no cambia: solo saca de wp-admin a `mdf_cliente`
 - Comprobado en local con un gestor y un cliente de prueba (borrados al terminar):
   - el gestor sube facturas, asigna desde la bandeja, publica, despublica, publica todos y deshace el lote, elimina, sube a mano, ve la vista previa y el historial, simula y genera un 347 y guarda sus ajustes, da de alta una farmacia, simula el importador e invita (correo en Mailpit), con el mismo resultado que el administrador y los eventos a su nombre;
@@ -353,6 +354,13 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - el cliente sigue fuera de wp-admin, su Documentación y su visor funcionan y el acceso cruzado da el mismo 404 que un id inexistente;
   - el administrador ve lo mismo que antes más «Inicio» (Chrome) y la regresión de todas las pantallas no da errores;
   - la migración repetida y la desinstalación (seguida de volver a migrar) dejan los roles como deben.
+
+  **Catálogo y planes para el gestor** (v0.32.0, esquema 1.19.0, marca `mdf_ca_cap_catalogo_v1`: vuelve a registrar el rol con su lista completa y añade la capacidad al administrador; repetida deja los roles idénticos). Antes de dárselo se revisó que el gestor, sin `unfiltered_html`, no puede meter HTML en el área del cliente: el nombre se sanea con `sanitize_text_field` y se escapa al pintar, y el enlace solo admite http/https (un `javascript:` queda vacío). Comprobado en local con un gestor y dos farmacias de prueba (borrados al terminar):
+  - el gestor crea, renombra (el slug no cambia) y borra planes, y no puede borrar uno en uso; crea, edita, reasigna y borra elementos del catálogo; y asigna el plan de cada farmacia con el importador;
+  - con A en un plan y B en otro, cada cliente ve en Herramientas solo los elementos de su plan y los compartidos, y el elemento sin plan no lo ve nadie (el shortcode sigue pasando por `Permissions`);
+  - el cliente sigue fuera (302 a Documentación en las pantallas y en las acciones de guardar y borrar, sin cambios en la BD); sin sesión, 400;
+  - el gestor sigue sin acceso a Avisos por email, la protección de la carpeta y el aviso del robot;
+  - regresión de todas las pantallas del plugin (gestor y administrador) y de las cuatro páginas del área del cliente, sin errores de PHP ni líneas nuevas en `debug.log`.
 
   Elementor no está instalado en local: queda cubierto por la capacidad (su editor exige `edit_posts`) y por la lista blanca del menú. **Falta mirar la vista del gestor en un navegador** (Chrome y Safari): en local solo se comprobó su HTML con curl, porque iniciar su sesión en el navegador exige escribir credenciales.
 
@@ -460,7 +468,7 @@ Pendientes:
 - **#332/#333 Lectura de facturas en PHP:** hecha y probada con sintéticas y con 6 facturas reales: 6 de 6 campo a campo, 0 palabras desviadas (ver «Lectura de facturas en PHP»). Falta:
   - revisar la licencia LGPL-3.0 de smalot con la de PyMuPDF en la Fase 5.
 
-  «Subir facturas» (#334) y la Bandeja de facturas (#335, v0.29.0) , la retirada del robot y de la ruta REST (#336, v0.30.0) y el rol Gestión MDF (#337, v0.31.0) hechos y verificados en local, sin desplegar
+  «Subir facturas» (#334) y la Bandeja de facturas (#335, v0.29.0) , la retirada del robot y de la ruta REST (#336, v0.30.0) y el rol Gestión MDF (#337, v0.31.0, con Catálogo y planes en la v0.32.0) hechos y verificados en local, sin desplegar
 - Sección de Cuota (tarea #254): a la espera del contenido de MKT
 - Avisar a MKT de las clases CSS del listado agrupado
 
@@ -472,7 +480,7 @@ Se ejecuta al final de cada fase. Si algo falla, la fase no está cerrada:
 - Sin sesión: ningún recurso privado accesible. Ni documentos, ni endpoints, ni datos vía API de WordPress.
 - Ningún documento privado alcanzable por enlace directo (carpeta y fichero de `Clientes/private-docs` dan 403 o 404).
 - Los usuarios cliente no pueden entrar a `wp-admin` ni acceder a datos de otros por ninguna vía.
-- El gestor (`mdf_gestor`) no puede escalar privilegios: ni por URL directa, ni por POST manipulado, ni por REST puede gestionar usuarios o roles (tampoco desde su perfil), plugins, temas, ajustes, entradas o páginas, ni abrir Planes, Catálogo o las pantallas técnicas; y las invitaciones solo crean `mdf_cliente`.
+- El gestor (`mdf_gestor`) no puede escalar privilegios: ni por URL directa, ni por POST manipulado, ni por REST puede gestionar usuarios o roles (tampoco desde su perfil), plugins, temas, ajustes, entradas o páginas, ni abrir las pantallas técnicas (Avisos por email, protección de la carpeta, requisitos del servidor); y las invitaciones solo crean `mdf_cliente`.
 - No hay rutas REST propias (`/wp-json/mdf-ca/v1/` da 404 y el índice `/wp-json/` no menciona `mdf-ca`) y las contraseñas de aplicación están desactivadas (una petición con Basic Auth y una contraseña válida se rechaza).
 - Ningún fichero de trabajo del plugin (`.md`, `docs/`, `.htaccess`) se sirve públicamente.
 - Las comprobaciones de permiso pasan por la función centralizada, no por lógica dispersa (revisión de código de solo lectura).

@@ -17,6 +17,7 @@ class Activator {
 		update_option( 'mdf_ca_cap_347_v1', '1' );
 		Roles::conceder_capacidades_administrador();
 		update_option( 'mdf_ca_rol_gestor_v1', '1' );
+		update_option( 'mdf_ca_cap_catalogo_v1', '1' );
 		Area_Privada_Pages::crear_paginas();
 
 		// Proteccion de la carpeta privada (#327): crea lo que falte y hace
@@ -59,6 +60,7 @@ class Activator {
 		'mdf_ca_robot_retirado_v1',
 		'mdf_ca_cap_347_v1',
 		'mdf_ca_rol_gestor_v1',
+		'mdf_ca_cap_catalogo_v1',
 		'mdf_ca_proteccion_carpeta_v1',
 		'mdf_ca_planes_migrados',
 		'mdf_ca_area_privada_paginas_creadas',
@@ -177,6 +179,16 @@ class Activator {
 			Roles::registrar_gestor();
 			Roles::conceder_capacidades_administrador();
 			update_option( 'mdf_ca_rol_gestor_v1', '1' );
+		}
+
+		// Capacidad "Catalogo y planes" (esquema 1.19.0): Planes MDF y Catalogo
+		// MDF dejan de ser solo del administrador. Vuelve a registrar el rol
+		// Gestion MDF con su lista completa de capacidades y la anade al
+		// administrador; repetirlo deja lo mismo.
+		if ( ! get_option( 'mdf_ca_cap_catalogo_v1' ) ) {
+			Roles::registrar_gestor();
+			Roles::conceder_capacidades_administrador();
+			update_option( 'mdf_ca_cap_catalogo_v1', '1' );
 		}
 
 		// Proteccion de la carpeta privada (#327) en las instalaciones ya

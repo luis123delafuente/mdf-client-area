@@ -8,8 +8,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * CRUD de backoffice para items de catalogo (Herramientas y Formacion),
  * incluida la asignacion de planes (#247). Mismo patron que Admin_Planes y
- * Admin_Documentos: menu propio, capacidad Roles::CAP_ADMINISTRAR (solo el
- * administrador; ni el gestor, #337, ni mdf_cliente
+ * Admin_Documentos: menu propio, capacidad Roles::CAP_GESTIONAR_CATALOGO
+ * ("Catalogo y planes": el rol Gestion MDF y el administrador; mdf_cliente
  * nunca la tiene, y Role_Restrictions::bloquear_acceso_admin() ya lo saca
  * de todo wp-admin antes de llegar aqui), admin-post.php con nonce.
  *
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Admin_Catalogo {
 
-	private const MENU_SLUG            = 'mdf-ca-catalogo';
+	public const MENU_SLUG             = 'mdf-ca-catalogo';
 	private const NONCE_ACTION_GUARDAR = 'mdf_ca_guardar_catalogo';
 	private const NOTICE_KEY_PREFIX    = 'mdf_ca_catalogo_notice_';
 
@@ -33,7 +33,7 @@ class Admin_Catalogo {
 		add_menu_page(
 			'Catalogo MDF',
 			'Catalogo MDF',
-			Roles::CAP_ADMINISTRAR,
+			Roles::CAP_GESTIONAR_CATALOGO,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' ),
 			'dashicons-portfolio',
@@ -42,7 +42,7 @@ class Admin_Catalogo {
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
+		if ( ! current_user_can( Roles::CAP_GESTIONAR_CATALOGO ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -66,7 +66,7 @@ class Admin_Catalogo {
 	}
 
 	public static function gestionar_guardar(): void {
-		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
+		if ( ! current_user_can( Roles::CAP_GESTIONAR_CATALOGO ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
@@ -96,7 +96,7 @@ class Admin_Catalogo {
 	}
 
 	public static function gestionar_eliminar(): void {
-		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
+		if ( ! current_user_can( Roles::CAP_GESTIONAR_CATALOGO ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

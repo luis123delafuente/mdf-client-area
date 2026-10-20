@@ -23,7 +23,7 @@ remove_role( 'mdf_gestor' );
 $mdf_ca_administrador = get_role( 'administrator' );
 
 if ( $mdf_ca_administrador ) {
-	foreach ( array( 'mdf_ca_backoffice', 'mdf_ca_gestionar_documentos', 'mdf_ca_gestionar_347', 'mdf_ca_gestionar_farmacias' ) as $mdf_ca_capacidad ) {
+	foreach ( array( 'mdf_ca_backoffice', 'mdf_ca_gestionar_documentos', 'mdf_ca_gestionar_347', 'mdf_ca_gestionar_farmacias', 'mdf_ca_gestionar_catalogo' ) as $mdf_ca_capacidad ) {
 		$mdf_ca_administrador->remove_cap( $mdf_ca_capacidad );
 	}
 }

@@ -44,9 +44,16 @@ class Roles {
 	public const CAP_GESTIONAR_FARMACIAS = 'mdf_ca_gestionar_farmacias';
 
 	/**
-	 * Lo que sigue siendo solo del administrador de WordPress: Planes,
-	 * Catalogo, Avisos por email, proteccion de la carpeta privada,
-	 * requisitos del servidor y el aviso del robot retirado.
+	 * "Catalogo y planes": Planes MDF y Catalogo MDF (crear, editar, borrar y
+	 * asignar planes a los elementos del catalogo). Lo que ve cada farmacia lo
+	 * sigue decidiendo Permissions con el plan de la farmacia.
+	 */
+	public const CAP_GESTIONAR_CATALOGO = 'mdf_ca_gestionar_catalogo';
+
+	/**
+	 * Lo que sigue siendo solo del administrador de WordPress: Avisos por
+	 * email, proteccion de la carpeta privada, requisitos del servidor y el
+	 * aviso del robot retirado.
 	 */
 	public const CAP_ADMINISTRAR = 'manage_options';
 
@@ -56,6 +63,7 @@ class Roles {
 		self::CAP_GESTIONAR_DOCUMENTOS,
 		self::CAP_GESTIONAR_347,
 		self::CAP_GESTIONAR_FARMACIAS,
+		self::CAP_GESTIONAR_CATALOGO,
 	);
 
 	/**
