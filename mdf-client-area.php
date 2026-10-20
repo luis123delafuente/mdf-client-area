@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       MDF Client Area
  * Description:       Logica de negocio del Area de Clientes de Mediformplus SL (permisos, documentos, catalogo). Elementor solo maqueta, este plugin decide.
- * Version:           0.32.1
+ * Version:           0.33.0
  * Requires at least: 6.4
  * Requires PHP:      8.4
  * Author:            Mediformplus SL
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MDF_CA_VERSION', '0.32.1' );
+define( 'MDF_CA_VERSION', '0.33.0' );
 define( 'MDF_CA_DB_VERSION', '1.19.0' );
 define( 'MDF_CA_PLUGIN_FILE', __FILE__ );
 define( 'MDF_CA_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
@@ -56,6 +56,7 @@ register_deactivation_hook( __FILE__, array( 'MdfClientArea\\Deactivator', 'deac
 // esto, y sigue corriendo bien antes de que nada renderice una pagina.
 add_action( 'init', array( 'MdfClientArea\\Activator', 'maybe_upgrade' ), 0 );
 
+add_action( 'plugins_loaded', array( 'MdfClientArea\\Endurecimiento', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Role_Restrictions', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Inicio', 'register_hooks' ) );
 add_action( 'plugins_loaded', array( 'MdfClientArea\\Admin_Farmacias', 'register_hooks' ) );

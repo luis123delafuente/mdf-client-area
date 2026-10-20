@@ -1,3 +1,13 @@
 <FilesMatch "\.(md|lock|sh|yml|yaml|log|docx)$">
   Require all denied
 </FilesMatch>
+
+# #329: ninguna carpeta del plugin lista su contenido. Con mod_rewrite (el que
+# ya usan los enlaces permanentes de WordPress) y no con "Options -Indexes",
+# que exige AllowOverride Options y, si el hosting no lo permite, daria 500 en
+# todos los recursos del plugin. Los ficheros se sirven como siempre.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [F]
+</IfModule>
