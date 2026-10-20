@@ -217,6 +217,15 @@ class Invitacion_Service {
 			if ( ! $usuario ) {
 				return new \WP_Error( 'mdf_ca_invitacion_usuario_no_existe', 'El usuario vinculado a esta farmacia ya no existe.' );
 			}
+
+			// Defensa en profundidad (#337): esta pantalla la usa el rol Gestion
+			// MDF, que no puede gestionar usuarios. Nunca se genera un enlace
+			// para fijar contrasena de una cuenta que no sea de farmacia (p. ej.
+			// una de personal vinculada por error), aunque el correo vaya a su
+			// propio titular.
+			if ( ! Roles::user_is_cliente( $usuario ) ) {
+				return new \WP_Error( 'mdf_ca_invitacion_usuario_no_cliente', 'La cuenta vinculada a esta farmacia no es una cuenta de farmacia. No se ha enviado nada: avisa al administrador.' );
+			}
 		}
 
 		self::$generando_invitacion = true;

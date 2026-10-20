@@ -8,7 +8,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * CRUD de backoffice para items de catalogo (Herramientas y Formacion),
  * incluida la asignacion de planes (#247). Mismo patron que Admin_Planes y
- * Admin_Documentos: menu propio, capacidad 'manage_options' (mdf_cliente
+ * Admin_Documentos: menu propio, capacidad Roles::CAP_ADMINISTRAR (solo el
+ * administrador; ni el gestor, #337, ni mdf_cliente
  * nunca la tiene, y Role_Restrictions::bloquear_acceso_admin() ya lo saca
  * de todo wp-admin antes de llegar aqui), admin-post.php con nonce.
  *
@@ -32,7 +33,7 @@ class Admin_Catalogo {
 		add_menu_page(
 			'Catalogo MDF',
 			'Catalogo MDF',
-			'manage_options',
+			Roles::CAP_ADMINISTRAR,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' ),
 			'dashicons-portfolio',
@@ -41,7 +42,7 @@ class Admin_Catalogo {
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -65,7 +66,7 @@ class Admin_Catalogo {
 	}
 
 	public static function gestionar_guardar(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
@@ -95,7 +96,7 @@ class Admin_Catalogo {
 	}
 
 	public static function gestionar_eliminar(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

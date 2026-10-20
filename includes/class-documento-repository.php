@@ -172,7 +172,7 @@ class Documento_Repository {
 	 * Todos los documentos, mas recientes primero. Usado unicamente por el
 	 * listado de Admin_Documentos (#246): no acota por farmacia -- a
 	 * diferencia de find_by_farmacia_id(), quien la consume es siempre el
-	 * backoffice (capacidad manage_options), nunca una pantalla del front
+	 * backoffice (Admin_Documentos::CAPACIDAD), nunca una pantalla del front
 	 * donde haria falta pasar antes por Permissions.
 	 *
 	 * @return Documento[]

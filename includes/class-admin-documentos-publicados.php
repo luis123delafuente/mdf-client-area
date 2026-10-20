@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * paginado de TODOS los documentos publicados (por farmacia y por nombre) para
  * poder corregir cualquiera, tambien uno antiguo, y el HISTORIAL de
  * publicaciones de un documento. Mismo patron que el resto del backoffice:
- * 'manage_options', admin-post.php con nonce en cada accion, avisos por
+ * Admin_Documentos::CAPACIDAD, admin-post.php con nonce en cada accion, avisos por
  * transient de usuario y salida escapada. mdf_cliente no llega aqui por
  * ninguna via.
  *
@@ -115,7 +115,7 @@ class Admin_Documentos_Publicados {
 		};
 
 		// Historial de un documento (solo lectura).
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- vista de solo lectura detras de manage_options.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- vista de solo lectura detras de Admin_Documentos::CAPACIDAD.
 		$historial_id = isset( $_GET['historial'] ) ? absint( wp_unslash( $_GET['historial'] ) ) : 0;
 
 		if ( $historial_id > 0 ) {
@@ -125,7 +125,7 @@ class Admin_Documentos_Publicados {
 
 		// Buscador: filtros saneados en un solo sitio (Filtro_Listado_Documentos);
 		// la consulta es preparada y paginada en SQL.
-		$filtro      = Filtro_Listado_Documentos::desde( $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- filtros de solo lectura detras de manage_options.
+		$filtro      = Filtro_Listado_Documentos::desde( $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- filtros de solo lectura detras de Admin_Documentos::CAPACIDAD.
 		$farmacia_id = (int) $filtro->farmacia();
 		$q           = $filtro->q;
 		$repositorio = new Documento_Repository();

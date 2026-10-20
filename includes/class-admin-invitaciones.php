@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Pantalla de backoffice para invitar/reinvitar farmacias (#249). Mismo
  * patron que Admin_Planes, Admin_Documentos y Admin_Catalogo: menu propio,
- * capacidad 'manage_options' (mdf_cliente nunca la tiene, y
+ * capacidad Admin_Farmacias::CAPACIDAD (mdf_cliente nunca la tiene, y
  * Role_Restrictions::bloquear_acceso_admin() ya lo saca de todo wp-admin
  * antes de llegar aqui), admin-post.php con nonce.
  *
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Admin_Invitaciones {
 
-	private const MENU_SLUG         = 'mdf-ca-invitaciones';
+	public const MENU_SLUG          = 'mdf-ca-invitaciones';
 	private const NONCE_ACTION      = 'mdf_ca_enviar_invitacion';
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_invitaciones_notice_';
 
@@ -32,7 +32,7 @@ class Admin_Invitaciones {
 		add_menu_page(
 			'Invitaciones MDF',
 			'Invitaciones MDF',
-			'manage_options',
+			Admin_Farmacias::CAPACIDAD,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' ),
 			'dashicons-email-alt',
@@ -41,7 +41,7 @@ class Admin_Invitaciones {
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Farmacias::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -58,7 +58,7 @@ class Admin_Invitaciones {
 	}
 
 	public static function gestionar_enviar(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Farmacias::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

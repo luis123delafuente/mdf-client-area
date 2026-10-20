@@ -7,12 +7,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Aviso de la proteccion de la carpeta privada (#327). Solo en las
- * pantallas del plugin y solo para 'manage_options': nunca en el front-end
+ * pantallas del plugin y solo para Roles::CAP_ADMINISTRAR: nunca en el front-end
  * ni en el resto de wp-admin. El resultado sale de la cache de
  * Carpeta_Privada_Proteccion::comprobar(); si ha caducado, se recalcula
  * aqui (incluida la sonda HTTP, como mucho 5 s cada 1-12 h).
  *
- * "Volver a comprobar": admin-post.php con 'manage_options' + nonce, fuerza
+ * "Volver a comprobar": admin-post.php con Roles::CAP_ADMINISTRAR + nonce, fuerza
  * la comprobacion y vuelve a la pantalla del plugin de la que venia.
  *
  * Los textos solo nombran la ruta relativa (Clientes/private-docs).
@@ -32,7 +32,7 @@ class Admin_Proteccion_Carpeta {
 	}
 
 	public static function mostrar_aviso(): void {
-		if ( ! current_user_can( 'manage_options' ) || ! self::es_pantalla_del_plugin() ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) || ! self::es_pantalla_del_plugin() ) {
 			return;
 		}
 
@@ -55,7 +55,7 @@ class Admin_Proteccion_Carpeta {
 	}
 
 	public static function gestionar_comprobar(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.', '', array( 'response' => 403 ) );
 		}
 

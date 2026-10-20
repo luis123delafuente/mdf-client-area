@@ -85,12 +85,12 @@ class Permissions {
 	 * Vista previa de un documento para un administrador (#304), publicado o
 	 * no, antes de decidir publicarlo. Es el unico camino por el que alguien
 	 * que no es la farmacia titular puede leer un documento de cliente: solo
-	 * manage_options, y solo por las acciones de vista previa del backoffice
+	 * Admin_Documentos::CAPACIDAD (gestor y administrador, #337), y solo por las acciones de vista previa del backoffice
 	 * (con marca de agua, nonce y token de un solo uso), nunca por el visor
 	 * ni el endpoint de las farmacias.
 	 */
 	public static function puede_previsualizar_documento( ?\WP_User $usuario, ?Documento $documento ): bool {
-		return self::usuario_autenticado( $usuario ) && $documento && user_can( $usuario, 'manage_options' );
+		return self::usuario_autenticado( $usuario ) && $documento && user_can( $usuario, Admin_Documentos::CAPACIDAD );
 	}
 
 	/**

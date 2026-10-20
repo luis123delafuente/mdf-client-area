@@ -15,6 +15,8 @@ class Activator {
 		Roles::register();
 		Roles::conceder_gestion_347();
 		update_option( 'mdf_ca_cap_347_v1', '1' );
+		Roles::conceder_capacidades_administrador();
+		update_option( 'mdf_ca_rol_gestor_v1', '1' );
 		Area_Privada_Pages::crear_paginas();
 
 		// Proteccion de la carpeta privada (#327): crea lo que falte y hace
@@ -56,6 +58,7 @@ class Activator {
 		'mdf_ca_avisos_backfill_hecho',
 		'mdf_ca_robot_retirado_v1',
 		'mdf_ca_cap_347_v1',
+		'mdf_ca_rol_gestor_v1',
 		'mdf_ca_proteccion_carpeta_v1',
 		'mdf_ca_planes_migrados',
 		'mdf_ca_area_privada_paginas_creadas',
@@ -164,6 +167,16 @@ class Activator {
 		if ( ! get_option( 'mdf_ca_cap_347_v1' ) ) {
 			Roles::conceder_gestion_347();
 			update_option( 'mdf_ca_cap_347_v1', '1' );
+		}
+
+		// Rol Gestion MDF (#337, esquema 1.18.0): lo da de alta con 'read' y
+		// las capacidades del plugin, y estas se anaden al administrador, que
+		// no pierde nada. Solo la API de roles (option wp_user_roles), igual en
+		// MySQL y MariaDB; repetirlo deja lo mismo.
+		if ( ! get_option( 'mdf_ca_rol_gestor_v1' ) ) {
+			Roles::registrar_gestor();
+			Roles::conceder_capacidades_administrador();
+			update_option( 'mdf_ca_rol_gestor_v1', '1' );
 		}
 
 		// Proteccion de la carpeta privada (#327) en las instalaciones ya

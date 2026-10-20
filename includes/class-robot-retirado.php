@@ -167,7 +167,7 @@ class Robot_Retirado {
 
 	/** Aviso en todo el backoffice, solo para quien puede gestionar usuarios. */
 	public static function avisar_conservados(): void {
-		if ( ! current_user_can( 'manage_options' ) || ! current_user_can( 'delete_users' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) || ! current_user_can( 'delete_users' ) ) {
 			return;
 		}
 
@@ -195,7 +195,7 @@ class Robot_Retirado {
 	}
 
 	public static function gestionar_ocultar(): void {
-		if ( ! current_user_can( 'manage_options' ) || ! current_user_can( 'delete_users' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) || ! current_user_can( 'delete_users' ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

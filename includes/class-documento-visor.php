@@ -129,7 +129,7 @@ class Documento_Visor {
 	 * Vista previa para un administrador (#304): el mismo visor, pero con el
 	 * fichero servido por la accion de vista previa del backoffice, con su
 	 * propio token y marca de agua, y sin boton de descarga. Quien la llama
-	 * (Admin_Publicacion_Documentos) ya ha comprobado manage_options, nonce y
+	 * (Admin_Publicacion_Documentos) ya ha comprobado Admin_Documentos::CAPACIDAD, nonce y
 	 * Permissions::puede_previsualizar_documento().
 	 */
 	public static function renderizar_vista_previa( string $endpoint_url, string $token, string $marca_agua ): void {

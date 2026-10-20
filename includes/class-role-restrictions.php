@@ -25,6 +25,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  * tiene ninguna. admin-post.php si carga wp-admin/admin.php (y por tanto
  * 'init' antes) y queda bloqueado igual que el resto de wp-admin.
  *
+ * El rol Gestion MDF (mdf_gestor, #337) si entra en wp-admin: no se
+ * bloquea aqui. Solo tiene 'read' y las capacidades del plugin, asi que
+ * WordPress le niega cualquier otra pantalla; Admin_Inicio le lleva a la
+ * portada del plugin y le simplifica el menu (solo presentacion).
+ *
  * La proteccion de las cuatro paginas exige solo sesion (no rol
  * mdf_cliente): un administrador de WordPress navegando el sitio no debe
  * quedar atrapado en esta redireccion pensada para visitantes anonimos, y

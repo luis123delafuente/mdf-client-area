@@ -1,0 +1,71 @@
+/* Portada "Inicio" del backoffice (#337). Colores de wp-admin. */
+
+.mdf-ca-inicio__tarjetas {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: 16px;
+	max-width: 1100px;
+	margin: 1.5em 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.mdf-ca-inicio__tarjeta {
+	margin: 0;
+}
+
+.mdf-ca-inicio__enlace {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	height: 100%;
+	box-sizing: border-box;
+	padding: 20px;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	background: #fff;
+	color: #1d2327;
+	text-decoration: none;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.mdf-ca-inicio__enlace:hover {
+	border-color: #2271b1;
+	color: #1d2327;
+}
+
+.mdf-ca-inicio__enlace:focus {
+	border-color: #2271b1;
+	box-shadow: 0 0 0 2px #2271b1;
+	outline: 2px solid transparent;
+}
+
+.mdf-ca-inicio__titulo {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 16px;
+	font-weight: 600;
+	color: #2271b1;
+}
+
+.mdf-ca-inicio__cuenta {
+	display: inline-block;
+	min-width: 1.6em;
+	padding: 0 6px;
+	border-radius: 10px;
+	background: #dcdcde;
+	color: #1d2327;
+	font-size: 12px;
+	line-height: 1.6;
+	text-align: center;
+}
+
+.mdf-ca-inicio__cuenta--aviso {
+	background: #d63638;
+	color: #fff;
+}
+
+.mdf-ca-inicio__texto {
+	color: #50575e;
+}

@@ -10,7 +10,7 @@ Plugin de WordPress que concentra toda la lógica de negocio del Área de Client
 - Ruta del plugin en ambos entornos: `wp-content/plugins/mdf-client-area/`
 - Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script (`wp-content/plugins/deploy-script/deploy.sh`, carpeta hermana del plugin, **sin control de versiones**) excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md`, `*.docx` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
 - Fechas: objetivo de entrega el 12 de octubre de 2026; fecha límite el 8 de noviembre de 2026
-- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347, zona de arrastrar archivos, Subir facturas y menú de perfil) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
+- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347, zona de arrastrar archivos, Subir facturas, Inicio y menú de perfil) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
 - Versión del plugin: consulta las constantes `MDF_CA_VERSION` y `MDF_CA_DB_VERSION` en el código antes de subirlas; no asumas su valor. **`MDF_CA_VERSION` y la línea `Version:` de la cabecera de `mdf-client-area.php` se actualizan siempre juntas, en el mismo cambio, con el mismo valor** (la cabecera es lo que muestra WordPress en Plugins; hasta la 0.24.0 se quedó en 0.1.0)
 
 ## Reglas no negociables
@@ -30,6 +30,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 
 - **Farmacia** es una entidad propia (con CIF o NIF), separada del Usuario de WordPress, aunque hoy la relación sea 1:1
 - Rol de cliente propio (`mdf_cliente`), **sin capacidades de backend**, con redirección forzada al área privada — nunca acceso a `wp-admin`
+- Rol **«Gestión MDF» (`mdf_gestor`, #337)** para el personal de MDF: no es administrador de WordPress. Solo `read` y las capacidades propias del plugin (`Roles::CAP_*`); el administrador tiene además todas. Ver «Rol Gestión MDF y backoffice simplificado»
 - **Planes** como entidad de datos (`wp_mdf_ca_planes`), no hardcodeados; cada farmacia tiene `plan_id`
 - Toda comprobación de permiso pasa por una única función centralizada (`Permissions::puede_ver_documento()`, `puede_descargar_documento()`, `puede_previsualizar_documento()`, `puede_ver_item_catalogo()`, `puede_ver_bloque_por_plan()`), para poder añadir excepciones en el futuro sin refactorizar
 - Dos módulos de contenido separados: catálogo compartido por plan (Herramientas, Formación) vs documentos privados por farmacia, vinculados por CIF/NIF, visibles solo por su titular (no dependen del plan)
@@ -71,7 +72,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Nombre en disco generado (`{farmacia_id}-{16 bytes hex}.{ext}`), nunca el original; el nombre visible vive solo en `wp_mdf_ca_documentos.nombre`
 - Tipos permitidos: PDF, JPG/JPEG, PNG, WEBP y XLSX, validados con `wp_check_filetype_and_ext()` (contenido real, no extensión). Tamaño máximo 20 MB. Se excluyen SVG y los formatos Office con macros
 - Tipo/etiqueta de documento (`Documento_Tipos`: contrato, factura, presupuesto, entregable, otro) es una lista fija en código, no una entidad de datos
-- Admin de Documentos y de Planes: menú propio, `manage_options` + `admin-post.php` con nonce (aquí sí interesa el gate de capacidad de `admin-post.php`)
+- Admin de Documentos y de Planes: menú propio, capacidad + `admin-post.php` con nonce (aquí sí interesa el gate de capacidad de `admin-post.php`). Desde la #337, Documentos usa `Admin_Documentos::CAPACIDAD` (`mdf_ca_gestionar_documentos`) y Planes sigue siendo solo del administrador (`Roles::CAP_ADMINISTRAR`)
 - Caso límite documentado: no existe borrado de farmacias; si se añade, la pantalla de documentos ya muestra "Farmacia ya no existe (ID N)"
 
 **Excel (.xlsx)**
@@ -168,7 +169,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - No hay ruta REST: los 347 se generan en el servidor desde el Excel de SAGE subido en el backoffice (ver «Generador del Modelo 347»). `Permissions`, el endpoint, el visor y la recepción de facturas no cambian
 
 **Generador del Modelo 347** (#307; v0.24.0, esquema 1.14.0). Solo clientes de Mediformplus (B82827635)
-- Pantalla «Documentos MDF › Modelo 347» (`Admin_Modelo_347`) con tres pestañas: Generar cartas, Publicar y enviar, y Ajustes. Capacidad propia `mdf_ca_gestionar_347` (`Roles::conceder_gestion_347()`, solo el rol administrator, en `maybe_upgrade()` con la marca `mdf_ca_cap_347_v1`) en toda acción: pantalla, `admin-post` y AJAX, más un nonce propio por acción (por documento o por envío cuando aplica)
+- Pantalla «Documentos MDF › Modelo 347» (`Admin_Modelo_347`) con tres pestañas: Generar cartas, Publicar y enviar, y Ajustes. Capacidad propia `mdf_ca_gestionar_347` (desde la #337 la tienen el rol Gestión MDF y el administrador; `Roles::conceder_gestion_347()`, en `maybe_upgrade()` con la marca `mdf_ca_cap_347_v1`) en toda acción: pantalla, `admin-post` y AJAX, más un nonce propio por acción (por documento o por envío cuando aplica)
 - Librerías vendorizadas en `lib/` (no en `vendor/`, que `.gitignore` ignora): dompdf 3.1.6 y OpenSpout 5.12.2, que **exige PHP ~8.4**. `lib/.htaccess` deniega todo y la carga es perezosa (`Modelo_347_Librerias`). La LGPL-3.0 de php-svg-lib obliga a distribuir el conjunto como GPLv3 (el plugin es GPL-2.0-or-later). Cómo se reconstruye, en `lib/LEEME.md`
 - Fuentes: Liberation Serif y Sans (OFL, métricamente idénticas a Times New Roman), preinstaladas en `lib/fonts` con `installed-fonts.json` en rutas relativas y las cachés `.ufm.json` generadas
 - Dónde escribe dompdf (revisado en su código):
@@ -261,7 +262,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 
 **Subir facturas** (#334; v0.27.0, esquema 1.15.0). Sustituye al programa de envío del Mac
 - Documentos MDF › Subir facturas (`Admin_Subir_Facturas`):
-  - capacidad: la de Documentos MDF, `Admin_Documentos::CAPACIDAD` (desde la v0.28.0 único sitio para Documentos MDF, Pendientes, Documentos publicados, Subir facturas y Eliminar; la #337 la cambiará);
+  - capacidad: la de Documentos MDF, `Admin_Documentos::CAPACIDAD` (desde la v0.28.0 único sitio para Documentos MDF, Pendientes, Documentos publicados, Subir facturas y Eliminar; desde la #337, `mdf_ca_gestionar_documentos`);
   - un nonce propio para todas las peticiones de la pantalla;
   - solo `wp_ajax_` (sin `nopriv`). Comprobado: sin sesión, 400; un cliente, sin nonce o con el nonce de otra acción, 403.
 - Selección con `Admin_Zona_Archivos` en modo lote:
@@ -332,6 +333,29 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - después: ruta y namespace 404, índice sin `mdf-ca`, Basic Auth con una contraseña válida rechazada, sección del perfil ausente (Chrome);
   - regresión: Subir facturas con bandeja (recomprobar, asignar, descartar), Pendientes, publicación en bloque y deshacer, eliminar, 347, importador (simulación), visor (token, reutilizado, sin sesión), historial con un evento antiguo de origen `recepcion`, accesos de cliente y sin sesión, todas las pantallas sin errores de PHP.
 
+**Rol Gestión MDF y backoffice simplificado** (#337; v0.31.0, esquema 1.18.0). Prepara las cuentas individuales de la Fase 5
+- Capacidades, todas en `Roles` (único sitio; las pantallas usan las constantes, nunca un literal):
+  - `CAP_BACKOFFICE` (`mdf_ca_backoffice`): portada «Inicio» y vista simplificada;
+  - `CAP_GESTIONAR_DOCUMENTOS` (`mdf_ca_gestionar_documentos`, = `Admin_Documentos::CAPACIDAD`): Documentos MDF y subida manual, Subir facturas, Bandeja, Pendientes (publicar, despublicar, publicar todos, deshacer lote), Eliminar, Documentos publicados e historial, y la vista previa (`Permissions::puede_previsualizar_documento()`);
+  - `CAP_GESTIONAR_347` (`mdf_ca_gestionar_347`): el Modelo 347 completo, ajustes incluidos. «Retirar para corrección» exige esta y la de documentos;
+  - `CAP_GESTIONAR_FARMACIAS` (`mdf_ca_gestionar_farmacias`, = `Admin_Farmacias::CAPACIDAD`): Farmacias MDF (listado y alta), importador CSV e invitaciones;
+  - `CAP_ADMINISTRAR` (= `manage_options`): lo que sigue siendo solo del administrador: Planes, Catálogo, Avisos por email (interruptor de todo el sitio), avisos de protección de la carpeta y de requisitos del servidor, y el aviso del robot retirado.
+- Rol `mdf_gestor`: `read` + las cuatro primeras, nada más (ni `upload_files`, `edit_posts`, `list_users`, `create_users` ni `promote_users`). El administrador recibe las cuatro y no pierde nada. Migración `mdf_ca_rol_gestor_v1` (`Roles::registrar_gestor()`, idempotente con `remove_role` + `add_role`, y `conceder_capacidades_administrador()`); solo la API de roles, igual en MySQL y MariaDB. `uninstall.php` quita el rol y las capacidades `mdf_ca_*` del administrador
+- Las invitaciones siguen creando siempre `mdf_cliente` (fijo en `Invitacion_Service`; ningún campo de la petición llega a `wp_insert_user()`). Nuevo: reinvitar una farmacia cuyo usuario vinculado no es `mdf_cliente` se rechaza sin generar clave (`mdf_ca_invitacion_usuario_no_cliente`), para que el gestor nunca dispare el restablecimiento de contraseña de una cuenta de personal
+- `Admin_Inicio`:
+  - «Inicio» (`admin.php?page=mdf-ca-inicio`): tarjetas de Subir facturas, Bandeja (N), Pendientes de publicar (N), Modelo 347, Alta de farmacia e Invitaciones, solo las que el usuario puede usar. El administrador también la tiene, junto a los menús del plugin;
+  - vista simplificada (`Admin_Inicio::vista_simplificada()`: `CAP_BACKOFFICE` sin `CAP_ADMINISTRAR`): tras el login va a Inicio si no pidió una página concreta (`login_redirect`) y el Escritorio redirige a Inicio (`load-index.php`); el menú lateral es una lista blanca (Inicio, Documentos MDF, Farmacias MDF, Invitaciones MDF y Perfil), también frente a menús de otros plugins; la barra superior pierde logo, «Añadir», comentarios, edición, actualizaciones, buscador y paleta de comandos;
+  - todo esto es presentación: lo que deniega es la capacidad. WordPress da 403 «no tienes permisos» en cualquier otra pantalla (500 en `user-edit.php` y las acciones de administrador, que es el `wp_die()` por defecto; «No se ha podido cargar» en Planes y Catálogo, cuyo menú no se registra sin la capacidad).
+- `Role_Restrictions` no cambia: solo saca de wp-admin a `mdf_cliente`
+- Comprobado en local con un gestor y un cliente de prueba (borrados al terminar):
+  - el gestor sube facturas, asigna desde la bandeja, publica, despublica, publica todos y deshace el lote, elimina, sube a mano, ve la vista previa y el historial, simula y genera un 347 y guarda sus ajustes, da de alta una farmacia, simula el importador e invita (correo en Mailpit), con el mismo resultado que el administrador y los eventos a su nombre;
+  - el gestor no puede: plugins, temas, actualizaciones, usuarios (también `context=edit`, crear y editar por REST), ajustes (pantalla, `options.php` y `/wp/v2/settings`), entradas, páginas y medios (pantalla y REST), Planes, Catálogo, Avisos y sus `admin-post`, `install-plugin` por AJAX, darse `administrator` desde `profile.php` o `/wp/v2/users/me` (403 `rest_cannot_edit_roles`), ni invitar con otro rol (`role=administrator` en el POST crea `mdf_cliente`);
+  - el cliente sigue fuera de wp-admin, su Documentación y su visor funcionan y el acceso cruzado da el mismo 404 que un id inexistente;
+  - el administrador ve lo mismo que antes más «Inicio» (Chrome) y la regresión de todas las pantallas no da errores;
+  - la migración repetida y la desinstalación (seguida de volver a migrar) dejan los roles como deben.
+
+  Elementor no está instalado en local: queda cubierto por la capacidad (su editor exige `edit_posts`) y por la lista blanca del menú. **Falta mirar la vista del gestor en un navegador** (Chrome y Safari): en local solo se comprobó su HTML con curl, porque iniciar su sesión en el navegador exige escribir credenciales.
+
 **Arrastrar y soltar archivos en las subidas** (#339; v0.26.0, sin cambio de esquema)
 - Componente reutilizable `Admin_Zona_Archivos`:
   - `encolar()` encola `assets/js/admin-zona-archivos.js` y `assets/css/admin-zona-archivos.css` por `Recursos`;
@@ -398,7 +422,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Rendimiento con sintéticas: de 7 a 30 ms y de 2 a 4 MB por factura; la carta de dompdf, 63 ms y 11 MB
 - **Con las 6 facturas reales de SAGE, sobre el servicio del plugin:** `comparar.py` da 6 de 6 coincidencias campo a campo con Python, de 11 a 27 ms y 2,5 MB como máximo por factura. El diagnóstico de palabras da 0 desviadas
 - Extensiones (`Requisitos_Servidor`, único sitio): lectura de facturas, zlib, mbstring, iconv y ctype; generador del 347, dom, mbstring, iconv, gd, zip, xmlreader, libxml, filter, fileinfo y ctype. Si falta alguna:
-  - `Admin_Requisitos_Servidor` lo avisa en las pantallas del plugin y en Plugins (adonde vuelve WordPress tras activar), solo a `manage_options`;
+  - `Admin_Requisitos_Servidor` lo avisa en las pantallas del plugin y en Plugins (adonde vuelve WordPress tras activar), solo al administrador (`Roles::CAP_ADMINISTRAR`);
   - el 347 (`Modelo_347_Carta::pdf()` y `Modelo_347_Excel_Lector::leer()`) devuelve un `WP_Error` con el mensaje;
   - la lectura devuelve `formato_inesperado` con el mensaje.
 
@@ -436,7 +460,7 @@ Pendientes:
 - **#332/#333 Lectura de facturas en PHP:** hecha y probada con sintéticas y con 6 facturas reales: 6 de 6 campo a campo, 0 palabras desviadas (ver «Lectura de facturas en PHP»). Falta:
   - revisar la licencia LGPL-3.0 de smalot con la de PyMuPDF en la Fase 5.
 
-  «Subir facturas» (#334) y la Bandeja de facturas (#335, v0.29.0) y la retirada del robot y de la ruta REST (#336, v0.30.0) hechas y verificadas en local, sin desplegar; pendiente: una capacidad propia para la pantalla (#337)
+  «Subir facturas» (#334) y la Bandeja de facturas (#335, v0.29.0) , la retirada del robot y de la ruta REST (#336, v0.30.0) y el rol Gestión MDF (#337, v0.31.0) hechos y verificados en local, sin desplegar
 - Sección de Cuota (tarea #254): a la espera del contenido de MKT
 - Avisar a MKT de las clases CSS del listado agrupado
 
@@ -448,6 +472,7 @@ Se ejecuta al final de cada fase. Si algo falla, la fase no está cerrada:
 - Sin sesión: ningún recurso privado accesible. Ni documentos, ni endpoints, ni datos vía API de WordPress.
 - Ningún documento privado alcanzable por enlace directo (carpeta y fichero de `Clientes/private-docs` dan 403 o 404).
 - Los usuarios cliente no pueden entrar a `wp-admin` ni acceder a datos de otros por ninguna vía.
+- El gestor (`mdf_gestor`) no puede escalar privilegios: ni por URL directa, ni por POST manipulado, ni por REST puede gestionar usuarios o roles (tampoco desde su perfil), plugins, temas, ajustes, entradas o páginas, ni abrir Planes, Catálogo o las pantallas técnicas; y las invitaciones solo crean `mdf_cliente`.
 - No hay rutas REST propias (`/wp-json/mdf-ca/v1/` da 404 y el índice `/wp-json/` no menciona `mdf-ca`) y las contraseñas de aplicación están desactivadas (una petición con Basic Auth y una contraseña válida se rechaza).
 - Ningún fichero de trabajo del plugin (`.md`, `docs/`, `.htaccess`) se sirve públicamente.
 - Las comprobaciones de permiso pasan por la función centralizada, no por lógica dispersa (revisión de código de solo lectura).
@@ -462,4 +487,4 @@ Se ejecuta al final de cada fase. Si algo falla, la fase no está cerrada:
 
 ## Fase 5 (siguiente)
 
-Revisión RGPD (tabla de eventos, plazo de borrado de la Bandeja de facturas, copias de excepciones y de backup, plazos de conservación, encargado de tratamiento, política de privacidad, licencia AGPL de PyMuPDF si el parser de Python se sigue usando para pruebas), documentación técnica de traspaso, plan de mantenimiento (Luis y Víctor; copia de archivos manual: quién, cuándo y cuánto se conserva; WP-Cron frente a cron de IONOS; SPF y DKIM), formación a MDF y cuentas individuales de backoffice para cada persona de MDF.
+Revisión RGPD (tabla de eventos, plazo de borrado de la Bandeja de facturas, copias de excepciones y de backup, plazos de conservación, encargado de tratamiento, política de privacidad, licencia AGPL de PyMuPDF si el parser de Python se sigue usando para pruebas), documentación técnica de traspaso, plan de mantenimiento (Luis y Víctor; copia de archivos manual: quién, cuándo y cuánto se conserva; WP-Cron frente a cron de IONOS; SPF y DKIM), formación a MDF y cuentas individuales de backoffice para cada persona de MDF (con el rol Gestión MDF de la #337).

@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Pantalla de backoffice "Importar CSV" (Fase 4), submenu de Farmacias MDF.
  * Mismo patron que Admin_Planes y Admin_Documentos: capacidad
- * 'manage_options' (mdf_cliente nunca la tiene, y Role_Restrictions ya lo
+ * Admin_Farmacias::CAPACIDAD (mdf_cliente nunca la tiene, y Role_Restrictions ya lo
  * saca de todo wp-admin antes de llegar aqui), admin-post.php con nonce en
  * cada accion, avisos por transient de usuario.
  *
@@ -60,14 +60,14 @@ class Admin_Importador_Farmacias {
 			self::PARENT_SLUG,
 			'Importar farmacias desde CSV',
 			'Importar CSV',
-			'manage_options',
+			Admin_Farmacias::CAPACIDAD,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' )
 		);
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Farmacias::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -96,7 +96,7 @@ class Admin_Importador_Farmacias {
 	}
 
 	public static function gestionar_simular(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Farmacias::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
@@ -126,7 +126,7 @@ class Admin_Importador_Farmacias {
 	}
 
 	public static function gestionar_confirmar(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Farmacias::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
@@ -169,7 +169,7 @@ class Admin_Importador_Farmacias {
 	}
 
 	public static function gestionar_cancelar(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Admin_Farmacias::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

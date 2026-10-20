@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * recibido por la recepcion automatica nace pendiente de publicar (mientras
  * la option de aprobacion este activa): es invisible para toda farmacia hasta
  * que un administrador lo publica aqui. Mismo patron que el resto del
- * backoffice: 'manage_options', admin-post.php con nonce en cada accion,
+ * backoffice: Admin_Documentos::CAPACIDAD, admin-post.php con nonce en cada accion,
  * avisos por transient de usuario y salida escapada.
  *
  * Esta clase NO decide visibilidad: publicar o despublicar solo cambia el
@@ -25,7 +25,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * abajo) y la VISTA PREVIA para el
  * administrador, que es el unico camino por el que alguien que no es la
  * farmacia titular lee un documento de cliente:
- * - mdf_ca_vista_previa (GET): manage_options + nonce por documento +
+ * - mdf_ca_vista_previa (GET): Admin_Documentos::CAPACIDAD + nonce por documento +
  *   Permissions::puede_previsualizar_documento(). Pinta el visor con marca de
  *   agua de administrador, sin descarga y con un token de un solo uso.
  * - mdf_ca_vista_previa_fichero (GET): lo pide el JS del visor. Mismas

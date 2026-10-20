@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Aviso en el backoffice si al PHP del servidor le faltan extensiones que
  * necesitan las funciones del plugin (#333; la lista, en
- * Requisitos_Servidor). Solo para 'manage_options' y solo en las pantallas
+ * Requisitos_Servidor). Solo para Roles::CAP_ADMINISTRAR y solo en las pantallas
  * del plugin y en Plugins, que es donde WordPress vuelve tras activar el
  * plugin: asi se ve al activarlo y cada vez que se entra en una pantalla que
  * lo necesita. No se guarda nada: se comprueba en cada carga (es una llamada
@@ -24,7 +24,7 @@ class Admin_Requisitos_Servidor {
 	}
 
 	public static function mostrar_aviso(): void {
-		if ( ! current_user_can( 'manage_options' ) || ! self::es_pantalla_del_plugin() ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) || ! self::es_pantalla_del_plugin() ) {
 			return;
 		}
 

@@ -8,7 +8,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Pantalla de backoffice para subir un documento y asignarlo a una
  * farmacia (#246). Mismo patron que Admin_Planes, no uno distinto: menu
- * propio, capacidad 'manage_options' (mdf_cliente nunca la tiene, y
+ * propio, capacidad Admin_Documentos::CAPACIDAD (mdf_cliente nunca la tiene, y
  * Role_Restrictions::bloquear_acceso_admin() ya lo saca de todo wp-admin
  * antes de llegar aqui), admin-post.php con nonce para procesar la subida.
  *
@@ -19,15 +19,16 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Admin_Documentos {
 
-	private const MENU_SLUG    = 'mdf-ca-documentos';
+	public const MENU_SLUG     = 'mdf-ca-documentos';
 	private const NONCE_ACTION = 'mdf_ca_subir_documento';
 	/**
 	 * Capacidad de todas las pantallas y acciones de Documentos MDF
 	 * (Documentos MDF, Pendientes de publicar, Documentos publicados, Subir
-	 * facturas y Eliminar documento). Unico sitio que la decide: la #337 la
-	 * cambiara por una capacidad propia.
+	 * facturas, Bandeja de facturas y Eliminar documento). Unico sitio que la
+	 * decide: desde la #337, la capacidad propia del plugin, que tienen el rol
+	 * Gestion MDF y el administrador.
 	 */
-	public const CAPACIDAD = 'manage_options';
+	public const CAPACIDAD = Roles::CAP_GESTIONAR_DOCUMENTOS;
 
 	/** Eliminar un documento no publicado (v0.28.0): admin-post con nonce por documento. */
 	private const ACCION_ELIMINAR = 'mdf_ca_eliminar_documento';
@@ -173,10 +174,11 @@ class Admin_Documentos {
 	/**
 	 * Retirar para correccion un Modelo 347 (#307). Nonce por documento y
 	 * casilla de confirmacion obligatoria; la logica (transaccion, eventos)
-	 * vive en Documento_Publicacion_Service::retirar_modelo_347().
+	 * vive en Documento_Publicacion_Service::retirar_modelo_347(). Exige
+	 * ademas la capacidad del Modelo 347 (#337): es una correccion del 347.
 	 */
 	public static function gestionar_retirar_modelo_347(): void {
-		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) ) {
+		if ( ! current_user_can( Admin_Documentos::CAPACIDAD ) || ! current_user_can( Roles::CAP_GESTIONAR_347 ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

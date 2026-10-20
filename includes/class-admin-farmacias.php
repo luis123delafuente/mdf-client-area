@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * importador).
  *
  * Mismo patron que Admin_Planes, Admin_Documentos, Admin_Catalogo y
- * Admin_Invitaciones: menu propio, capacidad 'manage_options'
+ * Admin_Invitaciones: menu propio, capacidad Admin_Farmacias::CAPACIDAD
  * (mdf_cliente nunca la tiene, y Role_Restrictions::bloquear_acceso_admin()
  * ya lo saca de todo wp-admin antes de llegar aqui), admin-post.php con
  * nonce. Sin edicion ni borrado de farmacias aqui: tambien Fase 4. El alta
@@ -29,7 +29,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Admin_Farmacias {
 
-	private const MENU_SLUG         = 'mdf-ca-farmacias';
+	public const MENU_SLUG          = 'mdf-ca-farmacias';
+
+	/**
+	 * Capacidad de Farmacias MDF, del importador CSV y de las invitaciones
+	 * (#337): la tienen el rol Gestion MDF y el administrador.
+	 */
+	public const CAPACIDAD = Roles::CAP_GESTIONAR_FARMACIAS;
 	private const NONCE_ACTION      = 'mdf_ca_crear_farmacia';
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_farmacias_notice_';
 
@@ -42,7 +48,7 @@ class Admin_Farmacias {
 		add_menu_page(
 			'Farmacias MDF',
 			'Farmacias MDF',
-			'manage_options',
+			self::CAPACIDAD,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' ),
 			'dashicons-store',
@@ -51,7 +57,7 @@ class Admin_Farmacias {
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( self::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -63,7 +69,7 @@ class Admin_Farmacias {
 	}
 
 	public static function gestionar_crear(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( self::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 

@@ -7,7 +7,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /**
  * Pantalla "Documentos MDF > Avisos por email" (Fase 4). Mismo patron que el
- * resto del backoffice: capacidad 'manage_options', admin-post.php con
+ * resto del backoffice: capacidad Roles::CAP_ADMINISTRAR (solo el
+ * administrador: es un interruptor de todo el sitio), admin-post.php con
  * nonce en cada accion, avisos por transient de usuario.
  *
  * Muestra el estado del interruptor, los pendientes y la proxima
@@ -35,14 +36,14 @@ class Admin_Avisos_Documentos {
 			self::PARENT_SLUG,
 			'Avisos por email de documentos nuevos',
 			'Avisos por email',
-			'manage_options',
+			Roles::CAP_ADMINISTRAR,
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_pagina' )
 		);
 	}
 
 	public static function render_pagina(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
@@ -76,7 +77,7 @@ class Admin_Avisos_Documentos {
 	}
 
 	public static function gestionar_interruptor(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
@@ -95,7 +96,7 @@ class Admin_Avisos_Documentos {
 	}
 
 	public static function gestionar_enviar_ahora(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Roles::CAP_ADMINISTRAR ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.' );
 		}
 
