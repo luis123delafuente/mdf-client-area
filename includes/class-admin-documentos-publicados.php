@@ -58,7 +58,9 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ORIGEN_DESHACER_LOTE     => 'Al deshacer un lote',
 		Publicacion_Evento_Repository::ORIGEN_RECEPCION         => 'Recibido por el robot (retirado), nació publicado',
 		Publicacion_Evento_Repository::ORIGEN_SUBIDA_BACKOFFICE => 'Subida desde el backoffice (nació publicado)',
-		Publicacion_Evento_Repository::ORIGEN_MODELO_347        => 'Generador del Modelo 347 («Publicar y enviar»)',
+		// Publicacion desde «Publicar y enviar» y, desde la #321, el alta de una
+		// carta sin marca de agua: los dos los hace el generador.
+		Publicacion_Evento_Repository::ORIGEN_MODELO_347        => 'Generador del Modelo 347',
 		Publicacion_Evento_Repository::ORIGEN_SUBIDA_FACTURAS   => '«Subir facturas»',
 		Publicacion_Evento_Repository::ORIGEN_BANDEJA           => 'Bandeja de facturas',
 	);

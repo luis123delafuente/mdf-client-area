@@ -261,12 +261,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 							?>
 						</td>
 						<td>
+							<a href="<?php echo esc_url( Admin_Documentos_Publicados::url_historial( $documento->get_id() ) ); ?>">Historial</a>
 							<?php if ( Admin_Documentos::se_puede_eliminar( $documento ) ) : ?>
 								<a class="button button-small" href="<?php echo esc_url( Admin_Documentos::url_eliminar( $documento->get_id(), 'documentos' ) ); ?>">Eliminar</a>
 							<?php elseif ( $documento->is_publicado() && 'modelo_347' !== $documento->get_tipo_documento() ) : ?>
 								<span class="description">Publicado</span>
-							<?php else : ?>
-								-
 							<?php endif; ?>
 						</td>
 					</tr>

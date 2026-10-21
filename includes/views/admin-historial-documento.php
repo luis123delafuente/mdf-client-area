@@ -59,7 +59,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 		</table>
 		<?php endif; ?>
 
-		<h2>Publicaciones y despublicaciones</h2>
+		<h2>Eventos del documento</h2>
 
 		<?php if ( $sin_registro ) : ?>
 			<div class="notice notice-warning inline">
