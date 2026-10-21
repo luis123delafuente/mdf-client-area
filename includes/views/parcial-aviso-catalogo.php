@@ -1,6 +1,6 @@
 <?php
 /**
- * Aviso de resultado de las pantallas del Catalogo MDF, con detalles
+ * Aviso de resultado de las pantallas del Herramientas MDF, con detalles
  * opcionales (p. ej. "no la vera nadie"). Solo marcado.
  *
  * @var array{tipo: string, mensaje: string, detalles: string[]}|null $aviso

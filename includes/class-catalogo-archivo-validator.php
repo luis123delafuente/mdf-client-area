@@ -69,7 +69,7 @@ class Catalogo_Archivo_Validator {
 		}
 
 		if ( Catalogo_Formatos::XLSM === $formato && ! $permitir_xlsm ) {
-			return new \WP_Error( 'mdf_ca_herramienta_xlsm_no_permitido', 'Los Excel con macros (.xlsm) no están permitidos. Solo el administrador puede activarlos, en Catálogo MDF > Ajustes.' );
+			return new \WP_Error( 'mdf_ca_herramienta_xlsm_no_permitido', 'Los Excel con macros (.xlsm) no están permitidos. Solo el administrador puede activarlos, en Herramientas MDF > Ajustes.' );
 		}
 
 		$validacion = self::validar_contenido( $archivo['tmp_name'], $formato );

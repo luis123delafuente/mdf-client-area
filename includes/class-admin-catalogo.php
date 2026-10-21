@@ -6,7 +6,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Backoffice del catalogo de herramientas: menu "Catalogo MDF" con
+ * Backoffice del catalogo de herramientas: menu "Herramientas MDF" con
  * Herramientas (listado y formulario), Categorias, Etiquetas y Ajustes.
  * Mismo patron que Admin_Planes y Admin_Documentos: capacidad
  * Roles::CAP_GESTIONAR_CATALOGO ("Catalogo y planes"; mdf_cliente nunca la
@@ -43,11 +43,11 @@ class Admin_Catalogo {
 	}
 
 	public static function registrar_menu(): void {
-		add_menu_page( 'Catálogo MDF', 'Catálogo MDF', Roles::CAP_GESTIONAR_CATALOGO, self::MENU_SLUG, array( __CLASS__, 'render_herramientas' ), 'dashicons-portfolio', 60 );
+		add_menu_page( 'Herramientas MDF', 'Herramientas MDF', Roles::CAP_GESTIONAR_CATALOGO, self::MENU_SLUG, array( __CLASS__, 'render_herramientas' ), 'dashicons-portfolio', 60 );
 		add_submenu_page( self::MENU_SLUG, 'Herramientas', 'Herramientas', Roles::CAP_GESTIONAR_CATALOGO, self::MENU_SLUG, array( __CLASS__, 'render_herramientas' ) );
 		add_submenu_page( self::MENU_SLUG, 'Categorías', 'Categorías', Roles::CAP_GESTIONAR_CATALOGO, self::SLUG_CATEGORIAS, array( __CLASS__, 'render_categorias' ) );
 		add_submenu_page( self::MENU_SLUG, 'Etiquetas', 'Etiquetas', Roles::CAP_GESTIONAR_CATALOGO, self::SLUG_ETIQUETAS, array( __CLASS__, 'render_etiquetas' ) );
-		add_submenu_page( self::MENU_SLUG, 'Ajustes del catálogo', 'Ajustes', Roles::CAP_ADMINISTRAR, self::SLUG_AJUSTES, array( __CLASS__, 'render_ajustes' ) );
+		add_submenu_page( self::MENU_SLUG, 'Ajustes de herramientas', 'Ajustes', Roles::CAP_ADMINISTRAR, self::SLUG_AJUSTES, array( __CLASS__, 'render_ajustes' ) );
 	}
 
 	public static function encolar_assets(): void {

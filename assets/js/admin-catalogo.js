@@ -1,5 +1,5 @@
 /**
- * Formulario de una herramienta del catalogo (Catalogo MDF > Herramientas).
+ * Formulario de una herramienta del catalogo (Herramientas MDF > Herramientas).
  * Solo comodidad de interfaz: el servidor (Catalogo_Service) valida todo y
  * fuerza la configuracion de Word, PowerPoint y .xlsm aunque llegue otra
  * cosa. Sin JS el formulario se ve entero y funciona igual.

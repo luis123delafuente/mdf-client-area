@@ -1,6 +1,6 @@
 <?php
 /**
- * Catalogo MDF > Herramientas: listado. Solo marcado; la logica vive en
+ * Herramientas MDF > Herramientas: listado. Solo marcado; la logica vive en
  * Admin_Catalogo y Catalogo_Service. Nunca muestra rutas de disco.
  *
  * @var \MdfClientArea\Catalogo_Item[]    $items

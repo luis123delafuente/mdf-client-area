@@ -44,7 +44,7 @@ class Roles {
 	public const CAP_GESTIONAR_FARMACIAS = 'mdf_ca_gestionar_farmacias';
 
 	/**
-	 * "Catalogo y planes": Planes MDF y Catalogo MDF (crear, editar, borrar y
+	 * "Catalogo y planes": Planes MDF y Herramientas MDF (crear, editar, borrar y
 	 * asignar planes a los elementos del catalogo). Lo que ve cada farmacia lo
 	 * sigue decidiendo Permissions con el plan de la farmacia.
 	 */

@@ -1,6 +1,6 @@
 <?php
 /**
- * Catalogo MDF > Categorias / Etiquetas: crear, renombrar y borrar. Una sola
+ * Herramientas MDF > Categorias / Etiquetas: crear, renombrar y borrar. Una sola
  * vista para las dos (misma forma). Una categoria en uso no se puede borrar;
  * una etiqueta en uso si, tras la confirmacion "Se quitara de N
  * herramientas". El slug no cambia al renombrar y se muestra para MKT.

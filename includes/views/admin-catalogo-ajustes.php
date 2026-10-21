@@ -1,6 +1,6 @@
 <?php
 /**
- * Catalogo MDF > Ajustes (solo el administrador). Solo marcado.
+ * Herramientas MDF > Ajustes (solo el administrador). Solo marcado.
  *
  * @var bool $permitir_xlsm
  * @var int  $con_xlsm Herramientas con un .xlsm ya subido.
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 ?>
 <div class="wrap">
-	<h1>Ajustes del catálogo</h1>
+	<h1>Ajustes de herramientas</h1>
 
 	<?php require __DIR__ . '/parcial-aviso-catalogo.php'; ?>
 
@@ -32,7 +32,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 							Permitir herramientas Excel con macros (.xlsm)
 						</label>
 						<p class="description">
-							Apagado por defecto. Encendido, quien gestiona el catálogo puede subir un .xlsm: se ofrece siempre como
+							Apagado por defecto. Encendido, quien gestiona las herramientas puede subir un .xlsm: se ofrece siempre como
 							descarga, nunca en el visor, y sus macros se ejecutan en el equipo de la farmacia si las habilita.
 							Apagado, no se pueden subir y los ya subidos no los ve ninguna farmacia (su descarga da «no encontrado»).
 						</p>

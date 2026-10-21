@@ -1,6 +1,6 @@
 <?php
 /**
- * Catalogo MDF > Herramientas: formulario de alta y edicion. Solo marcado;
+ * Herramientas MDF > Herramientas: formulario de alta y edicion. Solo marcado;
  * la validacion vive en Catalogo_Service (el servidor fuerza la
  * configuracion de Word, PowerPoint y .xlsm aunque el navegador mande otra
  * cosa). Sin JS funciona igual: todo se ve, las etiquetas son casillas y las
