@@ -75,6 +75,18 @@ class Documento_Tipos {
 	}
 
 	/**
+	 * Tipos que se pueden subir a mano en Documentos MDF (v0.36.0): todos
+	 * menos los que tienen su propia via (Documento_Service::
+	 * TIPOS_CON_VIA_PROPIA: facturas por "Subir facturas", Modelo 347 por su
+	 * generador).
+	 *
+	 * @return array<string, string> clave => etiqueta
+	 */
+	public static function get_opciones_subida_manual(): array {
+		return array_diff_key( self::TIPOS, array_flip( Documento_Service::TIPOS_CON_VIA_PROPIA ) );
+	}
+
+	/**
 	 * @return array<string, string> clave => etiqueta
 	 */
 	public static function get_opciones(): array {

@@ -141,6 +141,29 @@ class DB_Schema {
 		return $wpdb->prefix . 'mdf_ca_catalogo_planes';
 	}
 
+	/** Categorias de las herramientas (una por herramienta). */
+	public static function get_catalogo_categorias_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_catalogo_categorias';
+	}
+
+	/** Etiquetas de las herramientas (varias por herramienta, via catalogo_item_etiquetas). */
+	public static function get_catalogo_etiquetas_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_catalogo_etiquetas';
+	}
+
+	public static function get_catalogo_item_etiquetas_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_catalogo_item_etiquetas';
+	}
+
+	/** Farmacias concretas que ven una herramienta, ademas de las de sus planes. */
+	public static function get_catalogo_farmacias_table_name() {
+		global $wpdb;
+		return $wpdb->prefix . 'mdf_ca_catalogo_farmacias';
+	}
+
 	/**
 	 * Sentencias CREATE TABLE listas para pasar a dbDelta().
 	 *
@@ -162,6 +185,10 @@ class DB_Schema {
 		$planes_table          = self::get_planes_table_name();
 		$catalogo_table        = self::get_catalogo_table_name();
 		$catalogo_planes_table = self::get_catalogo_planes_table_name();
+		$categorias_table      = self::get_catalogo_categorias_table_name();
+		$etiquetas_table       = self::get_catalogo_etiquetas_table_name();
+		$item_etiquetas_table  = self::get_catalogo_item_etiquetas_table_name();
+		$cat_farmacias_table   = self::get_catalogo_farmacias_table_name();
 		$registro_table        = self::get_recepcion_registro_table_name();
 		$lotes_table           = self::get_publicacion_lotes_table_name();
 		$eventos_table         = self::get_publicacion_eventos_table_name();
@@ -208,10 +235,11 @@ class DB_Schema {
 		// Fase 3 sin ningun flujo de alta/edicion previsto. Nullable por el
 		// mismo motivo que plan_id: no exigir backfill a los documentos de
 		// prueba ya existentes de fases anteriores.
-		// descargable solo tiene efecto en documentos Excel (PDF e imagenes
-		// nunca se descargan, van al visor). NOT NULL DEFAULT 0: todo
-		// documento, incluidos los ya existentes, es no descargable salvo
-		// que alguien lo marque expresamente al subirlo.
+		// descargable: la farmacia puede descargar el fichero (cualquier
+		// formato desde la v0.36.0; antes, solo Excel). Toda alta lo fija
+		// expresamente (por defecto, si: Documento_Service::POR_DEFECTO_*) y la
+		// migracion mdf_ca_documentos_descargables_v1 paso los existentes a 1.
+		// El DEFAULT 0 de la columna no se cambia: ningun alta depende de el.
 		// notificado_en (Fase 4, UTC): NULL = documento aun no incluido en
 		// ningun aviso por email a la farmacia (Aviso_Documentos_Service).
 		// hash_sha256 (#303): SHA-256 del fichero, solo lo rellena la recepcion
@@ -387,15 +415,12 @@ class DB_Schema {
 			PRIMARY KEY  (fecha,resultado,origen)
 		) {$charset_collate};";
 
-		// seccion y tipo son VARCHAR de lista fija (ver Catalogo_Secciones y
-		// Catalogo_Tipos), no tablas propias: mismo criterio que
-		// tipo_documento en Documentos -- MKT definio un numero cerrado de
-		// secciones (Herramientas, Formacion) y de tipos (descargable,
-		// visualizable), sin ningun flujo de alta/edicion de esas listas.
-		// enlace_url es nullable y generico (no exclusivo de "descargable"
-		// ni de Formacion): cubre tanto un recurso descargable como el
-		// enlace a la Academia de un item de Formacion, sin acoplar el
-		// esquema a un caso de uso concreto.
+		// Catalogo de herramientas. seccion y tipo son de antes del esquema
+		// 1.21.0 y el codigo ya no los lee (seccion se sigue rellenando: es
+		// NOT NULL). Recurso: enlace (enlace_url) o archivo (formato,
+		// ruta_fichero dentro de Clientes/private-docs/herramientas/,
+		// tipo_mime, tamano). descargable y marca_agua solo aplican a un
+		// archivo del visor; visible = 0 es "Oculta".
 		$catalogo_sql = "CREATE TABLE {$catalogo_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			seccion VARCHAR(20) NOT NULL,
@@ -403,8 +428,61 @@ class DB_Schema {
 			tipo VARCHAR(20) NOT NULL DEFAULT 'visualizable',
 			enlace_url VARCHAR(500) NULL,
 			fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			descripcion VARCHAR(255) NULL,
+			categoria_id BIGINT UNSIGNED NULL,
+			recurso VARCHAR(10) NOT NULL DEFAULT 'enlace',
+			formato VARCHAR(10) NULL,
+			ruta_fichero VARCHAR(255) NULL,
+			tipo_mime VARCHAR(100) NULL,
+			tamano BIGINT UNSIGNED NULL,
+			descargable TINYINT(1) NOT NULL DEFAULT 0,
+			marca_agua TINYINT(1) NOT NULL DEFAULT 1,
+			visible TINYINT(1) NOT NULL DEFAULT 1,
+			fecha_modificacion DATETIME NULL,
 			PRIMARY KEY  (id),
-			KEY seccion (seccion)
+			KEY seccion (seccion),
+			KEY categoria_id (categoria_id)
+		) {$charset_collate};";
+
+		// Herramientas (esquema 1.21.0). Desde aqui el catalogo es solo
+		// Herramientas: seccion y tipo quedan de la version anterior y el
+		// codigo ya no los lee (seccion se sigue rellenando porque es NOT NULL
+		// sin valor por defecto). Categorias y etiquetas: nombre editable y
+		// slug inmutable, los dos UNIQUE (la collation no distingue mayusculas
+		// ni tildes). Las tablas puente con PRIMARY KEY compuesta, como
+		// catalogo_planes, y sin FOREIGN KEY: la integridad la lleva el codigo.
+		$categorias_sql = "CREATE TABLE {$categorias_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			nombre VARCHAR(100) NOT NULL,
+			slug VARCHAR(100) NOT NULL,
+			fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			UNIQUE KEY nombre (nombre),
+			UNIQUE KEY slug (slug)
+		) {$charset_collate};";
+
+		$etiquetas_sql = "CREATE TABLE {$etiquetas_table} (
+			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+			nombre VARCHAR(100) NOT NULL,
+			slug VARCHAR(100) NOT NULL,
+			fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY  (id),
+			UNIQUE KEY nombre (nombre),
+			UNIQUE KEY slug (slug)
+		) {$charset_collate};";
+
+		$item_etiquetas_sql = "CREATE TABLE {$item_etiquetas_table} (
+			catalogo_id BIGINT UNSIGNED NOT NULL,
+			etiqueta_id BIGINT UNSIGNED NOT NULL,
+			PRIMARY KEY  (catalogo_id, etiqueta_id),
+			KEY etiqueta_id (etiqueta_id)
+		) {$charset_collate};";
+
+		$cat_farmacias_sql = "CREATE TABLE {$cat_farmacias_table} (
+			catalogo_id BIGINT UNSIGNED NOT NULL,
+			farmacia_id BIGINT UNSIGNED NOT NULL,
+			PRIMARY KEY  (catalogo_id, farmacia_id),
+			KEY farmacia_id (farmacia_id)
 		) {$charset_collate};";
 
 		// Tabla puente para la relacion N:M item <-> plan (ver cabecera de
@@ -460,6 +538,6 @@ class DB_Schema {
 			KEY bandeja (bandeja_id)
 		) {$charset_collate};";
 
-		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $registro_sql, $lotes_sql, $eventos_sql, $envios_347_sql, $bandeja_sql, $bandeja_eventos_sql );
+		return array( $planes_sql, $farmacias_sql, $documentos_sql, $catalogo_sql, $catalogo_planes_sql, $categorias_sql, $etiquetas_sql, $item_etiquetas_sql, $cat_farmacias_sql, $registro_sql, $lotes_sql, $eventos_sql, $envios_347_sql, $bandeja_sql, $bandeja_eventos_sql );
 	}
 }

@@ -171,6 +171,7 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 					<th style="width:10em">Tipo</th>
 					<th style="width:9em">Fecha documento</th>
 					<th style="width:12em">Recibido</th>
+					<th style="width:11em">Descarga</th>
 					<th style="width:11em">Marca de agua</th>
 					<th style="width:14em">Acciones</th>
 				</tr>
@@ -182,6 +183,12 @@ $nombre_farmacia = static function ( int $farmacia_id ) use ( $farmacias_por_id 
 						<td><?php echo esc_html( Documento_Tipos::get_etiqueta( $documento->get_tipo_documento() ) ); ?></td>
 						<td><?php echo esc_html( Documento::formatear_fecha_corta( $documento->get_fecha_documento() ) ); ?></td>
 						<td><?php echo esc_html( $documento->get_fecha_subida() ); ?></td>
+						<td>
+							<?php
+							$volver = 'pendientes';
+							require MDF_CA_PLUGIN_DIR . 'includes/views/parcial-descarga.php';
+							?>
+						</td>
 						<td>
 							<?php
 							$volver = 'pendientes';

@@ -3,7 +3,7 @@
  * Marca de agua de un documento (#321): estado y boton para quitarla o
  * ponerla, en Documentos MDF y en Pendientes de publicar. Solo marcado: la
  * accion es Admin_Documentos::gestionar_cambiar_marca() (capacidad y nonce
- * por documento) y la logica, Documento_Marca_Service.
+ * por documento) y la logica, Documento_Configuracion_Service.
  *
  * @var \MdfClientArea\Documento $documento
  * @var string                   $volver    'documentos' o 'pendientes'.

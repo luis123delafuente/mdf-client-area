@@ -214,8 +214,10 @@ class Admin_Modelo_347 {
 			get_current_user_id(),
 			sanitize_key( wp_unslash( $_POST['sim'] ?? '' ) ),
 			sanitize_key( wp_unslash( $_POST['huella'] ?? '' ) ),
-			// Casilla "Mostrar sin marca de agua" (#321), para toda la generacion.
-			! empty( $_POST['sin_marca'] )
+			// Casillas "Marca de agua" (#321) y "Descargable" (v0.36.0), para
+			// toda la generacion; sin marcar no llegan en la peticion.
+			empty( $_POST['marca_agua'] ),
+			! empty( $_POST['descargable'] )
 		);
 
 		if ( is_wp_error( $resultado ) ) {

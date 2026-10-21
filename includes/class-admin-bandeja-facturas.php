@@ -247,8 +247,10 @@ class Admin_Bandeja_Facturas {
 			'numero'   => isset( $_POST['numero'] ) ? sanitize_text_field( wp_unslash( $_POST['numero'] ) ) : '',
 			'fecha'    => isset( $_POST['fecha'] ) ? sanitize_text_field( wp_unslash( $_POST['fecha'] ) ) : '',
 			'es_abono' => ! empty( $_POST['es_abono'] ),
-			// Sin marca de agua (#321): solo con la casilla marcada.
-			'sin_marca' => ! empty( $_POST['sin_marca'] ),
+			// Casillas "Descargable" y "Marca de agua" (v0.36.0); sin marcar no
+			// llegan en la peticion.
+			'sin_marca'   => empty( $_POST['marca_agua'] ),
+			'descargable' => ! empty( $_POST['descargable'] ),
 		);
 
 		$resultado = ( new Bandeja_Facturas_Service() )->asignar( $id, $farmacia_id, $formulario, ! empty( $_POST['confirmar_cif'] ), get_current_user_id() );
@@ -371,10 +373,12 @@ class Admin_Bandeja_Facturas {
 		'numero'   => '',
 		'fecha'    => '',
 		'es_abono' => false,
-		'sin_marca' => false,
+		// Configuracion por defecto (v0.36.0): descargable y sin marca.
+		'sin_marca'   => Documento_Service::POR_DEFECTO_SIN_MARCA,
+		'descargable' => Documento_Service::POR_DEFECTO_DESCARGABLE,
 	);
 
-	/** @param array{emisor: string, serie: string, numero: string, fecha: string, es_abono: bool, sin_marca: bool} $formulario */
+	/** @param array{emisor: string, serie: string, numero: string, fecha: string, es_abono: bool, sin_marca: bool, descargable: bool} $formulario */
 	private static function guardar_formulario( int $id, array $formulario ): void {
 		set_transient( self::FORMULARIO_KEY_PREFIX . get_current_user_id() . '_' . $id, $formulario, self::FORMULARIO_TTL );
 	}
@@ -382,7 +386,7 @@ class Admin_Bandeja_Facturas {
 	/**
 	 * Lo escrito en el ultimo intento de asignar esta factura, una sola vez.
 	 *
-	 * @return array{emisor: string, serie: string, numero: string, fecha: string, es_abono: bool, sin_marca: bool}
+	 * @return array{emisor: string, serie: string, numero: string, fecha: string, es_abono: bool, sin_marca: bool, descargable: bool}
 	 */
 	private static function consumir_formulario( int $id ): array {
 		$key        = self::FORMULARIO_KEY_PREFIX . get_current_user_id() . '_' . $id;
@@ -401,7 +405,8 @@ class Admin_Bandeja_Facturas {
 		}
 
 		$previo['es_abono']  = ! empty( $formulario['es_abono'] );
-		$previo['sin_marca'] = ! empty( $formulario['sin_marca'] );
+		$previo['sin_marca']   = ! empty( $formulario['sin_marca'] );
+		$previo['descargable'] = ! empty( $formulario['descargable'] );
 
 		return $previo;
 	}

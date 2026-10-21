@@ -6,11 +6,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Lista fija de secciones del catalogo (Herramientas, Formacion), segun la
- * estructura de cuatro paginas ya definida en Fase 2 (ver
- * Area_Privada_Pages). Mismo criterio que Documento_Tipos: no hay ningun
- * flujo de negocio que necesite dar de alta secciones nuevas, asi que un
- * array fijo es toda la infraestructura que hace falta.
+ * Secciones del catalogo anteriores al esquema 1.21.0. Desde entonces el
+ * catalogo es solo Herramientas (Formacion es una pagina de Elementor con un
+ * enlace a la Academia) y la columna seccion ya no decide nada. Se conserva
+ * para la migracion (Activator::migrar_catalogo_a_herramientas(): los
+ * elementos de Formacion pasan, ocultos, a "Formacion (antigua)"), para
+ * rellenar la columna, que es NOT NULL, y para que
+ * [mdf_ca_catalogo_herramientas seccion="formacion"] no pinte nada.
  */
 class Catalogo_Secciones {
 

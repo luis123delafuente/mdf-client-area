@@ -1,15 +1,13 @@
 <?php
 /**
- * Vista de la pantalla de backoffice "Catalogo MDF". Solo marcado: toda la
- * logica de negocio (validacion, guardado, borrado) vive en Admin_Catalogo
- * y Catalogo_Service, mismo criterio que admin-planes.php y
- * admin-documentos.php.
+ * Catalogo MDF > Herramientas: listado. Solo marcado; la logica vive en
+ * Admin_Catalogo y Catalogo_Service. Nunca muestra rutas de disco.
  *
- * @var \MdfClientArea\Plan[]          $planes
- * @var \MdfClientArea\Catalogo_Item[] $items
- * @var \MdfClientArea\Catalogo_Item|null $item_en_edicion
- * @var int[]                          $planes_del_item_en_edicion
- * @var array{tipo: string, mensaje: string}|null $aviso
+ * @var \MdfClientArea\Catalogo_Item[]    $items
+ * @var \MdfClientArea\Catalogo_Termino[] $categorias
+ * @var \MdfClientArea\Catalogo_Termino[] $etiquetas
+ * @var \MdfClientArea\Plan[]             $planes
+ * @var array{tipo: string, mensaje: string, detalles: string[]}|null $aviso
  */
 
 namespace MdfClientArea;
@@ -17,163 +15,143 @@ namespace MdfClientArea;
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+
+$mdf_ca_nombres_categoria = array();
+foreach ( $categorias as $mdf_ca_t ) {
+	$mdf_ca_nombres_categoria[ $mdf_ca_t->get_id() ] = $mdf_ca_t->get_nombre();
+}
+
+$mdf_ca_nombres_etiqueta = array();
+foreach ( $etiquetas as $mdf_ca_t ) {
+	$mdf_ca_nombres_etiqueta[ $mdf_ca_t->get_id() ] = $mdf_ca_t->get_nombre();
+}
+
+$mdf_ca_nombres_plan = array();
+foreach ( $planes as $mdf_ca_p ) {
+	$mdf_ca_nombres_plan[ $mdf_ca_p->get_slug() ] = $mdf_ca_p->get_nombre();
+}
+
+$mdf_ca_xlsm_permitido = Catalogo_Ajustes::permite_xlsm();
 ?>
 <div class="wrap">
-	<h1>Catalogo MDF</h1>
+	<h1 class="wp-heading-inline">Herramientas</h1>
+	<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Admin_Catalogo::MENU_SLUG . '&accion=nueva' ) ); ?>" class="page-title-action">Añadir herramienta</a>
+	<hr class="wp-header-end" />
 
-	<?php if ( $aviso ) : ?>
-		<div class="notice notice-<?php echo 'error' === $aviso['tipo'] ? 'error' : 'success'; ?> is-dismissible">
-			<p><?php echo esc_html( $aviso['mensaje'] ); ?></p>
-		</div>
+	<?php require __DIR__ . '/parcial-aviso-catalogo.php'; ?>
+
+	<p class="description">
+		Lo que ve cada farmacia en la página Herramientas del área de cliente. Una herramienta la ven las farmacias
+		de los planes marcados más las farmacias concretas elegidas; oculta, no la ve nadie.
+	</p>
+
+	<?php if ( ! $categorias ) : ?>
+		<div class="notice notice-warning inline"><p>
+			Antes de crear herramientas hay que crear al menos una categoría, en
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Admin_Catalogo::SLUG_CATEGORIAS ) ); ?>">Categorías</a>.
+		</p></div>
 	<?php endif; ?>
 
-	<h2><?php echo $item_en_edicion ? 'Editar item de catalogo' : 'Nuevo item de catalogo'; ?></h2>
-
-	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-		<?php wp_nonce_field( 'mdf_ca_guardar_catalogo' ); ?>
-		<input type="hidden" name="action" value="mdf_ca_guardar_catalogo" />
-		<?php if ( $item_en_edicion ) : ?>
-			<input type="hidden" name="id" value="<?php echo esc_attr( (string) $item_en_edicion->get_id() ); ?>" />
-		<?php endif; ?>
-
-		<table class="form-table" role="presentation">
-			<tbody>
-				<tr>
-					<th scope="row"><label for="mdf-ca-catalogo-seccion">Seccion</label></th>
-					<td>
-						<select id="mdf-ca-catalogo-seccion" name="seccion" required>
-							<?php foreach ( Catalogo_Secciones::get_opciones() as $clave => $etiqueta ) : ?>
-								<option
-									value="<?php echo esc_attr( $clave ); ?>"
-									<?php selected( $item_en_edicion ? $item_en_edicion->get_seccion() : '', $clave ); ?>
-								><?php echo esc_html( $etiqueta ); ?></option>
-							<?php endforeach; ?>
-						</select>
-					</td>
-				</tr>
-				<tr>
-					<th scope="row"><label for="mdf-ca-catalogo-nombre">Nombre</label></th>
-					<td>
-						<input
-							type="text"
-							id="mdf-ca-catalogo-nombre"
-							name="nombre"
-							class="regular-text"
-							maxlength="255"
-							required
-							value="<?php echo esc_attr( $item_en_edicion ? $item_en_edicion->get_nombre() : '' ); ?>"
-						/>
-					</td>
-				</tr>
-				<tr>
-					<th scope="row"><label for="mdf-ca-catalogo-tipo">Tipo</label></th>
-					<td>
-						<select id="mdf-ca-catalogo-tipo" name="tipo" required>
-							<?php foreach ( Catalogo_Tipos::get_opciones() as $clave => $etiqueta ) : ?>
-								<option
-									value="<?php echo esc_attr( $clave ); ?>"
-									<?php selected( $item_en_edicion ? $item_en_edicion->get_tipo() : Catalogo_Tipos::VISUALIZABLE, $clave ); ?>
-								><?php echo esc_html( $etiqueta ); ?></option>
-							<?php endforeach; ?>
-						</select>
-					</td>
-				</tr>
-				<tr>
-					<th scope="row"><label for="mdf-ca-catalogo-enlace">Enlace (opcional)</label></th>
-					<td>
-						<input
-							type="url"
-							id="mdf-ca-catalogo-enlace"
-							name="enlace_url"
-							class="regular-text"
-							placeholder="https://..."
-							value="<?php echo esc_attr( $item_en_edicion ? (string) $item_en_edicion->get_enlace_url() : '' ); ?>"
-						/>
-						<p class="description">
-							Enlace al recurso descargable, o a la Academia para un item de
-							Formacion. Dejalo vacio si el item no tiene enlace.
-						</p>
-					</td>
-				</tr>
-				<tr>
-					<th scope="row">Planes</th>
-					<td>
-						<?php if ( ! $planes ) : ?>
-							<p>
-								Todavia no hay ningun plan creado. Puedes guardar el item igualmente,
-								pero no sera visible para ninguna farmacia hasta que le asignes al
-								menos un plan.
-							</p>
-						<?php else : ?>
-							<fieldset>
-								<?php foreach ( $planes as $plan ) : ?>
-									<label style="display:block;">
-										<input
-											type="checkbox"
-											name="plan_ids[]"
-											value="<?php echo esc_attr( (string) $plan->get_id() ); ?>"
-											<?php checked( in_array( $plan->get_id(), $planes_del_item_en_edicion, true ) ); ?>
-										/>
-										<?php echo esc_html( $plan->get_nombre() ); ?>
-									</label>
-								<?php endforeach; ?>
-							</fieldset>
-							<p class="description">
-								Sin ningun plan marcado, el item no sera visible para ninguna
-								farmacia (criterio restrictivo por defecto).
-							</p>
-						<?php endif; ?>
-					</td>
-				</tr>
-			</tbody>
-		</table>
-
-		<?php submit_button( $item_en_edicion ? 'Guardar cambios' : 'Crear item' ); ?>
-
-		<?php if ( $item_en_edicion ) : ?>
-			<a href="<?php echo esc_url( admin_url( 'admin.php?page=mdf-ca-catalogo' ) ); ?>" class="button">Cancelar edicion</a>
-		<?php endif; ?>
-	</form>
-
-	<h2>Items existentes</h2>
-
 	<?php if ( ! $items ) : ?>
-		<p>Todavia no hay ningun item de catalogo creado.</p>
+		<p>Todavía no hay ninguna herramienta.</p>
 	<?php else : ?>
-		<table class="wp-list-table widefat fixed striped">
+		<table class="wp-list-table widefat striped">
 			<thead>
 				<tr>
-					<th>Seccion</th>
-					<th>Nombre</th>
-					<th>Tipo</th>
-					<th>Planes</th>
-					<th>Enlace</th>
-					<th></th>
+					<th scope="col">Nombre</th>
+					<th scope="col">Categoría y etiquetas</th>
+					<th scope="col">Recurso</th>
+					<th scope="col">Visible para</th>
+					<th scope="col">Estado</th>
+					<th scope="col">Acciones</th>
 				</tr>
 			</thead>
 			<tbody>
-				<?php foreach ( $items as $item ) : ?>
+				<?php foreach ( $items as $mdf_ca_item ) : ?>
+					<?php
+					$mdf_ca_id         = $mdf_ca_item->get_id();
+					$mdf_ca_planes     = array_map( static fn( string $s ): string => $mdf_ca_nombres_plan[ $s ] ?? $s, $mdf_ca_item->get_planes_slugs() );
+					$mdf_ca_n_farm     = count( $mdf_ca_item->get_farmacia_ids() );
+					$mdf_ca_formato    = $mdf_ca_item->get_formato();
+					$mdf_ca_es_xlsm    = $mdf_ca_item->es_archivo() && Catalogo_Formatos::XLSM === $mdf_ca_formato;
+					$mdf_ca_problemas  = array();
+
+					if ( ! $mdf_ca_item->recurso_completo() ) {
+						$mdf_ca_problemas[] = $mdf_ca_item->es_archivo() ? 'Falta el archivo.' : 'Falta el enlace: edítala y añádelo.';
+					}
+
+					if ( $mdf_ca_es_xlsm && ! $mdf_ca_xlsm_permitido ) {
+						$mdf_ca_problemas[] = 'Excel con macros: el ajuste está apagado y ninguna farmacia la ve.';
+					}
+
+					if ( ! $mdf_ca_planes && ! $mdf_ca_n_farm ) {
+						$mdf_ca_problemas[] = 'Sin planes ni farmacias: no la ve nadie.';
+					}
+					?>
 					<tr>
-						<td><?php echo esc_html( Catalogo_Secciones::get_etiqueta( $item->get_seccion() ) ); ?></td>
-						<td><?php echo esc_html( $item->get_nombre() ); ?></td>
-						<td><?php echo esc_html( Catalogo_Tipos::get_etiqueta( $item->get_tipo() ) ); ?></td>
 						<td>
-							<?php echo $item->get_planes_slugs() ? esc_html( implode( ', ', $item->get_planes_slugs() ) ) : '<em>Ninguno (no visible)</em>'; ?>
-						</td>
-						<td>
-							<?php if ( $item->get_enlace_url() ) : ?>
-								<a href="<?php echo esc_url( $item->get_enlace_url() ); ?>" target="_blank" rel="noopener noreferrer">Ver</a>
-							<?php else : ?>
-								-
+							<strong><a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Admin_Catalogo::MENU_SLUG . '&editar=' . $mdf_ca_id ) ); ?>"><?php echo esc_html( $mdf_ca_item->get_nombre() ); ?></a></strong>
+							<?php if ( $mdf_ca_item->get_descripcion() ) : ?>
+								<br /><span class="description"><?php echo esc_html( $mdf_ca_item->get_descripcion() ); ?></span>
 							<?php endif; ?>
 						</td>
 						<td>
-							<a href="<?php echo esc_url( admin_url( 'admin.php?page=mdf-ca-catalogo&editar=' . $item->get_id() ) ); ?>">Editar</a>
-							|
-							<a
-								href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=mdf_ca_eliminar_catalogo&id=' . $item->get_id() ), 'mdf_ca_eliminar_catalogo_' . $item->get_id() ) ); ?>"
-								onclick="return confirm('¿Eliminar el item &quot;<?php echo esc_js( $item->get_nombre() ); ?>&quot;?');"
-							>Eliminar</a>
+							<?php echo esc_html( $mdf_ca_nombres_categoria[ (int) $mdf_ca_item->get_categoria_id() ] ?? 'Sin categoría' ); ?>
+							<?php if ( $mdf_ca_item->get_etiqueta_ids() ) : ?>
+								<br /><span class="description"><?php echo esc_html( implode( ', ', array_map( static fn( int $e ): string => $mdf_ca_nombres_etiqueta[ $e ] ?? '', $mdf_ca_item->get_etiqueta_ids() ) ) ); ?></span>
+							<?php endif; ?>
+						</td>
+						<td>
+							<?php if ( $mdf_ca_item->es_archivo() ) : ?>
+								<?php echo esc_html( Catalogo_Formatos::get_etiqueta( $mdf_ca_formato ) ); ?>
+								<?php if ( $mdf_ca_item->get_tamano() ) : ?>
+									(<?php echo esc_html( size_format( $mdf_ca_item->get_tamano(), 1 ) ); ?>)
+								<?php endif; ?>
+								<br /><span class="description">
+									<?php
+									$mdf_ca_config = array();
+									if ( Catalogo_Formatos::es_siempre_descargable( $mdf_ca_formato ) ) {
+										$mdf_ca_config[] = 'Solo descarga';
+									} else {
+										$mdf_ca_config[] = $mdf_ca_item->is_descargable() ? 'Visor y descarga' : 'Solo visor';
+										$mdf_ca_config[] = $mdf_ca_item->con_marca_de_agua() ? 'con marca de agua' : 'sin marca de agua';
+									}
+									echo esc_html( implode( ', ', $mdf_ca_config ) );
+									?>
+								</span>
+							<?php elseif ( $mdf_ca_item->get_enlace_url() ) : ?>
+								Enlace: <a href="<?php echo esc_url( $mdf_ca_item->get_enlace_url() ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( wp_parse_url( $mdf_ca_item->get_enlace_url(), PHP_URL_HOST ) ?: $mdf_ca_item->get_enlace_url() ); ?></a>
+							<?php else : ?>
+								Enlace (vacío)
+							<?php endif; ?>
+						</td>
+						<td>
+							<?php
+							$mdf_ca_partes = array();
+							if ( $mdf_ca_planes ) {
+								$mdf_ca_partes[] = 'Planes: ' . implode( ', ', $mdf_ca_planes );
+							}
+							if ( $mdf_ca_n_farm ) {
+								$mdf_ca_partes[] = sprintf( _n( '%d farmacia concreta', '%d farmacias concretas', $mdf_ca_n_farm ), $mdf_ca_n_farm );
+							}
+							echo $mdf_ca_partes ? esc_html( implode( ' + ', $mdf_ca_partes ) ) : '<em>Nadie</em>';
+							?>
+						</td>
+						<td>
+							<?php echo $mdf_ca_item->is_visible() ? 'Visible' : '<strong>Oculta</strong>'; ?>
+							<?php foreach ( $mdf_ca_problemas as $mdf_ca_problema ) : ?>
+								<br /><span class="mdf-ca-catalogo-aviso"><span class="dashicons dashicons-warning" aria-hidden="true"></span> <?php echo esc_html( $mdf_ca_problema ); ?></span>
+							<?php endforeach; ?>
+						</td>
+						<td>
+							<a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Admin_Catalogo::MENU_SLUG . '&editar=' . $mdf_ca_id ) ); ?>">Editar</a>
+							<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline"
+								onsubmit="return confirm(<?php echo esc_attr( wp_json_encode( '¿Eliminar la herramienta «' . $mdf_ca_item->get_nombre() . '»' . ( $mdf_ca_item->es_archivo() ? ' y su archivo' : '' ) . '? No se puede deshacer.' ) ); ?>);">
+								<?php wp_nonce_field( 'mdf_ca_eliminar_catalogo_' . $mdf_ca_id ); ?>
+								<input type="hidden" name="action" value="mdf_ca_eliminar_catalogo" />
+								<input type="hidden" name="id" value="<?php echo esc_attr( (string) $mdf_ca_id ); ?>" />
+								| <button type="submit" class="button-link button-link-delete">Eliminar</button>
+							</form>
 						</td>
 					</tr>
 				<?php endforeach; ?>

@@ -37,6 +37,15 @@ class Shortcode_Listado_Documentos {
 
 	private const TAG = 'mdf_ca_listado_documentos';
 
+	/**
+	 * Ids de los documentos que el usuario puede descargar en este render
+	 * (Permissions::filtrar_documentos_descargables(), una sola consulta de
+	 * farmacia para todo el listado).
+	 *
+	 * @var array<int, true>
+	 */
+	private static array $descargables = array();
+
 	public static function register_hooks(): void {
 		add_shortcode( self::TAG, array( __CLASS__, 'render' ) );
 	}
@@ -64,6 +73,8 @@ class Shortcode_Listado_Documentos {
 		if ( ! $documentos ) {
 			return self::render_estado_vacio();
 		}
+
+		self::$descargables = Permissions::filtrar_documentos_descargables( wp_get_current_user(), $documentos );
 
 		// Cualquier valor que no sea "plana" es la vista agrupada.
 		if ( 'plana' === strtolower( trim( (string) $atts['vista'] ) ) ) {
@@ -116,7 +127,22 @@ class Shortcode_Listado_Documentos {
 		return '<li class="mdf-ca-listado-documentos__item">'
 			. '<a href="' . esc_url( $url ) . '">' . esc_html( $documento->get_nombre() ) . '</a>'
 			. ' <span class="mdf-ca-listado-documentos__fecha">' . esc_html( $fecha ) . '</span>'
+			. self::enlace_descargar( $documento )
 			. '</li>';
+	}
+
+	/**
+	 * "Descargar" (v0.36.0), solo si Permissions lo permite: va a la ruta de
+	 * descarga del endpoint, que vuelve a comprobarlo al servir.
+	 */
+	private static function enlace_descargar( Documento $documento ): string {
+		if ( ! isset( self::$descargables[ $documento->get_id() ] ) ) {
+			return '';
+		}
+
+		return ' <a class="mdf-ca-listado-documentos__descargar" href="' . esc_url( Documento_Endpoint::url_descarga( $documento->get_id() ) ) . '"'
+			. ' aria-label="' . esc_attr( 'Descargar ' . $documento->get_nombre() ) . '">'
+			. esc_html__( 'Descargar', 'mdf-client-area' ) . '</a>';
 	}
 
 	// ------------------------------------------------------------------
@@ -340,6 +366,7 @@ class Shortcode_Listado_Documentos {
 
 			$items .= '<li class="mdf-ca-listado-documentos__item">'
 				. '<a href="' . esc_url( $url ) . '">' . esc_html( $documento->get_nombre() ) . '</a>' . ( '' !== $fecha ? ' ' . $fecha : '' )
+				. self::enlace_descargar( $documento )
 				. '</li>';
 		}
 

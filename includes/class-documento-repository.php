@@ -588,6 +588,34 @@ class Documento_Repository {
 		);
 	}
 
+	/**
+	 * Descargable o no (v0.36.0). Mismo patron que cambiar_marca(): solo
+	 * escribe si cambia, y devuelve las filas afectadas (1 o 0) o false.
+	 *
+	 * @return int|false
+	 */
+	public function cambiar_descargable( int $id, bool $descargable ) {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return $wpdb->query(
+			$wpdb->prepare( "UPDATE {$table} SET descargable = %d WHERE id = %d AND descargable <> %d", $descargable ? 1 : 0, $id, $descargable ? 1 : 0 )
+		);
+	}
+
+	/**
+	 * Todos los documentos pasan a descargables (migracion de la v0.36.0,
+	 * decision de MDF). No toca sin_marca. true si el UPDATE fue bien.
+	 */
+	public function marcar_todos_descargables(): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return false !== $wpdb->query( "UPDATE {$table} SET descargable = 1 WHERE descargable = 0" );
+	}
+
 	public function find_by_id_para_actualizar( int $id ): ?Documento {
 		global $wpdb;
 

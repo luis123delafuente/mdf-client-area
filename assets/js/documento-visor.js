@@ -193,6 +193,7 @@
 			totalPaginas = pdf.numPages;
 			paginaActual = 1;
 			esImagenUnica = false;
+			mostrarDescargar();
 			elBarra.hidden = false;
 			ocultarEstado();
 			return renderizarPaginaActual();
@@ -221,12 +222,28 @@
 			esImagenUnica = true;
 			totalPaginas = 1;
 			paginaActual = 1;
-			elBarra.hidden = true; // Una sola "pagina", no hace falta paginacion.
+			// Una sola "pagina": sin paginacion. La barra solo si hay que
+			// ofrecer "Descargar" (herramientas del catalogo descargables).
+			elAnterior.hidden = true;
+			elSiguiente.hidden = true;
+			mostrarDescargar();
+			elBarra.hidden = ! elDescargar;
 			ocultarEstado();
 			return renderizarPaginaActual();
 		} ).catch( function () {
 			mostrarEstado( 'No se pudo procesar la imagen. Puede que el fichero este daniado.' );
 		} );
+	}
+
+	/**
+	 * El boton solo existe si el servidor permite descargar (en documentos,
+	 * un Excel descargable; en herramientas, cualquier formato del visor
+	 * marcado como descargable).
+	 */
+	function mostrarDescargar() {
+		if ( elDescargar ) {
+			elDescargar.hidden = false;
+		}
 	}
 
 	function hayContenido() {
@@ -271,9 +288,7 @@
 				elHoja.appendChild( opcion );
 			} );
 			elHoja.hidden = libroActual.SheetNames.length < 2;
-			if ( elDescargar ) {
-				elDescargar.hidden = false;
-			}
+			mostrarDescargar();
 			esImagenUnica = false;
 			elBarra.hidden = false;
 			ocultarEstado();

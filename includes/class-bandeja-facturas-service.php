@@ -191,8 +191,9 @@ class Bandeja_Facturas_Service {
 	 * $formulario. Si el CIF leido no es el de la farmacia, hace falta
 	 * $confirmar_cif.
 	 *
-	 * @param array{emisor?: string, serie?: string, numero?: string, fecha?: string, es_abono?: bool, sin_marca?: bool} $formulario
-	 *        sin_marca: el documento nace sin marca de agua (#321).
+	 * @param array{emisor?: string, serie?: string, numero?: string, fecha?: string, es_abono?: bool, sin_marca?: bool, descargable?: bool} $formulario
+	 *        sin_marca: el documento nace sin marca de agua (#321); descargable:
+	 *        nace descargable (v0.36.0). Sin ellos, los valores por defecto.
 	 * @return array{documento: Documento, ya_existia: bool}|\WP_Error
 	 */
 	public function asignar( int $id, int $farmacia_id, array $formulario, bool $confirmar_cif, int $usuario_id ) {
@@ -223,7 +224,13 @@ class Bandeja_Facturas_Service {
 			return new \WP_Error( 'mdf_ca_bandeja_sin_fichero', 'El fichero de esta factura ya no está en el servidor. Descártala y vuelve a subirla.' );
 		}
 
-		$recepcion = ( new Factura_Recepcion_Service() )->asignar_manual( self::archivo_en_disco( $ruta ), $farmacia->get_id(), $datos, ! empty( $formulario['sin_marca'] ) );
+		$recepcion = ( new Factura_Recepcion_Service() )->asignar_manual(
+			self::archivo_en_disco( $ruta ),
+			$farmacia->get_id(),
+			$datos,
+			(bool) ( $formulario['sin_marca'] ?? Documento_Service::POR_DEFECTO_SIN_MARCA ),
+			(bool) ( $formulario['descargable'] ?? Documento_Service::POR_DEFECTO_DESCARGABLE )
+		);
 
 		if ( Factura_Recepcion_Service::ACEPTADO === $recepcion['resultado'] ) {
 			$this->sacar( $fila, $ruta, Bandeja_Facturas_Repository::EVENTO_ASIGNADA, $usuario_id, $recepcion['documento']->get_id() );
@@ -304,6 +311,8 @@ class Bandeja_Facturas_Service {
 				continue;
 			}
 
+			// Sin formulario: la configuracion por defecto (descargable y sin
+			// marca, v0.36.0), la de recibir().
 			$r = $recepcion->recibir( self::archivo_en_disco( $ruta ), $lectura, Publicacion_Evento_Repository::ORIGEN_BANDEJA );
 
 			if ( Factura_Recepcion_Service::ACEPTADO === $r['resultado'] ) {

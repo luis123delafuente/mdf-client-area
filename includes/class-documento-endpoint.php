@@ -18,6 +18,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  * wp-admin de Role_Restrictions (que solo actua si is_admin() es cierto)
  * interfieren, y funciona igual con o sin sesion sin variantes "nopriv".
  *
+ * Dos rutas (v0.36.0):
+ * - /mdf-ca-documento/{id}/: los bytes, solo para el fetch() del visor
+ *   (token de un solo uso siempre, nunca una navegacion directa);
+ * - /mdf-ca-documento/{id}/descargar/: el fichero como adjunto, con el
+ *   nombre del documento, solo si Permissions::puede_descargar_documento().
+ *   Desde la 0.36.0 cualquier documento puede ser descargable (antes, solo
+ *   un Excel); lo decide su casilla, nunca un parametro de la peticion.
+ *
  * Denegado (sin sesion, documento ajeno o documento inexistente) responde
  * siempre 404, nunca 403: un 403 confirmaria que el ID corresponde a un
  * documento real que existe pero no es tuyo, que es justo la pista de
@@ -27,6 +35,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Documento_Endpoint {
 
 	private const QUERY_VAR = 'mdf_ca_documento_id';
+
+	private const QUERY_VAR_DESCARGAR = 'mdf_ca_documento_descargar';
 
 	/**
 	 * Ruta de la carpeta privada relativa a ABSPATH. La usa tambien
@@ -47,10 +57,20 @@ class Documento_Endpoint {
 			'index.php?' . self::QUERY_VAR . '=$matches[1]',
 			'top'
 		);
+		add_rewrite_rule(
+			'^mdf-ca-documento/([0-9]+)/descargar/?$',
+			'index.php?' . self::QUERY_VAR . '=$matches[1]&' . self::QUERY_VAR_DESCARGAR . '=1',
+			'top'
+		);
+	}
+
+	public static function url_descarga( int $documento_id ): string {
+		return home_url( 'mdf-ca-documento/' . $documento_id . '/descargar/' );
 	}
 
 	public static function registrar_query_var( array $vars ): array {
 		$vars[] = self::QUERY_VAR;
+		$vars[] = self::QUERY_VAR_DESCARGAR;
 		return $vars;
 	}
 
@@ -64,20 +84,22 @@ class Documento_Endpoint {
 		$documento = ( new Documento_Repository() )->find_by_id( (int) $documento_id );
 		$usuario   = wp_get_current_user();
 
-		if ( ! Permissions::puede_ver_documento( $usuario, $documento ) ) {
+		if ( '1' === (string) get_query_var( self::QUERY_VAR_DESCARGAR ) ) {
+			if ( ! Permissions::puede_descargar_documento( $usuario, $documento ) ) {
+				self::responder_no_encontrado();
+			}
+
+			self::servir_fichero( $documento, true );
+		}
+
+		// Los bytes, solo para el visor: token de un solo uso y nunca una
+		// navegacion directa, sea o no descargable. Mismo 404 uniforme que el
+		// resto de rechazos, sin pista de por que.
+		if ( ! Permissions::puede_ver_documento( $usuario, $documento ) || ! self::es_peticion_del_visor( $usuario, $documento ) ) {
 			self::responder_no_encontrado();
 		}
 
-		$puede_descargar = Permissions::puede_descargar_documento( $usuario, $documento );
-
-		// Restriccion adicional sobre documentos ya visibles: si no es
-		// descargable, solo se entrega al fetch() del visor. Mismo 404
-		// uniforme que el resto de rechazos, sin pista de por que.
-		if ( ! $puede_descargar && ! self::es_peticion_del_visor( $usuario, $documento ) ) {
-			self::responder_no_encontrado();
-		}
-
-		self::servir_fichero( $documento, $puede_descargar );
+		self::servir_fichero( $documento, false );
 	}
 
 	/**
@@ -111,41 +133,19 @@ class Documento_Endpoint {
 
 	/**
 	 * Publico para la vista previa del administrador (#304). Lee solo de la
-	 * carpeta privada (realpath + prefijo) y no decide permisos: quien lo
-	 * llama ya los ha comprobado.
+	 * carpeta privada (Descarga_Fichero: realpath + prefijo) y no decide
+	 * permisos: quien lo llama ya los ha comprobado. Como adjunto, con el
+	 * nombre del documento y la extension de su tipo.
 	 */
-	public static function servir_fichero( Documento $documento, bool $puede_descargar ): void {
-		$carpeta_real = realpath( self::get_carpeta_documentos() );
-		$ruta_real    = $carpeta_real ? realpath( $carpeta_real . DIRECTORY_SEPARATOR . $documento->get_ruta_fichero() ) : false;
+	public static function servir_fichero( Documento $documento, bool $como_adjunto ): void {
+		$carpeta = self::get_carpeta_documentos();
 
-		// Defensa en profundidad: el fichero resuelto debe seguir dentro de
-		// la carpeta privada, aunque ruta_fichero venga de nuestra propia
-		// BD y no de entrada directa del usuario.
-		if ( ! $carpeta_real || ! $ruta_real || 0 !== strpos( $ruta_real, $carpeta_real . DIRECTORY_SEPARATOR ) || ! is_file( $ruta_real ) ) {
-			self::responder_no_encontrado();
-		}
-
-		$tipo_mime = $documento->get_tipo_mime() ?: 'application/octet-stream';
-		$es_excel  = Documento_Service::MIME_XLSX === $tipo_mime;
-		$descarga  = $es_excel && $puede_descargar;
-
-		nocache_headers();
-		header( 'Content-Type: ' . $tipo_mime );
-
-		if ( $descarga ) {
-			$nombre_descarga = preg_replace( '/\.xlsx$/i', '', $documento->get_nombre() ) . '.xlsx';
-			header( "Content-Disposition: attachment; filename*=UTF-8''" . rawurlencode( $nombre_descarga ) );
-		} elseif ( $es_excel ) {
-			header( 'Content-Disposition: inline' );
-		} else {
-			header( 'Content-Disposition: inline; filename="' . rawurlencode( $documento->get_nombre() ) . '"' );
-		}
-
-		header( 'Content-Length: ' . filesize( $ruta_real ) );
-		header( 'X-Content-Type-Options: nosniff' );
-
-		readfile( $ruta_real );
-		exit;
+		Descarga_Fichero::servir(
+			$carpeta,
+			$carpeta . DIRECTORY_SEPARATOR . basename( (string) $documento->get_ruta_fichero() ),
+			$documento->get_tipo_mime() ?: 'application/octet-stream',
+			$como_adjunto ? $documento->get_nombre() : null
+		);
 	}
 
 	/**

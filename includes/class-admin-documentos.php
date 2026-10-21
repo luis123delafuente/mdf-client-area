@@ -33,6 +33,9 @@ class Admin_Documentos {
 	/** Poner o quitar la marca de agua (#321): admin-post con nonce por documento. */
 	public const ACCION_MARCA = 'mdf_ca_cambiar_marca';
 
+	/** Activar o desactivar la descarga (v0.36.0): admin-post con nonce por documento. */
+	public const ACCION_DESCARGA = 'mdf_ca_cambiar_descarga';
+
 	/** Eliminar un documento no publicado (v0.28.0): admin-post con nonce por documento. */
 	private const ACCION_ELIMINAR = 'mdf_ca_eliminar_documento';
 
@@ -48,6 +51,7 @@ class Admin_Documentos {
 		add_action( 'admin_post_mdf_ca_retirar_modelo_347', array( __CLASS__, 'gestionar_retirar_modelo_347' ) );
 		add_action( 'admin_post_' . self::ACCION_ELIMINAR, array( __CLASS__, 'gestionar_eliminar' ) );
 		add_action( 'admin_post_' . self::ACCION_MARCA, array( __CLASS__, 'gestionar_cambiar_marca' ) );
+		add_action( 'admin_post_' . self::ACCION_DESCARGA, array( __CLASS__, 'gestionar_cambiar_descarga' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'encolar_assets' ) );
 	}
 
@@ -69,18 +73,7 @@ class Admin_Documentos {
 		}
 
 		self::encolar_selector_farmacia();
-
-		// Muestra ejercicio y sociedad solo con el tipo Modelo 347, y la fecha
-		// con el resto. Sin JS se ven todos los campos: decide el servidor.
 		Admin_Zona_Archivos::encolar();
-
-		wp_enqueue_script(
-			'mdf-ca-admin-documentos',
-			Recursos::url( 'assets/js/admin-documentos.js' ),
-			array(),
-			Recursos::version( 'assets/js/admin-documentos.js' ),
-			true
-		);
 	}
 
 	/**
@@ -148,26 +141,23 @@ class Admin_Documentos {
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- $_FILES no se sanea con wp_unslash/sanitize_*, Documento_Service::subir() valida cada campo antes de usarlo.
 		$archivo = isset( $_FILES['documento'] ) ? $_FILES['documento'] : null;
 
-		// Checkbox HTML: solo llega si esta marcado. Sin marcar => false (por defecto no descargable).
+		// Casillas (v0.36.0): salen marcadas como "Descargable" si y "Marca de
+		// agua" no (Documento_Service::POR_DEFECTO_*). Una casilla sin marcar
+		// no llega en la peticion.
 		$descargable = ! empty( $_POST['descargable'] );
+		$sin_marca   = empty( $_POST['marca_agua'] );
 
-		// Fecha del documento (la de la factura, no la de subida): vacia = null.
-		// Obligatoria para las facturas y valida (formato y rango): lo decide
-		// Documento_Service en servidor, no el navegador.
+		// Fecha del documento, opcional: vacia = null; si viene, la valida
+		// Documento_Service.
 		$fecha_documento = isset( $_POST['fecha_documento'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['fecha_documento'] ) ) ) : '';
 		$fecha_documento = '' === $fecha_documento ? null : $fecha_documento;
 
-		// Modelo 347 (#307): ejercicio y sociedad emisora; vacios = null y el
-		// servicio los exige y valida. En el resto de tipos se ignoran.
-		$ejercicio  = isset( $_POST['ejercicio'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['ejercicio'] ) ) ) : '';
-		$ejercicio  = 1 === preg_match( '/^\d{4}$/D', $ejercicio ) ? (int) $ejercicio : null;
-		$emisor_cif = isset( $_POST['emisor_cif'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['emisor_cif'] ) ) ) : '';
-		$emisor_cif = '' === $emisor_cif ? null : $emisor_cif;
-
-		// Checkbox "Mostrar sin marca de agua" (#321): sin marcar, con marca.
-		$sin_marca = ! empty( $_POST['sin_marca'] );
-
-		$resultado = ( new Documento_Service() )->sin_marca_de_agua( $sin_marca )->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, true, $fecha_documento, $ejercicio, $emisor_cif );
+		// Facturas y Modelo 347 no entran por aqui (v0.36.0): lo rechaza
+		// Documento_Service::subir() aunque se fuerce el tipo.
+		$resultado = ( new Documento_Service() )
+			->descargable( $descargable )
+			->sin_marca_de_agua( $sin_marca )
+			->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, true, $fecha_documento );
 
 		if ( is_wp_error( $resultado ) ) {
 			self::guardar_aviso( 'error', $resultado->get_error_message() );
@@ -203,7 +193,7 @@ class Admin_Documentos {
 		if ( is_wp_error( $resultado ) ) {
 			self::guardar_aviso( 'error', $resultado->get_error_message() );
 		} else {
-			self::guardar_aviso( 'success', 'Modelo 347 retirado: su farmacia ya no lo ve. Ya puedes subir el corregido (lo que la farmacia ya vio o descargo no se puede retirar).' );
+			self::guardar_aviso( 'success', 'Modelo 347 retirado: su farmacia ya no lo ve. Para corregirlo, vuelve a generarlo desde el Excel en «Modelo 347» (lo que la farmacia ya vio o descargó no se puede retirar).' );
 		}
 
 		self::redirigir();
@@ -293,29 +283,52 @@ class Admin_Documentos {
 	 * documento; vuelve a la misma pantalla (con sus filtros) con su aviso.
 	 */
 	public static function gestionar_cambiar_marca(): void {
+		self::gestionar_cambio_configuracion( self::ACCION_MARCA );
+	}
+
+	public static function gestionar_cambiar_descarga(): void {
+		self::gestionar_cambio_configuracion( self::ACCION_DESCARGA );
+	}
+
+	/**
+	 * Poner o quitar la marca (#321) o activar o desactivar la descarga
+	 * (v0.36.0) de un documento: capacidad, nonce por documento y accion, y
+	 * Documento_Configuracion_Service. Vuelve a la pantalla de origen.
+	 */
+	private static function gestionar_cambio_configuracion( string $accion ): void {
 		if ( ! current_user_can( self::CAPACIDAD ) ) {
 			wp_die( 'No tienes permiso para realizar esta accion.', '', array( 'response' => 403 ) );
 		}
 
-		$id        = isset( $_POST['documento_id'] ) ? (int) $_POST['documento_id'] : 0;
-		$sin_marca = isset( $_POST['sin_marca'] ) && '1' === $_POST['sin_marca'];
-		$volver    = self::volver( isset( $_POST['volver'] ) ? sanitize_key( wp_unslash( $_POST['volver'] ) ) : '' );
+		$id     = isset( $_POST['documento_id'] ) ? (int) $_POST['documento_id'] : 0;
+		$volver = self::volver( isset( $_POST['volver'] ) ? sanitize_key( wp_unslash( $_POST['volver'] ) ) : '' );
 
-		check_admin_referer( self::ACCION_MARCA . '_' . $id );
+		check_admin_referer( $accion . '_' . $id );
 
-		$resultado = ( new Documento_Marca_Service() )->cambiar( $id, $sin_marca, get_current_user_id() );
+		$servicio = new Documento_Configuracion_Service();
+
+		if ( self::ACCION_MARCA === $accion ) {
+			$sin_marca = isset( $_POST['sin_marca'] ) && '1' === $_POST['sin_marca'];
+			$resultado = $servicio->cambiar_marca( $id, $sin_marca, get_current_user_id() );
+			$textos    = array(
+				sprintf( '«%%s» ya estaba %s marca de agua: no se ha cambiado nada.', $sin_marca ? 'sin' : 'con' ),
+				$sin_marca ? 'Marca de agua quitada de «%s»: la farmacia lo verá sin marca.' : 'Marca de agua puesta en «%s»: la farmacia lo verá con su CIF y nombre.',
+			);
+		} else {
+			$descargable = isset( $_POST['descargable'] ) && '1' === $_POST['descargable'];
+			$resultado   = $servicio->cambiar_descarga( $id, $descargable, get_current_user_id() );
+			$textos      = array(
+				sprintf( '«%%s» ya %s descargable: no se ha cambiado nada.', $descargable ? 'era' : 'no era' ),
+				$descargable ? 'Descarga activada en «%s»: la farmacia puede descargarlo.' : 'Descarga desactivada en «%s»: la farmacia solo puede verlo en el visor.',
+			);
+		}
 
 		if ( is_wp_error( $resultado ) ) {
 			$tipo    = 'error';
 			$mensaje = $resultado->get_error_message();
-		} elseif ( ! $resultado['cambiado'] ) {
-			$tipo    = 'warning';
-			$mensaje = sprintf( '«%s» ya estaba %s marca de agua: no se ha cambiado nada.', $resultado['nombre'], $sin_marca ? 'sin' : 'con' );
 		} else {
-			$tipo    = 'success';
-			$mensaje = $sin_marca
-				? sprintf( 'Marca de agua quitada de «%s»: la farmacia lo verá sin marca.', $resultado['nombre'] )
-				: sprintf( 'Marca de agua puesta en «%s»: la farmacia lo verá con su CIF y nombre.', $resultado['nombre'] );
+			$tipo    = $resultado['cambiado'] ? 'success' : 'warning';
+			$mensaje = sprintf( $resultado['cambiado'] ? $textos[1] : $textos[0], $resultado['nombre'] );
 		}
 
 		if ( self::VOLVER_PENDIENTES === $volver ) {

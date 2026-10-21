@@ -10,7 +10,7 @@ Plugin de WordPress que concentra toda la lógica de negocio del Área de Client
 - Ruta del plugin en ambos entornos: `wp-content/plugins/mdf-client-area/`
 - Despliegue: SFTP con `lftp mirror -R --delete` vía `deploy.sh` (repo `deploy-script`; rsync no funciona en este hosting). Siempre ensayar antes con `./deploy.sh --dry-run`. Nunca desplegar el WordPress completo ni `wp-config.php`, solo esta carpeta. El script (`wp-content/plugins/deploy-script/deploy.sh`, carpeta hermana del plugin, **sin control de versiones**) excluye `.git`, `.gitignore`, `.DS_Store`, `node_modules`, `tests`, `*.log`, `CLAUDE.md`, `*.md`, `*.docx` y `docs/`; los ficheros que empiezan por punto (`assets/.htaccess`, `.htaccess` de la raíz) sí se suben. La cuenta SFTP de despliegue tiene contraseña propia, distinta de la de wp-admin
 - Fechas: objetivo de entrega el 12 de octubre de 2026; fecha límite el 8 de noviembre de 2026
-- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347, zona de arrastrar archivos, Subir facturas, Inicio y menú de perfil) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
+- Recursos (JS, CSS y módulos): **todos** llevan `?ver=` = `MDF_CA_VERSION` + fecha de modificación del fichero, calculado en un único sitio, `Recursos::version()`, `Recursos::url()` y `Recursos::url_versionada()`. Si un recurso cambia en un despliegue sin subir `MDF_CA_VERSION`, su URL cambia y ningún navegador sigue usando la copia en caché; pasó en las pruebas del 347. Cubre lo encolado con `wp_enqueue_*` (selector de farmacia, Documentos MDF, Modelo 347, zona de arrastrar archivos, Subir facturas, Inicio, menú de perfil y el formulario de herramientas del Catálogo MDF) y lo que el visor enlaza a mano (su CSS y JS, PDF.js y su worker como URL completas `pdfjsUrl`/`pdfjsWorkerUrl`, y SheetJS). Cualquier recurso nuevo debe pasar por `Recursos`; nunca `plugins_url()` con `MDF_CA_VERSION` a mano
 - Versión del plugin: consulta las constantes `MDF_CA_VERSION` y `MDF_CA_DB_VERSION` en el código antes de subirlas; no asumas su valor. **`MDF_CA_VERSION` y la línea `Version:` de la cabecera de `mdf-client-area.php` se actualizan siempre juntas, en el mismo cambio, con el mismo valor** (la cabecera es lo que muestra WordPress en Plugins; hasta la 0.24.0 se quedó en 0.1.0)
 
 ## Reglas no negociables
@@ -32,8 +32,8 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Rol de cliente propio (`mdf_cliente`), **sin capacidades de backend**, con redirección forzada al área privada — nunca acceso a `wp-admin`
 - Rol **«Gestión MDF» (`mdf_gestor`, #337)** para el personal de MDF: no es administrador de WordPress. Solo `read` y las capacidades propias del plugin (`Roles::CAP_*`); el administrador tiene además todas. Ver «Rol Gestión MDF y backoffice simplificado»
 - **Planes** como entidad de datos (`wp_mdf_ca_planes`), no hardcodeados; cada farmacia tiene `plan_id`
-- Toda comprobación de permiso pasa por una única función centralizada (`Permissions::puede_ver_documento()`, `puede_descargar_documento()`, `puede_previsualizar_documento()`, `puede_ver_item_catalogo()`, `puede_ver_bloque_por_plan()`), para poder añadir excepciones en el futuro sin refactorizar
-- Dos módulos de contenido separados: catálogo compartido por plan (Herramientas, Formación) vs documentos privados por farmacia, vinculados por CIF/NIF, visibles solo por su titular (no dependen del plan)
+- Toda comprobación de permiso pasa por una única función centralizada (`Permissions::puede_ver_documento()`, `puede_descargar_documento()`, `puede_previsualizar_documento()`, `puede_ver_item_catalogo()`, `filtrar_items_catalogo_visibles()`, `puede_visualizar_item_catalogo()`, `puede_descargar_item_catalogo()`, `puede_ver_bloque_por_plan()`), para poder añadir excepciones en el futuro sin refactorizar
+- Dos módulos de contenido separados: catálogo de **Herramientas** (por plan y por farmacias concretas; desde la v0.35.0 Formación ya no es parte del catálogo, sino una página de Elementor con un enlace a la Academia) vs documentos privados por farmacia, vinculados por CIF/NIF, visibles solo por su titular (no dependen del plan)
 - Documentos: carpeta `Clientes/private-docs/` **en la raíz de WordPress** (`ABSPATH`, no en `wp-content`; ruta relativa en `Documento_Endpoint::CARPETA_RELATIVA`), protegida con `.htaccess` de denegación total e `index.php`, que el propio plugin crea si faltan y vigila (`Carpeta_Privada_Proteccion`). Solo se sirven por el script PHP del plugin, que valida permiso antes de leer el fichero
 - Alta de farmacias: un único camino lógico. El importador CSV y el formulario de alta manual comparten el mismo servicio; CIF/NIF es la clave normalizada y validada; importación idempotente (upsert por CIF/NIF, simulación previa antes de escribir)
 - Facturas: MDF las sube desde el backoffice («Subir facturas», #334): el plugin las lee en el servidor (`Factura_Lectura_Service`, #333, mismas reglas y mismo resultado que el parser de Python del repo hermano `Parser_facturas_SAGE`), las cruza y las guarda con `Factura_Recepcion_Service`; las que no puede asignar van a la Bandeja de facturas (#335). Desde la #336 no hay otra entrada: el robot del Mac, su usuario y la ruta REST se han retirado, y el plugin no tiene ninguna ruta REST propia
@@ -65,7 +65,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 **Planes y catálogo**
 - Tabla `wp_mdf_ca_planes`: nombre editable, **slug inmutable** fijado al crear (para no romper en silencio los `[mdf_ca_si_plan]` ya publicados por MKT). `Permissions::puede_ver_bloque_por_plan()` es el único punto que resuelve `plan_id` → slug
 - `Plan_Service::eliminar()` bloquea el borrado de un plan en uso (por farmacias o por items de catálogo) en vez de depender de un `ON DELETE RESTRICT` que el esquema no puede expresar
-- Catálogo: tablas `wp_mdf_ca_catalogo` + `wp_mdf_ca_catalogo_planes` (N:M real). Item sin ningún plan asignado: nadie lo ve. `Catalogo_Repository` es el único acceso a ambas tablas; `set_planes()` sustituye el conjunto completo
+- Catálogo: tablas `wp_mdf_ca_catalogo` + `wp_mdf_ca_catalogo_planes` (N:M real). Item sin ningún plan asignado: nadie lo ve. `Catalogo_Repository` es el único acceso a ambas tablas; `set_planes()` sustituye el conjunto completo. **Rehecho en la v0.35.0** (ver «Herramientas del catálogo»): secciones y tipos fijos sustituidos por categorías, etiquetas, archivo o enlace y farmacias concretas
 - `enlace_url` del catálogo se valida solo por formato (`filter_var` + esquema http/https). `wp_http_validate_url()` descartado: hace resolución DNS real y rechazaba URLs válidas
 
 **Documentos**
@@ -78,8 +78,8 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 **Excel (.xlsx)**
 - Se admite `.xlsx` a petición de MDF. Se siguen rechazando `.xls`, `.xlsm` y `.xlsb` (no se puede garantizar la ausencia de VBA)
 - Un `.xlsx` se valida por contenido (`Documento_Service::validar_xlsx()`): ZIP con `[Content_Types].xml` y `xl/workbook.xml`, libro principal de tipo xlsx (no xlsm), sin `vbaProject.bin` ni `xl/embeddings/`, con límites anti zip-bomb (2000 entradas, 200 MB descomprimido, sin extraer nada a disco). **No se busca "macroEnabled" en todo el `[Content_Types].xml`**: generadores legítimos (SheetJS) lo declaran en un `Default` genérico y daba falsos positivos. Requiere la extensión `zip` de PHP (confirmada en producción)
-- **Un Excel no es descargable por defecto.** Columna `documentos.descargable` (`TINYINT(1) NOT NULL DEFAULT 0`), con checkbox en la subida. Solo aplica a Excel; PDF e imágenes siempre van al visor. La decisión vive en `Permissions::puede_descargar_documento()`
-- Sin marcar, el Excel se ve en el visor con SheetJS 0.20.3 (`assets/vendor/sheetjs/`, vendorizado), dibujado en canvas con marca de agua, con selector de hojas y paginación por filas (2000 filas x 60 columnas por hoja). Se dibujan fondos, color de texto, negrita, cursiva, alineación y celdas combinadas; **no** bordes, formato condicional, degradados, imágenes ni gráficos (los documentos con gráficos o diseño deben subirse como PDF). SheetJS Pro no se usa
+- ~~Un Excel no es descargable por defecto~~ (regla de la Fase 3, **sustituida en la v0.36.0**: cualquier documento puede ser descargable y es lo predeterminado; ver «Descarga de documentos y una vía por tipo»). Columna `documentos.descargable`; la decisión vive en `Permissions::puede_descargar_documento()`
+- En el visor, el Excel se ve con SheetJS 0.20.3 (`assets/vendor/sheetjs/`, vendorizado), dibujado en canvas con marca de agua, con selector de hojas y paginación por filas (2000 filas x 60 columnas por hoja). Se dibujan fondos, color de texto, negrita, cursiva, alineación y celdas combinadas; **no** bordes, formato condicional, degradados, imágenes ni gráficos (los documentos con gráficos o diseño deben subirse como PDF). SheetJS Pro no se usa
 
 **Visor**
 - PDF.js vendorizado (solo `pdf.min.mjs` + `pdf.worker.min.mjs`, sin su viewer), nunca desde CDN. `assets/.htaccess` fuerza `AddType application/javascript .mjs`
@@ -87,7 +87,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - PDF e imágenes se pintan en `<canvas>`; la marca de agua (CIF + nombre de farmacia) va horneada en los mismos píxeles, no como capa CSS. Espaciado calculado con `ctx.measureText()`
 - Desde la #321 (v0.34.0) un documento puede ir **sin marca de agua** (`documentos.sin_marca`): el visor la deja vacía solo si el documento lo tiene guardado así; ver «Marca de agua por documento»
 - `Ctrl/Cmd+P` y `Ctrl/Cmd+S` bloqueados por `keydown`; `beforeprint` vacía el canvas y `afterprint` lo restaura. PrintScreen del sistema no se puede bloquear
-- **Un documento no descargable solo se entrega al visor**: `Documento_Token` emite un token de un solo uso (transient con hash, ligado a usuario + documento, TTL 120 s, consumo atómico) que el `fetch()` manda en `?mdf_t=`. Sin token válido, o con `Sec-Fetch-Dest: document`, el endpoint da el mismo 404 uniforme. Un documento descargable no exige token
+- **Un documento no descargable solo se entrega al visor**: `Documento_Token` emite un token de un solo uso (transient con hash, ligado a usuario + documento, TTL 120 s, consumo atómico) que el `fetch()` manda en `?mdf_t=`. Sin token válido, o con `Sec-Fetch-Dest: document`, el endpoint da el mismo 404 uniforme. Desde la v0.36.0 lo exige a **todos** (antes un descargable no lo necesitaba): la descarga va por su propia ruta, `/mdf-ca-documento/{id}/descargar/`
 - **Límite asumido:** los bytes llegan al navegador por `fetch()`; quien tiene sesión y DevTools puede sacarlos o reproducir la petición. La protección es disuasión y trazabilidad (sin botón, sin texto copiable, marca de agua con CIF y nombre), no DRM
 
 **Invitación, login y sesión**
@@ -160,7 +160,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Pendientes de publicar paginado por farmacias (20 por página, tope de 50 documentos por grupo); contadores siempre en SQL sobre todos los pendientes, nunca sumando lo pintado. Orden estable por pendiente más antiguo. `Filtro_Listado_Documentos` sanea farmacia, búsqueda y página (`(int)` con mínimos, no `absint()`). Sin índice nuevo (medido)
 
 **Documentos organizados** (v0.16.0, esquema 1.9.0)
-- Columna `documentos.fecha_documento DATE NULL` (fecha de la factura, no de subida), rellenada por la recepción con la fecha ya revalidada. Un único validador (`Documento_Service::fecha_documento_valida()`: `Y-m-d` estricto, del 1-1-2000 a hoy+31 días); la subida manual la exige si el tipo es factura
+- Columna `documentos.fecha_documento DATE NULL` (fecha de la factura, no de subida), rellenada por la recepción con la fecha ya revalidada. Un único validador (`Documento_Service::fecha_documento_valida()`: `Y-m-d` estricto, del 1-1-2000 a hoy+31 días); desde la v0.36.0 las facturas solo entran por «Subir facturas» y la Bandeja, que ponen siempre la fecha leída o la escrita al asignar (en la subida manual la fecha es opcional)
 - Shortcode del listado: atributo `vista` (`agrupada` por defecto, `plana` idéntica al HTML anterior). Agrupado por tipo en orden fijo (Facturas, Modelo 347, Contratos, Presupuestos, Entregables, Otros); facturas por año y mes de la fecha de factura, con "Sin fecha" al final; la fecha de subida nunca sustituye a la de factura
 
 **Modelo 347 en Documentación** (#307, parte del plugin; v0.23.0, esquema 1.13.0)
@@ -168,7 +168,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - El ejercicio va en una columna propia `ejercicio`, no en `fecha_documento = AAAA-12-31`: `fecha_documento_valida()` rechazaría el ejercicio en curso hasta diciembre, y no es la fecha del documento. Un único validador: `Documento_Service::ejercicio_valido()` (de 2000 al año en curso). Los importes del 347 nunca se guardan en la BD
 - Unicidad: `UNIQUE modelo_347 (farmacia_id, emisor_cif, ejercicio, vigente)`, con `vigente` = 1 en el vigente y **NULL** (nunca 0) en todo lo demás y en los retirados. Así puede haber varios retirados y un único vigente por farmacia, sociedad y ejercicio (probado en MySQL 8.4; los NULL no chocan tampoco en MariaDB). La misma combinación con otro PDF se rechaza con un mensaje claro y nunca se sustituye; la carrera la pierde el INSERT, con el error de la BD silenciado
 - Correcciones: **«Retirar para corrección»** en Documentos MDF (solo el administrador, con nonce por documento y casilla de confirmación). `Documento_Publicacion_Service::retirar_modelo_347()`, en una transacción: `FOR UPDATE`, despublica con `cambiar_estado()` si estaba publicado, `marcar_retirado()` (`vigente = NULL`, `retirado_en`) y evento `retirado`. Retirado es terminal: `cambiar_estado()` no lo publica y `Documento_Repository::PENDIENTE` (`publicado = 0 AND retirado_en IS NULL`) lo saca de todas las consultas de pendientes. Lo que la farmacia ya vio o descargó no se retira
-- Subida manual: con el tipo Modelo 347 se piden ejercicio y sociedad emisora (`Factura_Emisores::get_opciones()`), los dos obligatorios. La fecha se ignora y el nombre lo fija el servidor: `Documento_Service::nombre_modelo_347()`, «Modelo 347 {sociedad} {ejercicio}». Sin hash: subir el mismo PDF otra vez se rechaza como combinación repetida
+- ~~Subida manual de un 347~~ (retirada en la v0.36.0, decisión de MDF: el 347 solo entra por su generador). **Corregir un 347** = «Retirar para corrección» en Documentos MDF y volver a generarlo desde el Excel en «Modelo 347»: el retirado deja de ser vigente, la simulación lo da como «lista» (o «sin cuenta») y se genera una carta nueva, pendiente de publicar. Probado con un Excel de una sola fila. El nombre visible sigue siendo `Documento_Service::nombre_modelo_347()`
 - No hay ruta REST: los 347 se generan en el servidor desde el Excel de SAGE subido en el backoffice (ver «Generador del Modelo 347»). `Permissions`, el endpoint, el visor y la recepción de facturas no cambian
 
 **Generador del Modelo 347** (#307; v0.24.0, esquema 1.14.0). Solo clientes de Mediformplus (B82827635)
@@ -351,8 +351,8 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - `CAP_GESTIONAR_DOCUMENTOS` (`mdf_ca_gestionar_documentos`, = `Admin_Documentos::CAPACIDAD`): Documentos MDF y subida manual, Subir facturas, Bandeja, Pendientes (publicar, despublicar, publicar todos, deshacer lote), Eliminar, Documentos publicados e historial, y la vista previa (`Permissions::puede_previsualizar_documento()`);
   - `CAP_GESTIONAR_347` (`mdf_ca_gestionar_347`): el Modelo 347 completo, ajustes incluidos. «Retirar para corrección» exige esta y la de documentos;
   - `CAP_GESTIONAR_FARMACIAS` (`mdf_ca_gestionar_farmacias`, = `Admin_Farmacias::CAPACIDAD`): Farmacias MDF (listado y alta), importador CSV e invitaciones;
-  - `CAP_GESTIONAR_CATALOGO` (`mdf_ca_gestionar_catalogo`, «Catálogo y planes», desde la v0.32.0): Planes MDF y Catálogo MDF (crear, editar y borrar planes y elementos, y asignar planes a los elementos). Lo que ve cada farmacia lo sigue decidiendo `Permissions::puede_ver_item_catalogo()` / `puede_ver_bloque_por_plan()` con el plan de la farmacia;
-  - `CAP_ADMINISTRAR` (= `manage_options`): lo que sigue siendo solo del administrador: Avisos por email (interruptor de todo el sitio), avisos de protección de la carpeta y de requisitos del servidor, y el aviso del robot retirado.
+  - `CAP_GESTIONAR_CATALOGO` (`mdf_ca_gestionar_catalogo`, «Catálogo y planes», desde la v0.32.0): Planes MDF y Catálogo MDF (crear, editar y borrar planes y herramientas, y desde la v0.35.0 sus categorías y etiquetas). Lo que ve cada farmacia lo sigue decidiendo `Permissions::puede_ver_item_catalogo()` / `puede_ver_bloque_por_plan()` con el plan de la farmacia;
+  - `CAP_ADMINISTRAR` (= `manage_options`): lo que sigue siendo solo del administrador: Avisos por email (interruptor de todo el sitio), Catálogo MDF › Ajustes («Permitir herramientas Excel con macros», v0.35.0), avisos de protección de la carpeta y de requisitos del servidor, y el aviso del robot retirado.
 - Rol `mdf_gestor`: `read` + las cinco primeras (`Roles::CAPACIDADES_PLUGIN`), nada más (ni `upload_files`, `edit_posts`, `list_users`, `create_users` ni `promote_users`). El administrador recibe las cinco y no pierde nada. Migración `mdf_ca_rol_gestor_v1` (`Roles::registrar_gestor()`, idempotente con `remove_role` + `add_role`, y `conceder_capacidades_administrador()`); solo la API de roles, igual en MySQL y MariaDB. `uninstall.php` quita el rol y las capacidades `mdf_ca_*` del administrador
 - Las invitaciones siguen creando siempre `mdf_cliente` (fijo en `Invitacion_Service`; ningún campo de la petición llega a `wp_insert_user()`). Nuevo: reinvitar una farmacia cuyo usuario vinculado no es `mdf_cliente` se rechaza sin generar clave (`mdf_ca_invitacion_usuario_no_cliente`), para que el gestor nunca dispare el restablecimiento de contraseña de una cuenta de personal
 - `Admin_Inicio`:
@@ -460,11 +460,11 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 **Marca de agua por documento** (#321; v0.34.0, esquema 1.20.0)
 - Columna `documentos.sin_marca TINYINT(1) NOT NULL DEFAULT 0`: todo documento lleva marca salvo que se quite expresamente. La añade dbDelta con el valor por defecto, así que lo existente queda con marca (sin marca de migración propia)
 - **El visor decide con el valor guardado**, nunca con un parámetro de la petición: `Documento_Visor::renderizar()` deja `marcaAgua` vacío si `Documento::is_sin_marca_de_agua()`, y el JS no pinta nada con el texto vacío. Lo mismo en la vista previa del administrador (`Admin_Publicacion_Documentos::gestionar_vista_previa()`): lo que ve MDF es lo que verá la farmacia. El resto del visor no cambia (canvas, sin descarga ni impresión, token de un solo uso, permiso en el servidor). La vista previa de la Bandeja de facturas sigue con su marca «BANDEJA» (todavía no es un documento)
-- Dónde se elige, al dar de alta:
-  - subida manual: casilla «Mostrar sin marca de agua»;
-  - «Subir facturas»: casilla para toda la tanda, en el bloque de «Subir»; el JS la fija al pulsar «Subir» (también al continuar tras «Parar») y la manda en cada factura; el servidor solo acepta `sin_marca=1`. Las que van a la bandeja se deciden al asignarlas;
-  - bandeja, al asignar: casilla (se conserva en una vuelta con error, como el resto del formulario). «Volver a comprobar todas» asigna siempre con marca;
-  - Modelo 347, al confirmar la generación: casilla para todas las cartas; se guarda en el trabajo (transient) y no se vuelve a leer de las tandas AJAX.
+- Dónde se elige, al dar de alta (desde la v0.36.0, casillas en positivo «Descargable» y «Marca de agua», que salen como **descargable sí y marca no**; ver «Descarga de documentos y una vía por tipo»):
+  - subida manual: las dos casillas;
+  - «Subir facturas»: las dos para toda la tanda, en el bloque de «Subir»; el JS las fija al pulsar «Subir» (también al continuar tras «Parar») y manda `marca_agua` y `descargable` (`1`/`0`) en cada factura; si no llegan, los valores por defecto. Las que van a la bandeja se deciden al asignarlas;
+  - bandeja, al asignar: las dos (se conservan en una vuelta con error, como el resto del formulario). «Volver a comprobar todas» usa los valores por defecto (antes, siempre con marca);
+  - Modelo 347, al confirmar la generación: las dos para todas las cartas; se guardan en el trabajo (transient) y no se vuelven a leer de las tandas AJAX.
 
   Todas pasan por `Documento_Service::sin_marca_de_agua( bool )` (opción de la instancia; `Factura_Recepcion_Service` la fija en cada llamada porque reutiliza su instancia) y `registrar()`: un alta sin marca abre transacción y deja, además del evento de alta, el evento `marca_quitada` con el mismo origen (`subida_backoffice`, `subida_facturas`, `bandeja` o `modelo_347`) y el usuario
 - Después, en cualquier momento: columna «Marca de agua» en Documentos MDF (todos los documentos, pendientes o publicados) y en Pendientes de publicar, con «Quitar marca» / «Poner marca» (`parcial-marca-agua.php`). POST a `admin-post` `mdf_ca_cambiar_marca` con `Admin_Documentos::CAPACIDAD` y nonce por documento; vuelve a la misma pantalla con sus filtros. `Documento_Marca_Service::cambiar()`: transacción, `FOR UPDATE`, `UPDATE … WHERE sin_marca <> X` y evento `marca_quitada` o `marca_puesta` (origen `individual`); si ya estaba así, no cambia nada ni deja evento. El historial los muestra como «Marca de agua quitada» / «Marca de agua puesta»
@@ -475,6 +475,125 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
   - el cliente no puede cambiarlo: el visor ignora `?sin_marca=1`, `?marcaAgua=` y similares; la acción le saca a Documentación (también con el nonce del gestor); sin sesión, 400; el gestor sin nonce, 403;
   - regresión: publicar todos y deshacer lote conservan el ajuste, eliminar (también uno sin marca), bandeja, 347 y las pantallas del plugin y del área del cliente sin errores
   - en Chrome (administrador): la vista previa pinta la marca en la carta del 347 y en el Excel con marca y no pinta nada en los sin marca; «Poner marca» con un clic en Pendientes; las casillas de la subida manual y de «Subir facturas» (que sale al elegir ficheros), desmarcadas por defecto. La del 347 y la de la bandeja se comprobaron por curl.
+
+**Herramientas del catálogo** (v0.35.0, esquema 1.21.0). El catálogo se rehace y pasa a ser **solo Herramientas**
+- **Formación** deja el catálogo: es una página de Elementor con un enlace a la Academia. En local la página no usaba el catálogo y el catálogo estaba vacío; producción no se pudo mirar desde aquí. `[mdf_ca_catalogo_herramientas seccion="formacion"]` no pinta nada; sin atributo, o con `herramientas`, pinta las herramientas. `Catalogo_Tipos` desaparece; `Catalogo_Secciones` queda solo para la migración y para rellenar `seccion` (NOT NULL)
+- **Modelo** (sin FOREIGN KEY):
+  - `wp_mdf_ca_catalogo` gana `descripcion`, `categoria_id`, `recurso` (`enlace`/`archivo`), `formato`, `ruta_fichero`, `tipo_mime`, `tamano`, `descargable`, `marca_agua` (DEFAULT 1), `visible` (DEFAULT 1) y `fecha_modificacion`. `seccion` y `tipo` ya no se leen;
+  - tablas nuevas: `catalogo_categorias` y `catalogo_etiquetas` (nombre editable y **slug inmutable**, los dos UNIQUE; la collation no distingue mayúsculas ni tildes), `catalogo_item_etiquetas` y `catalogo_farmacias` (PK compuesta);
+  - «Solo para farmacias concretas» no tiene columna: está marcada si la herramienta tiene farmacias, y desmarcarla vacía la lista;
+  - `Catalogo_Repository` (herramientas y tablas puente; relaciones cargadas de todas a la vez), `Catalogo_Termino_Repository` (categorías y etiquetas, construido solo con `categorias()` o `etiquetas()`), `Catalogo_Service` y `Catalogo_Termino_Service`.
+- **Quién la ve** (solo `Permissions`):
+  - `puede_ver_item_catalogo()` / `filtrar_items_catalogo_visibles()`: visible, recurso completo, no es un `.xlsm` con el ajuste apagado, y (plan de la farmacia entre los suyos **o** farmacia en su lista). Las dos vías se suman; sin planes ni farmacias, nadie. Comparten el predicado `item_visible_para_farmacia()`; el plan se resuelve en `slug_plan_de_farmacia()`, también para `puede_ver_bloque_por_plan()`;
+  - `puede_visualizar_item_catalogo()`: archivo PDF, `.xlsx`, JPG o PNG;
+  - `puede_descargar_item_catalogo()`: archivo marcado como descargable, o Word, PowerPoint o `.xlsm` (siempre).
+- **Formatos** (`Catalogo_Formatos`, lista fija): PDF, `.xlsx`, JPG y PNG van al visor; `.docx`, `.pptx` y `.xlsm` se descargan siempre, sin marca. 20 MB (`Catalogo_Archivo_Validator`, el mismo tope que los documentos). La extensión solo elige la comprobación; el contenido decide:
+  - PDF: fileinfo `application/pdf`. JPG y PNG: fileinfo y `getimagesize()`. `.xlsx`: `Xlsx_Validator`;
+  - `.docx`, `.pptx` y `.xlsm`: `Ooxml_Validator` (nuevo). Mismos topes anti zip bomb, sin DOCTYPE ni ENTITY y tipo de la parte principal por la regla OPC (`Xlsx_Validator::tipo_de_parte()` y `declara_dtd()` pasan a públicas). En docx y pptx rechaza `vbaProject.bin`, `vbaData.xml`, `activeX/` y cualquier incrustado que no sea `.xlsx`, `.docx` o `.pptx` (los gráficos de Office guardan así sus datos; un OLE `.bin` se rechaza). En los tres rechaza **relaciones externas** que no sean hipervínculos: una plantilla adjunta remota (`attachedTemplate`) es la vía habitual para colar macros en un docx sin macros. Límite asumido: no se abre un `.xlsx` incrustado para validarlo;
+  - `.docm`, `.dotm`, `.pptm`, `.potm`, `.ppsm`, `.xlsb`, `.xltm` y `.xlam`, siempre rechazados con su mensaje; un `.docm` renombrado a `.docx` da «contiene macros»;
+  - `.xlsm`: solo con el ajuste «Permitir herramientas Excel con macros» (`Catalogo_Ajustes`, option `mdf_ca_herramientas_permitir_xlsm`, **apagado por defecto**, solo el administrador). Al subirlo sale un aviso. Con el ajuste apagado, los ya subidos no los ve nadie (404) y el listado los marca.
+- **Almacenamiento:** `Clientes/private-docs/herramientas/` (`Catalogo_Service::CARPETA_RELATIVA`), creada y protegida con `Carpeta_Privada_Proteccion::asegurar()`; si no existe, no se puede escribir o su `.htaccess` no deniega, no se guarda nada. Nombre generado `h-{32 hex}.{formato}`; `Catalogo_Service::ruta_en_carpeta()` solo acepta ese patrón. Al guardar con archivo nuevo: fichero nuevo, BD en transacción y, solo si confirma, se borra el antiguo (si falla, se borra el nuevo). Pasar de archivo a enlace también borra el antiguo. Eliminar: `rename` a `.eliminando-*`, `DELETE` de la fila y de las tres puentes, `COMMIT` y borrado (el patrón de `Documento_Eliminacion_Service`)
+- **Entrega** (`Herramienta_Endpoint`, rewrite `^mdf-ca-herramienta/([0-9]+)/(ver|fichero|descargar)/?$`, flush con la marca `mdf_ca_herramientas_rewrite_v1`):
+  - `ver/`: sin sesión, al login (como el visor de documentos); sin permiso, el 404 uniforme. Pinta `Documento_Visor::pintar()` (ahora público, con URL de descarga aparte y título). La marca (CIF y nombre de la farmacia que la abre) sale de lo guardado; ningún parámetro la quita ni fuerza la descarga;
+  - `fichero/`: solo para el `fetch()` del visor, con un token de `Documento_Token` de **ámbito `herramienta`** (uno de documento o de la bandeja no vale) y nunca con `Sec-Fetch-Dest: document`. Siempre exige token, aunque la herramienta sea descargable;
+  - `descargar/`: adjunto con el nombre de la herramienta y la extensión del formato (`filename*` UTF-8 y `filename` ASCII de respaldo, sin caracteres no válidos; desde la v0.36.0 lo escribe `Descarga_Fichero`, compartido con los documentos). La marca es del visor: «descargable + marca» se ve con marca y se descarga sin ella, a propósito;
+  - el visor enseña ahora «Descargar» también con PDF e imágenes (antes solo con Excel). En documentos no cambia nada: solo el Excel puede ser descargable.
+- **Backoffice** (Catálogo MDF, `CAP_GESTIONAR_CATALOGO`, nonce por acción y por herramienta o término; vistas `admin-catalogo*.php` y `parcial-aviso-catalogo.php`):
+  - **Herramientas**: listado (categoría y etiquetas, recurso y configuración, «Visible para» con planes y «N farmacias concretas», estado y avisos: falta el enlace, `.xlsm` con el ajuste apagado, sin planes ni farmacias) y formulario aparte (`&accion=nueva`, `&editar=ID`). Orden: nombre, descripción, categoría, etiquetas, recurso, configuración, visualización y estado; el recurso va antes que la configuración porque la decide. Si falla, se conserva lo rellenado (transient del usuario, 5 min; el archivo hay que volver a elegirlo). Eliminar: POST con confirmación;
+  - `admin-catalogo.js`: oculta el bloque que no aplica y la configuración con un enlace; con `.docx`, `.pptx` o `.xlsm` (el elegido o el actual) fija «Descargable» y quita «Marca de agua», y lo explica; muestra el aviso del `.xlsm`; avisa si no hay planes ni farmacias. Etiquetas con autocompletado y fichas; Enter nunca crea una ni envía el formulario. Sin JS todo se ve, las etiquetas son casillas y las farmacias elegidas se quitan desmarcándolas;
+  - selector de farmacia en **modo múltiple** (`$selector_multiple` en el parcial, `data-mdf-ca-multiple`): cada elegida pasa a una lista de casillas `farmacia_ids[]` con «Quitar»;
+  - **Categorías** y **Etiquetas**: crear, renombrar (el slug no cambia y se muestra «para MKT») y borrar. Una categoría en uso no se puede borrar (ni botón ni servicio; el `DELETE` lo repite en SQL con `NOT EXISTS`); una etiqueta en uso, sí, tras una pantalla «Se quitará de N herramientas», en una transacción;
+  - **Ajustes**: solo el administrador.
+- **Área de cliente** (`[mdf_ca_catalogo_herramientas]`), HTML para MKT. Cambian las clases: las antiguas `mdf-ca-catalogo-herramientas*` desaparecen.
+
+  ```html
+  <div class="mdf-ca-herramientas">
+    <section class="mdf-ca-herramientas__categoria" data-categoria="{slug}">
+      <h2 class="mdf-ca-herramientas__categoria-titulo">{Categoría}</h2>
+      <ul class="mdf-ca-herramientas__lista">
+        <li class="mdf-ca-herramienta" data-categoria="{slug}" data-etiquetas="{slug1 slug2}" data-tipo="enlace|pdf|xlsx|xlsm|docx|pptx|jpg|png">
+          <h3 class="mdf-ca-herramienta__nombre">{Nombre}</h3>
+          <p class="mdf-ca-herramienta__descripcion">{Descripción}</p>        <!-- solo si la tiene -->
+          <ul class="mdf-ca-herramienta__etiquetas">                          <!-- solo si tiene -->
+            <li class="mdf-ca-herramienta__etiqueta" data-etiqueta="{slug}">{Etiqueta}</li>
+          </ul>
+          <div class="mdf-ca-herramienta__acciones">
+            <a class="mdf-ca-herramienta__boton mdf-ca-herramienta__boton--abrir" target="_blank" rel="noopener noreferrer">Abrir</a>
+            <a class="mdf-ca-herramienta__boton mdf-ca-herramienta__boton--ver">Ver</a>
+            <a class="mdf-ca-herramienta__boton mdf-ca-herramienta__boton--descargar">Descargar</a>
+          </div>
+        </li>
+      </ul>
+    </section>
+  </div>
+  <p class="mdf-ca-herramientas mdf-ca-herramientas--vacio">No hay herramientas disponibles.</p>  <!-- si no ve ninguna -->
+  ```
+
+  Categorías y herramientas por nombre. «Abrir» solo en enlaces; «Ver» y «Descargar», según `Permissions`. Los slugs no cambian al renombrar: el buscador y los filtros de categoría y etiqueta (no hechos todavía) pueden apoyarse en `data-categoria`, `data-etiquetas` (separadas por espacios: `[data-etiquetas~="slug"]`) y `data-tipo` sin tocar el modelo. Nunca se pintan planes ni farmacias
+- **Migración** (`Activator::migrar_catalogo_a_herramientas()`, marca `mdf_ca_herramientas_v1`, también en `activate()`): solo filas con `categoria_id IS NULL`, todas como enlace y con sus planes (la puente no se toca): las de Formación, **ocultas** en «Formación (antigua)» (`formacion-antigua`); las que no tienen enlace, **ocultas** en «General» (`general`), y el listado las marca para completarlas; el resto, visibles en «General». Las categorías se crean por slug solo si hacen falta. Solo `INSERT` y `UPDATE` simples; repetida no cambia nada
+- **Comprobado en local** con datos ficticios (borrados al terminar; el catálogo local queda vacío, como estaba):
+  - migración con cuatro elementos antiguos (Formación, enlace con dos planes, sin enlace, enlace de un plan), repetida sin cambios;
+  - una herramienta de cada formato y un enlace, con las combinaciones de configuración; el Word mandado como «no descargable y con marca» queda descargable y sin marca;
+  - rechazos: `.xlsm` con el ajuste apagado, `.docm`, `.pptm`, docm y xlsm renombrados, PNG renombrado a PDF, docx con plantilla externa, docx con DOCTYPE, pptx con OLE, `.txt`, enlace `javascript:` y `ftp:`, sin archivo, sin categoría, etiqueta, categoría o farmacia inexistentes y sin nombre. Admitidos: pptx con un `.xlsx` incrustado y docx con un hipervínculo;
+  - `.xlsm` con el ajuste encendido: siempre descargable y sin marca, con aviso; al apagarlo, 404 y marcado en el listado; el ajuste, 403 para el gestor y sin nonce;
+  - farmacia A (plan básico), B (premium) y C (sin plan, elegida a mano): cada una ve solo lo suyo y en las 17 herramientas (visibles, ocultas, sin planes, Formación) ver, fichero y descargar dan lo esperado y 404 en lo demás (68 comprobaciones, también sin sesión);
+  - visor: marca con el CIF y el nombre de quien la abre, vacía si la herramienta no la lleva, ignorando `?sin_marca=1` y similares; token de un uso, que no vale para otra herramienta, para otro usuario ni con `Sec-Fetch-Dest: document`, y un token de documento con el mismo id tampoco;
+  - sustituir el archivo (el antiguo desaparece del disco), editar sin archivo (se conserva), pasar a enlace (se borra) y eliminar (fichero y filas, sin apartados); carpeta y fichero directos, 403;
+  - categorías y etiquetas: repetidas sin distinguir mayúsculas ni tildes, renombrar sin cambiar el slug, categoría en uso no borrable, etiqueta en uso con confirmación;
+  - acciones sin nonce (403), con el nonce de otra herramienta (403), como cliente (302 a Documentación), sin sesión (400) y con una clase de término inventada (400); HTML escapado (nombre, descripción y enlace hostiles) y ninguna mención a farmacias ni planes en el HTML del cliente;
+  - regresión: visor y endpoint de documentos (PDF y Excel, token, acceso ajeno), Excel descargable de documentos, vista previa del administrador, plan en uso no borrable, todas las pantallas del plugin como administrador y gestor y las cuatro páginas del área de cliente, sin errores ni líneas nuevas en `debug.log`;
+  - en Chrome (administrador): listado, formulario (configuración forzada con `.docx` y `.xlsm`, `.docm` rechazado en la zona, etiquetas con teclado, selector múltiple por CIF y por nombre, aviso de «no la verá nadie», ocultar con enlace). Como farmacia, con un enlace de un solo uso de un mu-plugin temporal fuera del repo (borrado): Herramientas por categoría, imagen y PDF con marca, Excel y PNG descargables con «Descargar», 404 en una ajena y el visor de documentos sin cambios.
+
+  **Falta:** Safari; arrastrar un archivo real desde el Finder al formulario; comprobar en producción si hay elementos de Formación o sin enlace antes de desplegar (quedarán ocultos); y que MKT maquete Formación en Elementor y dé estilo a las clases nuevas
+
+**Descarga de documentos y una vía por tipo** (v0.36.0, sin cambio de esquema). Dos decisiones de MDF
+- **Decisión 1: los documentos son descargables por defecto.** Cualquier formato (PDF, Excel o imagen) puede ser descargable, por documento, y es lo predeterminado. Sustituye la regla de la Fase 3 («solo un Excel, y no por defecto»)
+  - **Regla** (`Permissions`): `puede_descargar_documento()` = puede verlo y `is_descargable()`. `filtrar_documentos_descargables()` hace lo mismo para el listado, resolviendo la farmacia una sola vez;
+  - **entrega** (`Documento_Endpoint`):
+    - `/mdf-ca-documento/{id}/` es solo para el `fetch()` del visor: token de un solo uso **siempre** y nunca `Sec-Fetch-Dest: document`;
+    - `/mdf-ca-documento/{id}/descargar/` (rewrite nuevo, flush con la marca `mdf_ca_documento_descarga_rewrite_v1`) sirve el adjunto solo si `Permissions` lo permite; si no, el 404 uniforme;
+    - ningún parámetro lo cambia: `?mdf_ca_documento_descargar=1` en un no descargable da 404, y por `index.php?…` hay una redirección canónica y luego 404;
+  - **nombre del fichero:** `Descarga_Fichero` (nuevo, compartido con `Herramienta_Endpoint`) escribe el nombre visible del documento más la extensión de su MIME (pdf, xlsx, jpg, png, webp), con `filename*` UTF-8 (tildes) y `filename` ASCII de respaldo, sin repetir la extensión. También hace nosniff, nocache y realpath + prefijo;
+  - **visor:** «Descargar» solo si `Permissions` lo permite, apuntando a `/descargar/`. La vista previa del administrador no ofrece descarga;
+  - **listado de Documentación**, para MKT: junto al nombre de cada documento descargable, en las dos vistas (plana y agrupada), `<a class="mdf-ca-listado-documentos__descargar" href="…/mdf-ca-documento/{id}/descargar/" aria-label="Descargar {nombre}">Descargar</a>`. Si no es descargable, no aparece.
+- **Configuración por defecto: descargable sí, marca no.** Un único sitio, `Documento_Service::POR_DEFECTO_DESCARGABLE` y `POR_DEFECTO_SIN_MARCA`:
+  - en las cuatro vías las casillas salen así (ver «Marca de agua por documento»);
+  - las vías sin formulario usan esos valores: «Volver a comprobar todas» de la Bandeja, y `recibir()` y `asignar_manual()` cuando no se les pasa nada;
+  - `Documento_Service::descargable( bool )`, como `sin_marca_de_agua()`.
+- **Eventos al dar de alta:** un alta **no descargable** deja `descarga_desactivada` en su transacción, igual que un alta sin marca deja `marca_quitada`.
+- **Cambiar después:** desde Documentos MDF (columna «Descarga») y Pendientes, con `parcial-descarga.php` junto a `parcial-marca-agua.php`:
+  - acción `mdf_ca_cambiar_descarga`, con `Admin_Documentos::CAPACIDAD` y nonce por documento;
+  - `Documento_Configuracion_Service` (antes `Documento_Marca_Service`) con `cambiar_marca()` y `cambiar_descarga()`: transacción, `FOR UPDATE`, UPDATE condicionado y evento `descarga_activada` / `descarga_desactivada` (origen `individual`); si ya estaba así, ni cambio ni evento;
+  - el historial los muestra como «Descarga activada» / «Descarga desactivada»;
+  - publicar, despublicar, deshacer lote y eliminar no tocan el ajuste.
+- **Migración** (`mdf_ca_documentos_descargables_v1`, también en `activate()`): `UPDATE … SET descargable = 1 WHERE descargable = 0` (`Documento_Repository::marcar_todos_descargables()`):
+  - la marca de cada documento no se toca;
+  - sin evento por documento, porque es un cambio masivo de configuración pedido por MDF; el historial no lo refleja;
+  - repetida no cambia nada;
+  - el DEFAULT 0 de la columna se deja: toda alta fija el valor expresamente.
+- **Decisión 2: cada tipo tiene una sola vía de entrada.**
+  - **vías:** facturas por «Subir facturas» (también una sola; lo que no se puede asignar va a la Bandeja); Modelo 347 por su generador; contratos, presupuestos, entregables y otros por la subida manual;
+  - **formulario manual:** el selector solo ofrece esos cuatro tipos (`Documento_Tipos::get_opciones_subida_manual()`), con el texto «Para subir facturas usa Subir facturas (también sirve para una sola); para el Modelo 347, usa Modelo 347» y sus enlaces. Fuera ejercicio, sociedad, la fecha obligatoria de factura y `assets/js/admin-documentos.js`;
+  - **servidor:** `Documento_Service::subir()` rechaza `factura` y `modelo_347` (`TIPOS_CON_VIA_PROPIA`) con un mensaje que remite a su vía, aunque se fuerce el tipo. Pierde `$ejercicio` y `$emisor_cif`, y `guardar()` su `$modelo_347`;
+  - **se conservan**, porque los usan el generador y la recepción: `validar_modelo_347()`, `nombre_modelo_347()`, `guardar_modelo_347_generado()`, `subir_factura_recibida()`, la unicidad del 347 en `registrar()` y «Retirar para corrección»;
+  - los documentos de esos tipos que ya existían no cambian.
+- **Comprobado en local** con datos ficticios (borrados al terminar):
+  - **migración:** con 36 documentos, 2 de ellos descargables: los 36 descargables, la marca idéntica (huella de `id:sin_marca`) y ningún evento; repetida, igual;
+  - **descarga:** como farmacia, PDF, Excel e imagen, descargables y no:
+    - en el listado y el visor, «Descargar» solo en los descargables;
+    - descarga con el nombre con tildes en `filename*` y la extensión correcta;
+    - 404 al forzar: un no descargable por `/descargar/`, con parámetros o por `index.php`; el de otra farmacia; sin sesión; un id inexistente; el endpoint sin token o con `Sec-Fetch-Dest: document`;
+  - **cambio de descarga:** en Documentos MDF y en Pendientes, con su evento en el historial; repetirlo avisa «ya era…»; sin nonce, 403; como cliente, fuera; sin sesión, 400;
+  - **valores por defecto en las cuatro vías:**
+    - subida manual: presupuesto, contrato y entregable, con su evento `marca_quitada`, y un «otro» sin descarga y con marca, con `descarga_desactivada`;
+    - Subir facturas: con las casillas, y sin ellas como un JS antiguo;
+    - Bandeja: al asignar, conservándolas tras un error; con valores cambiados; y en «Volver a comprobar todas»;
+    - 347: generar con un Excel de una fila, retirar y volver a generar con otros valores;
+  - **una vía por tipo:** factura y 347 forzados en la petición, rechazados; Subir facturas con una sola factura (entra) y una sin texto (Bandeja);
+  - **regresión:** publicar los de una farmacia (conserva la configuración), deshacer un lote, eliminar, la descarga de herramientas por `Descarga_Fichero`, todas las pantallas como administrador y gestor, y las cuatro páginas del cliente, sin errores;
+  - **en Chrome:** el formulario manual, «Quitar descarga» / «Permitir descarga» con clic real, y como farmacia (enlace de un solo uso, mu-plugin temporal fuera del repositorio, borrado) el listado con «Descargar» y el visor con y sin descarga.
+
+  **Falta:** Safari (descargar con tildes y desde el visor) y avisar a MKT de la clase `mdf-ca-listado-documentos__descargar`
 
 **Endurecimiento: descubrir usuarios y versión** (#329, parte de código; v0.33.0, sin cambio de esquema). Los nombres de usuario de las farmacias son su CIF/NIF: descubrir usuarios desde fuera revela la cartera de clientes. Todo en `Endurecimiento`, salvo el `.htaccess` del plugin
 - Antes (sin sesión, en local): `/wp/v2/users` listaba al administrador y `/users/<id>` daba 401 si el usuario existía y 404 si no; `?author=1` redirigía a `/author/<login>/`, y `?author=N` y `/author/<slug>/` daban 200 si existía y 404 si no (con farmacias, el slug es su CIF); feed y oEmbed con el autor; XML-RPC vivo (79 métodos); versión de WordPress en `generator` y en los `ver=` del front y del login; `X-Powered-By` con la de PHP; login y «He olvidado mi contraseña» con mensajes distintos si existía el usuario o el correo; las carpetas del plugin listaban sus ficheros
@@ -515,6 +634,8 @@ Pendientes:
   - revisar la licencia LGPL-3.0 de smalot con la de PyMuPDF en la Fase 5.
 
   «Subir facturas» (#334) y la Bandeja de facturas (#335, v0.29.0) , la retirada del robot y de la ruta REST (#336, v0.30.0) y el rol Gestión MDF (#337, v0.31.0, con Catálogo y planes en la v0.32.0) hechos y verificados en local, sin desplegar
+- **Descarga de documentos y una vía por tipo** (v0.36.0, sin cambio de esquema): hecho y verificado en local, sin desplegar (va junto con la 0.35.0, tampoco desplegada). Falta Safari y avisar a MKT del enlace «Descargar» del listado
+- **Herramientas del catálogo** (v0.35.0, esquema 1.21.0): hecho y verificado en local, sin desplegar. Antes de desplegar, mirar en producción el catálogo actual (elementos de Formación y sin enlace quedarán ocultos). Falta Safari y avisar a MKT del HTML nuevo y de la página de Formación en Elementor
 - Sección de Cuota (tarea #254): a la espera del contenido de MKT
 - Avisar a MKT de las clases CSS del listado agrupado
 
@@ -522,7 +643,7 @@ Pendientes:
 
 Se ejecuta al final de cada fase. Si algo falla, la fase no está cerrada:
 
-- Acceso cruzado: con sesión de la farmacia A, intentar alcanzar recursos de la B manipulando identificadores. Debe fallar siempre, con respuesta idéntica a la de un id inexistente.
+- Acceso cruzado: con sesión de la farmacia A, intentar alcanzar recursos de la B manipulando identificadores (documentos y herramientas del catálogo: `ver`, `fichero` y `descargar`). Debe fallar siempre, con respuesta idéntica a la de un id inexistente.
 - Sin sesión: ningún recurso privado accesible. Ni documentos, ni endpoints, ni datos vía API de WordPress.
 - Ningún documento privado alcanzable por enlace directo (carpeta y fichero de `Clientes/private-docs` dan 403 o 404).
 - Los usuarios cliente no pueden entrar a `wp-admin` ni acceder a datos de otros por ninguna vía.

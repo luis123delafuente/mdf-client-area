@@ -27,7 +27,8 @@
 	var preparado = $( 'preparado' );
 	var encontradas = $( 'encontradas' );
 	var botonSubir = $( 'subir' );
-	var casillaSinMarca = $( 'sin-marca' );
+	var casillaMarca = $( 'marca-agua' );
+	var casillaDescargable = $( 'descargable' );
 	var progreso = $( 'progreso' );
 	var barra = $( 'barra' );
 	var estado = $( 'estado' );
@@ -54,9 +55,11 @@
 	var enMarcha = false;
 	var parando = false;
 	var inicio = 0;
-	// Sin marca de agua (#321): se fija al pulsar «Subir» para toda la tanda
-	// (tambien al continuar tras «Parar»). El servidor solo acepta "1".
-	var sinMarca = false;
+	// Marca de agua (#321) y descarga (v0.36.0): se fijan al pulsar «Subir»
+	// para toda la tanda (tambien al continuar tras «Parar») y se mandan en
+	// cada factura, "1" o "0". Por defecto, descargable y sin marca.
+	var conMarca = false;
+	var descargable = true;
 
 	enlacePendientes.href = datos.urlPendientes;
 	mostrar( botonContinuar, false );
@@ -79,7 +82,8 @@
 			return { archivo: archivo, resultado: null };
 		} );
 		inicio = Date.now();
-		sinMarca = !! ( casillaSinMarca && casillaSinMarca.checked );
+		conMarca = !! ( casillaMarca && casillaMarca.checked );
+		descargable = ! casillaDescargable || casillaDescargable.checked;
 		resumen.hidden = true;
 		preparado.hidden = true;
 		arrancar();
@@ -224,9 +228,8 @@
 		cuerpo.append( '_ajax_nonce', datos.nonce );
 		cuerpo.append( 'factura', item.archivo, item.archivo.name );
 
-		if ( sinMarca ) {
-			cuerpo.append( 'sin_marca', '1' );
-		}
+		cuerpo.append( 'marca_agua', conMarca ? '1' : '0' );
+		cuerpo.append( 'descargable', descargable ? '1' : '0' );
 
 		return window.fetch( datos.ajaxUrl, { method: 'POST', body: cuerpo, credentials: 'same-origin' } )
 			.then( function ( respuesta ) {
@@ -275,7 +278,7 @@
 			' en ' + ( segundos >= 60 ? Math.floor( segundos / 60 ) + ' min ' : '' ) + ( segundos % 60 ) + ' s.' +
 			( quedan ? ' Quedan ' + quedan + ' sin subir.' : '' ) +
 			( contar( 'bandeja' ) ? ' ' + plural( contar( 'bandeja' ), 'enviada', 'enviadas' ) + ' a la bandeja.' : '' ) +
-			( sinMarca && contar( 'subida' ) ? ' Las subidas van sin marca de agua.' : '' );
+			( contar( 'subida' ) ? ' Las subidas van ' + ( descargable ? 'descargables' : 'sin descarga' ) + ' y ' + ( conMarca ? 'con' : 'sin' ) + ' marca de agua.' : '' );
 
 		grupos.textContent = '';
 

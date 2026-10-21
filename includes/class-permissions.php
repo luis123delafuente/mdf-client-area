@@ -103,44 +103,119 @@ class Permissions {
 	}
 
 	/**
-	 * Descargar el fichero crudo (no verlo en el visor). Un Excel solo se
-	 * descarga si, ademas de poder verlo, se marco como descargable al
-	 * subirlo; el resto de documentos nunca se descargan. Vive aqui, junto
-	 * a puede_ver_documento(), para que "que puede hacer esta farmacia con
-	 * este documento" se decida en un unico sitio.
+	 * Descargar el fichero (no verlo en el visor): puede verlo y el documento
+	 * esta marcado como descargable. Desde la 0.36.0 vale para cualquier
+	 * formato (antes solo un Excel) y es el valor por defecto en todas las
+	 * vias de alta (decision de MDF). Se decide con lo guardado, nunca con un
+	 * parametro de la peticion.
 	 */
 	public static function puede_descargar_documento( ?\WP_User $usuario, ?Documento $documento ): bool {
-		return self::puede_ver_documento( $usuario, $documento )
-			&& Documento_Service::MIME_XLSX === $documento->get_tipo_mime()
-			&& $documento->is_descargable();
+		return self::puede_ver_documento( $usuario, $documento ) && $documento->is_descargable();
 	}
 
 	/**
-	 * $item es ahora un Catalogo_Item real (Fase 3, #247), ya no el array
-	 * placeholder de Catalogo_Herramientas (Fase 2). El contrato hacia
-	 * puede_ver_bloque_por_plan() no cambia: sigue siendo "lista de slugs
-	 * permitidos", solo cambia de donde sale esa lista -- antes una clave
-	 * de un array hardcodeado, ahora Catalogo_Item::get_planes_slugs(),
-	 * resuelta por Catalogo_Repository contra la tabla puente
-	 * wp_mdf_ca_catalogo_planes. Un item sin ningun plan asignado trae un
-	 * array vacio, y puede_ver_bloque_por_plan() ya trata una lista vacia
-	 * como "nadie pasa" (mismo criterio restrictivo por defecto que
-	 * "farmacia sin plan"): no hizo falta anadir ningun caso especial aqui
-	 * para eso.
+	 * De una lista de documentos, los ids de los que este usuario puede
+	 * descargar. Misma regla que puede_descargar_documento(), resolviendo la
+	 * farmacia una sola vez (el listado de Documentacion tiene cientos).
+	 *
+	 * @param Documento[] $documentos
+	 * @return array<int, true> id => true
+	 */
+	public static function filtrar_documentos_descargables( ?\WP_User $usuario, array $documentos ): array {
+		$ids = array();
+
+		foreach ( self::filtrar_documentos_visibles( $usuario, $documentos ) as $documento ) {
+			if ( $documento->is_descargable() ) {
+				$ids[ $documento->get_id() ] = true;
+			}
+		}
+
+		return $ids;
+	}
+
+	/**
+	 * Una herramienta del catalogo la ve una farmacia si (#herramientas,
+	 * esquema 1.21.0):
+	 * - la herramienta esta visible (una oculta no la ve nadie);
+	 * - su recurso esta completo (un elemento antiguo sin enlace no se
+	 *   ofrece);
+	 * - no es un Excel con macros con el ajuste apagado (Catalogo_Ajustes);
+	 * - y el plan de la farmacia esta entre los de la herramienta, o la
+	 *   farmacia esta en su lista de farmacias concretas. Las dos vias se
+	 *   suman. Sin ningun plan ni farmacia, no la ve nadie.
+	 *
+	 * Es la unica regla: el listado del area de cliente, el visor, el
+	 * fichero y la descarga preguntan aqui.
 	 */
 	public static function puede_ver_item_catalogo( ?\WP_User $usuario, ?Catalogo_Item $item ): bool {
-		if ( ! $item ) {
+		if ( ! $item || ! self::usuario_autenticado( $usuario ) ) {
 			return false;
 		}
 
-		return self::puede_ver_bloque_por_plan( $usuario, $item->get_planes_slugs() );
+		$farmacia = self::farmacia_del_usuario( $usuario );
+
+		return $farmacia && self::item_visible_para_farmacia( $farmacia, self::slug_plan_de_farmacia( $farmacia ), $item );
+	}
+
+	/**
+	 * De una lista de herramientas, las que este usuario puede ver. Misma
+	 * regla que puede_ver_item_catalogo() (comparten
+	 * item_visible_para_farmacia()), resolviendo la farmacia y su plan una
+	 * sola vez.
+	 *
+	 * @param Catalogo_Item[] $items
+	 * @return Catalogo_Item[]
+	 */
+	public static function filtrar_items_catalogo_visibles( ?\WP_User $usuario, array $items ): array {
+		if ( ! self::usuario_autenticado( $usuario ) ) {
+			return array();
+		}
+
+		$farmacia = self::farmacia_del_usuario( $usuario );
+
+		if ( ! $farmacia ) {
+			return array();
+		}
+
+		$slug_plan = self::slug_plan_de_farmacia( $farmacia );
+
+		return array_values(
+			array_filter(
+				$items,
+				static fn( $item ): bool => $item instanceof Catalogo_Item && self::item_visible_para_farmacia( $farmacia, $slug_plan, $item )
+			)
+		);
+	}
+
+	/**
+	 * Abrirla en el visor: puede verla y es un archivo que el visor sabe
+	 * pintar (PDF, Excel sin macros, JPG o PNG). Word, PowerPoint y .xlsm
+	 * nunca van al visor.
+	 */
+	public static function puede_visualizar_item_catalogo( ?\WP_User $usuario, ?Catalogo_Item $item ): bool {
+		return self::puede_ver_item_catalogo( $usuario, $item )
+			&& $item->es_archivo()
+			&& Catalogo_Formatos::es_visualizable( $item->get_formato() );
+	}
+
+	/**
+	 * Descargar el archivo: puede verla y se marco como descargable, o su
+	 * formato no tiene visor (Word, PowerPoint y .xlsm se descargan
+	 * siempre). Se decide con lo guardado, nunca con un parametro de la
+	 * peticion. La marca de agua es del visor: lo descargado va sin ella.
+	 */
+	public static function puede_descargar_item_catalogo( ?\WP_User $usuario, ?Catalogo_Item $item ): bool {
+		return self::puede_ver_item_catalogo( $usuario, $item )
+			&& $item->es_archivo()
+			&& ( $item->is_descargable() || Catalogo_Formatos::es_siempre_descargable( $item->get_formato() ) );
 	}
 
 	/**
 	 * Version generica: "¿el plan de esta farmacia esta en esta lista de
 	 * planes permitidos?", sin asumir nada sobre el recurso que envuelve
-	 * (bloque de contenido arbitrario de Shortcode_Si_Plan, o el catalogo
-	 * a traves de puede_ver_item_catalogo()). $planes_permitidos son slugs
+	 * (bloque de contenido arbitrario de Shortcode_Si_Plan). El catalogo
+	 * usa la misma resolucion del plan (slug_plan_de_farmacia()) y suma
+	 * ademas las farmacias concretas. $planes_permitidos son slugs
 	 * de plan (el atributo "planes" de [mdf_ca_si_plan], y desde
 	 * Catalogo_Item::get_planes_slugs() para el catalogo -- ambos usaban ya
 	 * ese formato desde Fase 2; Fase 3 solo cambia de donde sale el slug de
@@ -159,19 +234,45 @@ class Permissions {
 			return false;
 		}
 
-		$farmacia = self::farmacia_del_usuario( $usuario );
+		$farmacia  = self::farmacia_del_usuario( $usuario );
+		$slug_plan = $farmacia ? self::slug_plan_de_farmacia( $farmacia ) : null;
 
-		if ( ! $farmacia || ! $farmacia->get_plan_id() ) {
+		return null !== $slug_plan && in_array( $slug_plan, $planes_permitidos, true );
+	}
+
+	/**
+	 * El predicado de visibilidad de una herramienta, compartido por
+	 * puede_ver_item_catalogo() y filtrar_items_catalogo_visibles().
+	 */
+	private static function item_visible_para_farmacia( Farmacia $farmacia, ?string $slug_plan, Catalogo_Item $item ): bool {
+		if ( ! $item->is_visible() || ! $item->recurso_completo() ) {
 			return false;
+		}
+
+		if ( $item->es_archivo() && Catalogo_Formatos::XLSM === $item->get_formato() && ! Catalogo_Ajustes::permite_xlsm() ) {
+			return false;
+		}
+
+		if ( in_array( $farmacia->get_id(), $item->get_farmacia_ids(), true ) ) {
+			return true;
+		}
+
+		return null !== $slug_plan && in_array( $slug_plan, $item->get_planes_slugs(), true );
+	}
+
+	/**
+	 * Slug del plan de la farmacia, o null si no tiene plan o su plan_id ya
+	 * no resuelve a ninguno. Unico punto del plugin que resuelve un plan_id
+	 * contra Plan_Repository para comparar planes.
+	 */
+	private static function slug_plan_de_farmacia( Farmacia $farmacia ): ?string {
+		if ( ! $farmacia->get_plan_id() ) {
+			return null;
 		}
 
 		$plan = ( new Plan_Repository() )->find_by_id( $farmacia->get_plan_id() );
 
-		if ( ! $plan ) {
-			return false;
-		}
-
-		return in_array( $plan->get_slug(), $planes_permitidos, true );
+		return $plan ? $plan->get_slug() : null;
 	}
 
 	/**

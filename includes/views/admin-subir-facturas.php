@@ -58,11 +58,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<div id="mdf-ca-subir-facturas-preparado" hidden>
 			<p id="mdf-ca-subir-facturas-encontradas" class="mdf-ca-subir-facturas__encontradas"></p>
 			<p>
-				<label for="mdf-ca-subir-facturas-sin-marca">
-					<input type="checkbox" id="mdf-ca-subir-facturas-sin-marca" value="1" />
-					Mostrar sin marca de agua (toda esta subida)
+				<span>Para toda esta subida:</span><br>
+				<label for="mdf-ca-subir-facturas-descargable">
+					<input type="checkbox" id="mdf-ca-subir-facturas-descargable" value="1" <?php checked( Documento_Service::POR_DEFECTO_DESCARGABLE ); ?> />
+					Descargable
+				</label><br>
+				<label for="mdf-ca-subir-facturas-marca-agua">
+					<input type="checkbox" id="mdf-ca-subir-facturas-marca-agua" value="1" <?php checked( ! Documento_Service::POR_DEFECTO_SIN_MARCA ); ?> />
+					Marca de agua
 				</label>
-				<br><span class="description">Por defecto la farmacia ve sus facturas con su CIF y nombre de marca de agua. Se puede cambiar después, factura a factura, en «Pendientes de publicar» o en Documentos MDF. Las que vayan a la bandeja se deciden al asignarlas.</span>
+				<br><span class="description">Se puede cambiar después, factura a factura, en «Pendientes de publicar» o en Documentos MDF. Las que vayan a la bandeja se deciden al asignarlas.</span>
 			</p>
 			<p>
 				<button type="button" class="button button-primary" id="mdf-ca-subir-facturas-subir">Subir</button>

@@ -1,0 +1,115 @@
+/* Formulario y listado de Catalogo MDF > Herramientas (Admin_Catalogo). */
+
+.mdf-ca-herramienta__bloque {
+	margin-top: 10px;
+}
+
+/* El CSS de wp-admin da display a filas y bloques: el atributo hidden debe ganar. */
+.mdf-ca-herramienta [hidden],
+.mdf-ca-herramienta tr[hidden] {
+	display: none !important;
+}
+
+.mdf-ca-catalogo-aviso {
+	color: #996800;
+}
+
+.mdf-ca-catalogo-aviso .dashicons {
+	font-size: 18px;
+	vertical-align: text-bottom;
+}
+
+/* Etiquetas: fichas y autocompletado. */
+.mdf-ca-etiquetas__combo {
+	position: relative;
+	max-width: 30em;
+}
+
+.mdf-ca-etiquetas__combo input {
+	width: 100%;
+}
+
+.mdf-ca-etiquetas__fichas {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0 0 6px;
+	padding: 0;
+	list-style: none;
+}
+
+.mdf-ca-etiquetas__ficha {
+	display: inline-flex;
+	align-items: center;
+	margin: 0;
+	padding: 2px 4px 2px 10px;
+	background: #f0f6fc;
+	border: 1px solid #72aee6;
+	border-radius: 12px;
+}
+
+.mdf-ca-etiquetas__quitar {
+	border: 0;
+	background: none;
+	cursor: pointer;
+	font-size: 16px;
+	line-height: 1;
+	padding: 0 4px;
+	color: #50575e;
+}
+
+.mdf-ca-etiquetas__quitar:hover,
+.mdf-ca-etiquetas__quitar:focus {
+	color: #d63638;
+}
+
+.mdf-ca-etiquetas__lista {
+	position: absolute;
+	z-index: 100;
+	left: 0;
+	right: 0;
+	margin: 2px 0 0;
+	padding: 0;
+	max-height: 240px;
+	overflow-y: auto;
+	background: #fff;
+	border: 1px solid #8c8f94;
+	border-radius: 4px;
+	box-shadow: 0 4px 12px rgba( 0, 0, 0, 0.15 );
+	list-style: none;
+}
+
+.mdf-ca-etiquetas__opcion,
+.mdf-ca-etiquetas__vacio {
+	margin: 0;
+	padding: 6px 10px;
+}
+
+.mdf-ca-etiquetas__opcion {
+	cursor: pointer;
+}
+
+.mdf-ca-etiquetas__opcion.is-activa {
+	background: #2271b1;
+	color: #fff;
+}
+
+.mdf-ca-etiquetas__vacio {
+	color: #646970;
+}
+
+.mdf-ca-etiquetas__casillas label {
+	display: inline-block;
+	margin-right: 1em;
+}
+
+/* Farmacias elegidas (selector de farmacia en modo multiple). */
+.mdf-ca-selector-farmacia__elegidas {
+	margin: 4px 0 0;
+	max-height: 220px;
+	overflow-y: auto;
+}
+
+.mdf-ca-selector-farmacia__elegidas li {
+	margin: 0 0 4px;
+}

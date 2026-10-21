@@ -105,26 +105,25 @@ class Documento_Visor {
 		nocache_headers();
 
 		$endpoint_url = home_url( 'mdf-ca-documento/' . $documento_id . '/' );
-		// Boton de descarga solo si Permissions lo permite (hoy: Excel marcado
-		// como descargable). La decision no se repite aqui, se pregunta.
-		$documento       = ( new Documento_Repository() )->find_by_id( $documento_id );
+		$documento    = ( new Documento_Repository() )->find_by_id( $documento_id );
 		// Sin marca de agua (#321) solo si el documento lo tiene guardado asi;
 		// ningun parametro de la peticion lo decide.
-		$marca_agua      = $documento && $documento->is_sin_marca_de_agua() ? '' : self::get_marca_agua_texto();
-		$usuario         = wp_get_current_user();
-		$puede_descargar = Permissions::puede_descargar_documento( $usuario, $documento );
+		$marca_agua = $documento && $documento->is_sin_marca_de_agua() ? '' : self::get_marca_agua_texto();
+		$usuario    = wp_get_current_user();
 
-		// Token de un solo uso para el fetch() del visor (ver
-		// Documento_Token). Solo si el documento es visible y no es
-		// descargable: si lo es, el endpoint no lo exige; si no es visible,
-		// el endpoint dara 404 igualmente y no se emite nada.
-		$token = '';
+		// Boton "Descargar" solo si Permissions lo permite (v0.36.0: cualquier
+		// documento marcado como descargable). Descarga por su propia ruta.
+		$url_descarga = Permissions::puede_descargar_documento( $usuario, $documento ) ? Documento_Endpoint::url_descarga( $documento_id ) : null;
 
-		if ( ! $puede_descargar && Permissions::puede_ver_documento( $usuario, $documento ) ) {
-			$token = Documento_Token::emitir( (int) $usuario->ID, $documento_id );
-		}
+		// Token de un solo uso para el fetch() del visor (ver Documento_Token),
+		// siempre que el documento sea visible: desde la 0.36.0 el endpoint lo
+		// exige tambien a los descargables. Si no es visible, el endpoint dara
+		// 404 igualmente y no se emite nada.
+		$token = Permissions::puede_ver_documento( $usuario, $documento )
+			? Documento_Token::emitir( (int) $usuario->ID, $documento_id )
+			: '';
 
-		self::pintar( $endpoint_url, $token, $marca_agua, $puede_descargar );
+		self::pintar( $endpoint_url, $token, $marca_agua, $url_descarga );
 	}
 
 	/**
@@ -137,14 +136,19 @@ class Documento_Visor {
 	public static function renderizar_vista_previa( string $endpoint_url, string $token, string $marca_agua ): void {
 		nocache_headers();
 
-		self::pintar( $endpoint_url, $token, $marca_agua, false );
+		self::pintar( $endpoint_url, $token, $marca_agua, null );
 	}
 
 	/**
-	 * La pagina del visor, comun al visor de las farmacias y a la vista
-	 * previa del administrador. Solo marcado: no decide nada.
+	 * La pagina del visor, comun al visor de las farmacias, a la vista
+	 * previa del administrador y a las herramientas del catalogo
+	 * (Herramienta_Endpoint). Solo marcado: no decide nada. $url_descarga
+	 * null = sin boton "Descargar"; quien llama ya ha preguntado a
+	 * Permissions.
 	 */
-	private static function pintar( string $endpoint_url, string $token, string $marca_agua, bool $puede_descargar ): void {
+	public static function pintar( string $endpoint_url, string $token, string $marca_agua, ?string $url_descarga, string $titulo = 'Documento' ): void {
+		$puede_descargar = null !== $url_descarga;
+
 		// Todas con "?ver=" por fecha del fichero (Recursos): tras un despliegue
 		// ningun navegador sigue con una copia vieja. PDF.js va como dos URL
 		// completas (modulo y worker) para que tambien lleven su version.
@@ -162,7 +166,7 @@ class Documento_Visor {
 	<meta charset="UTF-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 	<meta name="robots" content="noindex, nofollow" />
-	<title>Documento</title>
+	<title><?php echo esc_html( $titulo ); ?></title>
 	<link rel="stylesheet" href="<?php echo esc_url( $visor_css_url ); ?>" />
 </head>
 <body>
@@ -173,7 +177,7 @@ class Documento_Visor {
 			<span id="mdf-ca-visor-pagina" class="mdf-ca-visor__pagina"></span>
 			<button id="mdf-ca-visor-siguiente" type="button" class="mdf-ca-visor__boton" disabled>Siguiente &rarr;</button>
 			<?php if ( $puede_descargar ) : ?>
-				<a id="mdf-ca-visor-descargar" class="mdf-ca-visor__boton mdf-ca-visor__boton--descargar" href="<?php echo esc_url( $endpoint_url ); ?>" hidden>Descargar</a>
+				<a id="mdf-ca-visor-descargar" class="mdf-ca-visor__boton mdf-ca-visor__boton--descargar" href="<?php echo esc_url( (string) $url_descarga ); ?>" hidden>Descargar</a>
 			<?php endif; ?>
 		</div>
 		<div id="mdf-ca-visor-lienzo" class="mdf-ca-visor__lienzo">

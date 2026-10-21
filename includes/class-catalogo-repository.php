@@ -6,14 +6,33 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Unico punto de acceso a $wpdb para la tabla de catalogo y su tabla puente
- * con planes (wp_mdf_ca_catalogo_planes). La puente vive aqui, no en
- * Plan_Repository: pertenece conceptualmente al modulo de catalogo (es "los
- * planes de este item"), mismo criterio que Farmacia_Repository::
- * count_by_plan_id() consulta su propia tabla en vez de vivir en
- * Plan_Repository.
+ * Unico punto de acceso a $wpdb para la tabla de catalogo (herramientas) y
+ * sus tablas puente con planes, farmacias concretas y etiquetas. Las puentes
+ * viven aqui, no en Plan_Repository ni en Farmacia_Repository: pertenecen al
+ * catalogo ("los planes de esta herramienta"). Las categorias y etiquetas en
+ * si las lleva Catalogo_Termino_Repository.
+ *
+ * Las relaciones se cargan de todas las herramientas a la vez (una consulta
+ * por tabla puente), no una por herramienta.
  */
 class Catalogo_Repository {
+
+	/** Columnas que escriben insert()/update(), con su formato. */
+	private const COLUMNAS = array(
+		'nombre'             => '%s',
+		'descripcion'        => '%s',
+		'categoria_id'       => '%d',
+		'recurso'            => '%s',
+		'enlace_url'         => '%s',
+		'formato'            => '%s',
+		'ruta_fichero'       => '%s',
+		'tipo_mime'          => '%s',
+		'tamano'             => '%d',
+		'descargable'        => '%d',
+		'marca_agua'         => '%d',
+		'visible'            => '%d',
+		'fecha_modificacion' => '%s',
+	);
 
 	public function find_by_id( int $id ): ?Catalogo_Item {
 		global $wpdb;
@@ -23,31 +42,11 @@ class Catalogo_Repository {
 			$wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d", $id )
 		);
 
-		return $row ? Catalogo_Item::from_db_row( $row, $this->find_plan_slugs( (int) $row->id ) ) : null;
+		return $row ? $this->hidratar_todos( array( $row ) )[0] : null;
 	}
 
 	/**
-	 * Items de una seccion, orden alfabetico por nombre. Usado por
-	 * Shortcode_Catalogo_Herramientas: la seccion ya viene fijada en la
-	 * consulta, el shortcode no filtra nada aparte de la visibilidad por
-	 * plan (que sigue pasando por Permissions).
-	 *
-	 * @return Catalogo_Item[]
-	 */
-	public function find_by_seccion( string $seccion ): array {
-		global $wpdb;
-
-		$table = DB_Schema::get_catalogo_table_name();
-		$rows  = $wpdb->get_results(
-			$wpdb->prepare( "SELECT * FROM {$table} WHERE seccion = %s ORDER BY nombre ASC", $seccion )
-		);
-
-		return $this->hidratar_todos( $rows );
-	}
-
-	/**
-	 * Todos los items de todas las secciones, para el listado de
-	 * Admin_Catalogo.
+	 * Todas las herramientas por nombre, para el backoffice.
 	 *
 	 * @return Catalogo_Item[]
 	 */
@@ -55,103 +54,91 @@ class Catalogo_Repository {
 		global $wpdb;
 
 		$table = DB_Schema::get_catalogo_table_name();
-		$rows  = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY seccion ASC, nombre ASC" );
+		$rows  = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY nombre ASC, id ASC" );
 
-		return $this->hidratar_todos( $rows );
-	}
-
-	public function insert( string $seccion, string $nombre, string $tipo, ?string $enlace_url ): ?Catalogo_Item {
-		global $wpdb;
-
-		$table = DB_Schema::get_catalogo_table_name();
-
-		$data   = array(
-			'seccion' => $seccion,
-			'nombre'  => $nombre,
-			'tipo'    => $tipo,
-		);
-		$format = array( '%s', '%s', '%s' );
-
-		if ( null !== $enlace_url ) {
-			$data['enlace_url'] = $enlace_url;
-			$format[]           = '%s';
-		}
-
-		$result = $wpdb->insert( $table, $data, $format );
-
-		if ( false === $result ) {
-			return null;
-		}
-
-		return $this->find_by_id( (int) $wpdb->insert_id );
-	}
-
-	public function update( int $id, string $seccion, string $nombre, string $tipo, ?string $enlace_url ): bool {
-		global $wpdb;
-
-		$table = DB_Schema::get_catalogo_table_name();
-
-		$result = $wpdb->update(
-			$table,
-			array(
-				'seccion'    => $seccion,
-				'nombre'     => $nombre,
-				'tipo'       => $tipo,
-				'enlace_url' => $enlace_url,
-			),
-			array( 'id' => $id ),
-			array( '%s', '%s', '%s', '%s' ),
-			array( '%d' )
-		);
-
-		return false !== $result;
+		return $this->hidratar_todos( $rows ?: array() );
 	}
 
 	/**
-	 * Borra el item y sus filas en la tabla puente. Sin FK real que lo haga
-	 * en cascada (ver DB_Schema), asi que el borrado de la puente se hace
-	 * aqui a mano antes del borrado del item -- integridad a nivel de
-	 * aplicacion, mismo criterio que el resto del plugin.
+	 * Solo las visibles, para el area de cliente (que despues filtra con
+	 * Permissions, que tambien rechaza las ocultas).
+	 *
+	 * @return Catalogo_Item[]
+	 */
+	public function find_visibles(): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_catalogo_table_name();
+		$rows  = $wpdb->get_results( "SELECT * FROM {$table} WHERE visible = 1 ORDER BY nombre ASC, id ASC" );
+
+		return $this->hidratar_todos( $rows ?: array() );
+	}
+
+	/**
+	 * @param array<string, mixed> $datos Columnas de COLUMNAS; null se guarda como NULL.
+	 * @return int|null id nuevo
+	 */
+	public function insert( array $datos ): ?int {
+		global $wpdb;
+
+		$datos['seccion']        = Catalogo_Secciones::HERRAMIENTAS;
+		list( $datos, $formato ) = self::preparar( $datos, array( 'seccion' => '%s' ) );
+
+		$ok = $wpdb->insert( DB_Schema::get_catalogo_table_name(), $datos, $formato );
+
+		return false === $ok ? null : (int) $wpdb->insert_id;
+	}
+
+	/**
+	 * @param array<string, mixed> $datos
+	 */
+	public function update( int $id, array $datos ): bool {
+		global $wpdb;
+
+		list( $datos, $formato ) = self::preparar( $datos );
+
+		return false !== $wpdb->update( DB_Schema::get_catalogo_table_name(), $datos, array( 'id' => $id ), $formato, array( '%d' ) );
+	}
+
+	/**
+	 * Borra la herramienta y sus filas en las tablas puente. Sin FK que lo
+	 * haga en cascada: lo hace aqui, dentro de la transaccion de quien llama
+	 * (Catalogo_Service::eliminar()).
 	 */
 	public function delete( int $id ): bool {
 		global $wpdb;
 
-		$table         = DB_Schema::get_catalogo_table_name();
-		$catalogo_planes = DB_Schema::get_catalogo_planes_table_name();
+		foreach ( self::tablas_puente() as $puente ) {
+			if ( false === $wpdb->delete( $puente, array( 'catalogo_id' => $id ), array( '%d' ) ) ) {
+				return false;
+			}
+		}
 
-		$wpdb->delete( $catalogo_planes, array( 'catalogo_id' => $id ), array( '%d' ) );
-
-		$result = $wpdb->delete( $table, array( 'id' => $id ), array( '%d' ) );
-
-		return false !== $result;
+		return 1 === $wpdb->delete( DB_Schema::get_catalogo_table_name(), array( 'id' => $id ), array( '%d' ) );
 	}
 
 	/**
-	 * Sustituye por completo el conjunto de planes de un item: borra las
-	 * filas puente existentes y escribe las nuevas. Semantica de "set", no
-	 * de "add/remove" -- mas simple para un formulario de checkboxes donde
-	 * el admin marca/desmarca planes libremente en cada guardado, sin tener
-	 * que calcular el diff contra el estado anterior.
+	 * Sustituye por completo el conjunto de planes de una herramienta
+	 * (semantica de "set", como el formulario de casillas).
 	 *
 	 * @param int[] $plan_ids
 	 */
-	public function set_planes( int $catalogo_id, array $plan_ids ): void {
-		global $wpdb;
+	public function set_planes( int $catalogo_id, array $plan_ids ): bool {
+		return $this->set_puente( DB_Schema::get_catalogo_planes_table_name(), 'plan_id', $catalogo_id, $plan_ids );
+	}
 
-		$catalogo_planes = DB_Schema::get_catalogo_planes_table_name();
+	/**
+	 * @param int[] $farmacia_ids
+	 */
+	public function set_farmacias( int $catalogo_id, array $farmacia_ids ): bool {
+		return $this->set_puente( DB_Schema::get_catalogo_farmacias_table_name(), 'farmacia_id', $catalogo_id, $farmacia_ids );
+	}
 
-		$wpdb->delete( $catalogo_planes, array( 'catalogo_id' => $catalogo_id ), array( '%d' ) );
-
-		foreach ( array_unique( array_map( 'intval', $plan_ids ) ) as $plan_id ) {
-			$wpdb->insert(
-				$catalogo_planes,
-				array(
-					'catalogo_id' => $catalogo_id,
-					'plan_id'     => $plan_id,
-				),
-				array( '%d', '%d' )
-			);
-		}
+	/**
+	 * @param int[] $etiqueta_ids
+	 */
+	public function set_etiquetas( int $catalogo_id, array $etiqueta_ids ): bool {
+		return $this->set_puente( DB_Schema::get_catalogo_item_etiquetas_table_name(), 'etiqueta_id', $catalogo_id, $etiqueta_ids );
 	}
 
 	/**
@@ -170,32 +157,7 @@ class Catalogo_Repository {
 	}
 
 	/**
-	 * Slugs (no objetos Plan completos) de los planes de un item, via JOIN
-	 * con wp_mdf_ca_planes. Es una lectura de conveniencia acotada a
-	 * "resolver la lista de slugs de este item" -- no reconstruye objetos
-	 * Plan, que seria responsabilidad de Plan_Repository.
-	 *
-	 * @return string[]
-	 */
-	public function find_plan_slugs( int $catalogo_id ): array {
-		global $wpdb;
-
-		$catalogo_planes = DB_Schema::get_catalogo_planes_table_name();
-		$planes_table    = DB_Schema::get_planes_table_name();
-
-		return $wpdb->get_col(
-			$wpdb->prepare(
-				"SELECT p.slug FROM {$catalogo_planes} cp
-				INNER JOIN {$planes_table} p ON p.id = cp.plan_id
-				WHERE cp.catalogo_id = %d
-				ORDER BY p.slug ASC",
-				$catalogo_id
-			)
-		);
-	}
-
-	/**
-	 * Cuantos items de catalogo tienen asignado un plan concreto. Usado por
+	 * Cuantas herramientas tienen asignado un plan concreto. Usado por
 	 * Plan_Service::eliminar() para bloquear el borrado de un plan todavia
 	 * en uso, igual que Farmacia_Repository::count_by_plan_id().
 	 */
@@ -210,14 +172,128 @@ class Catalogo_Repository {
 	}
 
 	/**
+	 * @return string[]
+	 */
+	private static function tablas_puente(): array {
+		return array(
+			DB_Schema::get_catalogo_planes_table_name(),
+			DB_Schema::get_catalogo_farmacias_table_name(),
+			DB_Schema::get_catalogo_item_etiquetas_table_name(),
+		);
+	}
+
+	/**
+	 * @param int[] $ids
+	 */
+	private function set_puente( string $tabla, string $columna, int $catalogo_id, array $ids ): bool {
+		global $wpdb;
+
+		if ( false === $wpdb->delete( $tabla, array( 'catalogo_id' => $catalogo_id ), array( '%d' ) ) ) {
+			return false;
+		}
+
+		foreach ( array_unique( array_map( 'intval', $ids ) ) as $id ) {
+			$ok = $wpdb->insert(
+				$tabla,
+				array(
+					'catalogo_id' => $catalogo_id,
+					$columna      => $id,
+				),
+				array( '%d', '%d' )
+			);
+
+			if ( false === $ok ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Se queda solo con las columnas conocidas y arma el array de formatos.
+	 * wpdb escribe NULL cuando el valor es null.
+	 *
+	 * @param array<string, mixed>  $datos
+	 * @param array<string, string> $extra
+	 * @return array{0: array<string, mixed>, 1: string[]}
+	 */
+	private static function preparar( array $datos, array $extra = array() ): array {
+		$columnas = self::COLUMNAS + $extra;
+		$limpios  = array();
+		$formato  = array();
+
+		foreach ( $datos as $columna => $valor ) {
+			if ( ! isset( $columnas[ $columna ] ) ) {
+				continue;
+			}
+
+			$limpios[ $columna ] = is_bool( $valor ) ? (int) $valor : $valor;
+			$formato[]           = $columnas[ $columna ];
+		}
+
+		return array( $limpios, $formato );
+	}
+
+	/**
+	 * @param object[] $rows
 	 * @return Catalogo_Item[]
 	 */
 	private function hidratar_todos( array $rows ): array {
+		if ( ! $rows ) {
+			return array();
+		}
+
+		global $wpdb;
+
+		$ids          = array_map( static fn( $row ): int => (int) $row->id, $rows );
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+
+		$catalogo_planes  = DB_Schema::get_catalogo_planes_table_name();
+		$planes_table     = DB_Schema::get_planes_table_name();
+		$farmacias_table  = DB_Schema::get_catalogo_farmacias_table_name();
+		$etiquetas_puente = DB_Schema::get_catalogo_item_etiquetas_table_name();
+		$etiquetas_table  = DB_Schema::get_catalogo_etiquetas_table_name();
+
+		$planes = self::agrupar(
+			$wpdb->get_results(
+				$wpdb->prepare( "SELECT cp.catalogo_id AS item, p.slug AS valor FROM {$catalogo_planes} cp INNER JOIN {$planes_table} p ON p.id = cp.plan_id WHERE cp.catalogo_id IN ({$placeholders}) ORDER BY p.slug ASC", $ids )
+			)
+		);
+
+		$farmacias = self::agrupar(
+			$wpdb->get_results(
+				$wpdb->prepare( "SELECT catalogo_id AS item, farmacia_id AS valor FROM {$farmacias_table} WHERE catalogo_id IN ({$placeholders})", $ids )
+			)
+		);
+
+		$etiquetas = self::agrupar(
+			$wpdb->get_results(
+				$wpdb->prepare( "SELECT ie.catalogo_id AS item, ie.etiqueta_id AS valor FROM {$etiquetas_puente} ie INNER JOIN {$etiquetas_table} e ON e.id = ie.etiqueta_id WHERE ie.catalogo_id IN ({$placeholders}) ORDER BY e.nombre ASC", $ids )
+			)
+		);
+
 		return array_map(
-			function ( $row ) {
-				return Catalogo_Item::from_db_row( $row, $this->find_plan_slugs( (int) $row->id ) );
+			static function ( $row ) use ( $planes, $farmacias, $etiquetas ) {
+				$id = (int) $row->id;
+
+				return Catalogo_Item::from_db_row( $row, $planes[ $id ] ?? array(), $farmacias[ $id ] ?? array(), $etiquetas[ $id ] ?? array() );
 			},
 			$rows
 		);
+	}
+
+	/**
+	 * @param object[]|null $filas
+	 * @return array<int, array<int, string>>
+	 */
+	private static function agrupar( ?array $filas ): array {
+		$grupos = array();
+
+		foreach ( $filas ?: array() as $fila ) {
+			$grupos[ (int) $fila->item ][] = $fila->valor;
+		}
+
+		return $grupos;
 	}
 }

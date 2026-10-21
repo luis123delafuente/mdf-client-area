@@ -60,8 +60,25 @@ class Documento_Service {
 	private Farmacia_Repository $farmacia_repository;
 	private Publicacion_Evento_Repository $eventos;
 
+	/**
+	 * Configuracion por defecto de un documento nuevo en todas las vias de
+	 * alta (subida manual, Subir facturas, Bandeja y generador del 347):
+	 * descargable y sin marca de agua (decision de MDF, v0.36.0). Es el
+	 * unico sitio que lo decide: los formularios marcan sus casillas con
+	 * esto y las vias sin formulario ("Volver a comprobar todas" de la
+	 * Bandeja) lo usan tal cual.
+	 */
+	public const POR_DEFECTO_DESCARGABLE = true;
+	public const POR_DEFECTO_SIN_MARCA   = true;
+
+	/** Tipos que no entran por la subida manual: cada uno tiene su propia via (v0.36.0). */
+	public const TIPOS_CON_VIA_PROPIA = array( 'factura', 'modelo_347' );
+
 	/** Lo que se de de alta con esta instancia nace sin marca de agua (#321). */
-	private bool $sin_marca = false;
+	private bool $sin_marca = self::POR_DEFECTO_SIN_MARCA;
+
+	/** Lo que se de de alta con esta instancia nace descargable (v0.36.0). */
+	private bool $descargable = self::POR_DEFECTO_DESCARGABLE;
 
 	public function __construct( ?Documento_Repository $repository = null, ?Farmacia_Repository $farmacia_repository = null, ?Publicacion_Evento_Repository $eventos = null ) {
 		$this->repository          = $repository ?? new Documento_Repository();
@@ -77,6 +94,17 @@ class Documento_Service {
 	 */
 	public function sin_marca_de_agua( bool $sin_marca ): self {
 		$this->sin_marca = $sin_marca;
+
+		return $this;
+	}
+
+	/**
+	 * Descargable (v0.36.0, cualquier formato) para lo que se de de alta a
+	 * continuacion con esta instancia. Un alta no descargable deja, en su
+	 * misma transaccion, el evento "descarga_desactivada".
+	 */
+	public function descargable( bool $descargable ): self {
+		$this->descargable = $descargable;
 
 		return $this;
 	}
@@ -111,43 +139,36 @@ class Documento_Service {
 	}
 
 	/**
-	 * Subida desde el backoffice (Admin_Documentos).
+	 * Subida manual desde el backoffice (Admin_Documentos): contratos,
+	 * presupuestos, entregables y otros. Siempre publica. Descargable y marca
+	 * de agua, los de descargable() y sin_marca_de_agua().
+	 *
+	 * Facturas y Modelo 347 no entran por aqui (decision de MDF, v0.36.0):
+	 * cada tipo tiene una sola via. Las facturas, por "Subir facturas" (y la
+	 * Bandeja), que las lee, cruza y evita duplicados; el 347, por su
+	 * generador. Se rechazan aunque se fuerce el tipo en la peticion.
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
-	 * @param bool $notificar false para subidas que no deben avisar a la
-	 *                        farmacia (p. ej. ingesta del historico). No
-	 *                        cambia la visibilidad: solo el aviso por email.
-	 * @param string|null $fecha_documento 'Y-m-d'. Obligatoria para las
-	 *                        facturas, opcional en el resto. Un Modelo 347 no
-	 *                        la usa (se ignora): lleva ejercicio.
-	 * @param int|null    $ejercicio  Solo Modelo 347 (#307), obligatorio.
-	 * @param string|null $emisor_cif Solo Modelo 347, obligatorio: una
-	 *                        sociedad de Factura_Emisores. En el resto de tipos
-	 *                        ejercicio y emisor se ignoran.
+	 * @param bool        $notificar       false para subidas que no deben avisar a la farmacia.
+	 * @param string|null $fecha_documento 'Y-m-d', opcional.
 	 * @return Documento|\WP_Error
 	 */
-	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable = false, bool $notificar = true, ?string $fecha_documento = null, ?int $ejercicio = null, ?string $emisor_cif = null ) {
+	public function subir( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $notificar = true, ?string $fecha_documento = null ) {
 		if ( ! $this->farmacia_repository->find_by_id( $farmacia_id ) ) {
 			return new \WP_Error( 'mdf_ca_documento_farmacia_no_existe', 'Selecciona una farmacia valida.' );
 		}
 
-		if ( ! Documento_Tipos::es_valido( $tipo_documento ) ) {
-			return new \WP_Error( 'mdf_ca_documento_tipo_invalido', 'Selecciona un tipo de documento valido.' );
+		if ( in_array( $tipo_documento, self::TIPOS_CON_VIA_PROPIA, true ) ) {
+			return new \WP_Error(
+				'mdf_ca_documento_tipo_via_propia',
+				'factura' === $tipo_documento
+					? 'Las facturas no se suben aquí: usa «Subir facturas» (también sirve para una sola).'
+					: 'El Modelo 347 no se sube aquí: usa «Modelo 347», que lo genera desde el Excel.'
+			);
 		}
 
-		$modelo_347 = null;
-
-		if ( 'modelo_347' === $tipo_documento ) {
-			$modelo_347 = self::validar_modelo_347( $ejercicio, $emisor_cif );
-
-			if ( is_wp_error( $modelo_347 ) ) {
-				return $modelo_347;
-			}
-
-			// El 347 se agrupa por ejercicio, nunca por una fecha, y su nombre
-			// visible lo fija el servidor (el escrito a mano se ignora).
-			$fecha_documento = null;
-			$nombre          = self::nombre_modelo_347( $modelo_347 );
+		if ( ! Documento_Tipos::es_valido( $tipo_documento ) ) {
+			return new \WP_Error( 'mdf_ca_documento_tipo_invalido', 'Selecciona un tipo de documento valido.' );
 		}
 
 		$nombre = trim( $nombre );
@@ -157,7 +178,7 @@ class Documento_Service {
 		}
 
 		// La subida de backoffice siempre publica.
-		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $descargable, $notificar, false, null, true, $fecha_documento, null, $modelo_347 );
+		return $this->guardar( $farmacia_id, $nombre, $tipo_documento, $archivo, $notificar, false, null, true, $fecha_documento, null );
 	}
 
 	/**
@@ -254,7 +275,7 @@ class Documento_Service {
 		}
 
 		// Sin aviso (notificar = false) y pendiente (publicar = false).
-		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, false, true, $hash_sha256, false, $fecha_documento, $factura, null, $origen_alta, $accion_alta );
+		return $this->guardar( $farmacia_id, $nombre, 'factura', $archivo, false, true, $hash_sha256, false, $fecha_documento, $factura, $origen_alta, $accion_alta );
 	}
 
 	/**
@@ -263,10 +284,9 @@ class Documento_Service {
 	 *
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo
 	 * @param array{emisor_cif: string, serie: string, numero: string}|null $factura Solo las facturas recibidas.
-	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347 Solo el Modelo 347 (#307), ya validado.
 	 * @return Documento|\WP_Error
 	 */
-	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $descargable, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347 = null, ?string $origen_alta = null, ?string $accion_alta = null ) {
+	private function guardar( int $farmacia_id, string $nombre, string $tipo_documento, ?array $archivo, bool $notificar, bool $solo_pdf, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?string $origen_alta = null, ?string $accion_alta = null ) {
 		// Antes de tocar el fichero: si viene fecha, tiene que ser valida, y
 		// una factura no se guarda sin ella (la de subida nunca la sustituye).
 		if ( null !== $fecha_documento && ! self::fecha_documento_valida( $fecha_documento ) ) {
@@ -275,13 +295,6 @@ class Documento_Service {
 
 		if ( 'factura' === $tipo_documento && null === $fecha_documento ) {
 			return new \WP_Error( 'mdf_ca_documento_fecha_obligatoria', 'La fecha del documento es obligatoria para las facturas.' );
-		}
-
-		// Un unico Modelo 347 vigente por farmacia, emisor y ejercicio (#307):
-		// nunca se sustituye en silencio. El UNIQUE modelo_347 lo garantiza
-		// ademas frente a dos subidas a la vez (ver mas abajo).
-		if ( null !== $modelo_347 && $this->repository->find_modelo_347_vigente( $farmacia_id, $modelo_347['emisor_cif'], $modelo_347['ejercicio'] ) ) {
-			return self::error_modelo_347_ya_existe( $modelo_347 );
 		}
 
 		$validacion_archivo = $this->validar_archivo( $archivo );
@@ -334,13 +347,12 @@ class Documento_Service {
 			$filetype['type'],
 			(int) $archivo['size'],
 			static fn( string $destino ): bool => $desde_disco ? copy( $tmp, $destino ) : move_uploaded_file( $tmp, $destino ),
-			$descargable,
 			$notificar,
 			$hash_sha256,
 			$publicar,
 			$fecha_documento,
 			$factura,
-			$modelo_347,
+			null,
 			$origen_alta,
 			$accion_alta
 		);
@@ -411,7 +423,6 @@ class Documento_Service {
 
 				return true;
 			},
-			false,
 			// "true" = notificado_en queda en NULL hasta que salga su correo
 			// (Modelo_347_Envio_Service lo marca entonces). El aviso generico
 			// no lo ve igualmente: excluye el tipo modelo_347.
@@ -436,7 +447,7 @@ class Documento_Service {
 	 * @param array{emisor_cif: string, ejercicio: int}|null $modelo_347
 	 * @return Documento|\WP_Error
 	 */
-	private function registrar( int $farmacia_id, string $nombre, string $tipo_documento, string $extension, string $tipo_mime, int $tamano, callable $escribir, bool $descargable, bool $notificar, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347, ?string $origen_alta = null, ?string $accion_alta = null ) {
+	private function registrar( int $farmacia_id, string $nombre, string $tipo_documento, string $extension, string $tipo_mime, int $tamano, callable $escribir, bool $notificar, ?string $hash_sha256, bool $publicar, ?string $fecha_documento, ?array $factura, ?array $modelo_347, ?string $origen_alta = null, ?string $accion_alta = null ) {
 		$carpeta = Documento_Endpoint::get_carpeta_documentos();
 
 		if ( ! is_dir( $carpeta ) || ! is_writable( $carpeta ) ) {
@@ -451,8 +462,9 @@ class Documento_Service {
 		// comprueba antes de tocar el disco. Con $origen_alta ("Subir
 		// facturas", #334, y la bandeja, #335) deja siempre uno, "recibido"
 		// (o "asignado_manual") porque nace pendiente. Si nace sin marca de agua
-		// (#321), tambien: el evento "marca_quitada" va en la misma transaccion.
-		$con_evento = $publicar || null !== $origen_alta || $this->sin_marca;
+		// (#321), tambien: el evento "marca_quitada" va en la misma transaccion;
+		// y si nace no descargable (v0.36.0), "descarga_desactivada".
+		$con_evento = $publicar || null !== $origen_alta || $this->sin_marca || ! $this->descargable;
 
 		if ( $con_evento
 			&& ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() )
@@ -491,9 +503,8 @@ class Documento_Service {
 				$tipo_mime,
 				$tamano,
 				$tipo_documento,
-				// Solo un Excel puede ser descargable; para el resto el flag se
-				// ignora (siempre visor), aunque llegue marcado.
-				$descargable && self::MIME_XLSX === $tipo_mime,
+				// Cualquier formato puede ser descargable (v0.36.0).
+				$this->descargable,
 				! $notificar,
 				$hash_sha256,
 				$publicar,
@@ -547,6 +558,15 @@ class Documento_Service {
 				$evento = $this->eventos->insertar_para(
 					array( $documento->get_id() => null ),
 					Publicacion_Evento_Repository::ACCION_MARCA_QUITADA,
+					$origen,
+					get_current_user_id()
+				);
+			}
+
+			if ( false !== $evento && ! $this->descargable ) {
+				$evento = $this->eventos->insertar_para(
+					array( $documento->get_id() => null ),
+					Publicacion_Evento_Repository::ACCION_DESCARGA_DESACTIVADA,
 					$origen,
 					get_current_user_id()
 				);

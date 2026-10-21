@@ -176,7 +176,9 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 					<input type="hidden" name="sim" value="<?php echo esc_attr( $sim_id ); ?>">
 					<input type="hidden" name="huella" value="<?php echo esc_attr( $simulacion['huella'] ); ?>">
 					<p style="margin-top:0">
-						<label><input type="checkbox" name="sin_marca" value="1"> Mostrar sin marca de agua (todas las cartas de esta generación)</label>
+						Todas las cartas de esta generación:
+						<label><input type="checkbox" name="descargable" value="1" <?php checked( Documento_Service::POR_DEFECTO_DESCARGABLE ); ?>> Descargable</label>
+						<label><input type="checkbox" name="marca_agua" value="1" <?php checked( ! Documento_Service::POR_DEFECTO_SIN_MARCA ); ?>> Marca de agua</label>
 					</p>
 					<?php submit_button( sprintf( 'Generar %d cartas (quedan pendientes de publicar)', $generables ), 'primary', 'submit', false ); ?>
 				</form>

@@ -165,11 +165,15 @@ class Admin_Subir_Facturas {
 
 		$lector    = new Factura_Lectura_Service();
 		$lectura   = $lector->analizar( $archivo['tmp_name'], $archivo['nombre'] );
-		// Siempre pendiente de publicar y sin aviso por email a la farmacia. Sin
-		// marca de agua (#321) si se marco la casilla de la tanda; el navegador
-		// la manda en cada factura y aqui solo se lee "1".
-		$sin_marca = isset( $_POST['sin_marca'] ) && '1' === $_POST['sin_marca']; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce comprobado arriba.
-		$recepcion = ( new Factura_Recepcion_Service() )->recibir( $archivo, $lectura, Publicacion_Evento_Repository::ORIGEN_SUBIDA_FACTURAS, null, $sin_marca );
+		// Siempre pendiente de publicar y sin aviso por email a la farmacia.
+		// Marca de agua (#321) y descarga (v0.36.0) segun las casillas de la
+		// tanda: el navegador manda "1" o "0" en cada factura; si no llegan,
+		// los valores por defecto (descargable y sin marca).
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- nonce comprobado arriba.
+		$sin_marca   = isset( $_POST['marca_agua'] ) ? '1' !== $_POST['marca_agua'] : Documento_Service::POR_DEFECTO_SIN_MARCA;
+		$descargable = isset( $_POST['descargable'] ) ? '1' === $_POST['descargable'] : Documento_Service::POR_DEFECTO_DESCARGABLE;
+		// phpcs:enable
+		$recepcion = ( new Factura_Recepcion_Service() )->recibir( $archivo, $lectura, Publicacion_Evento_Repository::ORIGEN_SUBIDA_FACTURAS, null, $sin_marca, $descargable );
 
 		// responder() termina la peticion.
 		if ( Factura_Recepcion_Service::ACEPTADO === $recepcion['resultado'] ) {

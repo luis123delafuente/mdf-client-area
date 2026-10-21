@@ -45,6 +45,10 @@ class Publicacion_Evento_Repository {
 	public const ACCION_MARCA_QUITADA = 'marca_quitada';
 	public const ACCION_MARCA_PUESTA  = 'marca_puesta';
 
+	/** Descarga activada o desactivada en un documento (v0.36.0); al alta solo se apunta si nace no descargable. */
+	public const ACCION_DESCARGA_ACTIVADA    = 'descarga_activada';
+	public const ACCION_DESCARGA_DESACTIVADA = 'descarga_desactivada';
+
 	public const ORIGEN_INDIVIDUAL        = 'individual';
 	public const ORIGEN_POR_FARMACIA      = 'por_farmacia';
 	public const ORIGEN_BLOQUE            = 'bloque';
@@ -73,7 +77,7 @@ class Publicacion_Evento_Repository {
 	public function insertar_para( array $filas, string $accion, string $origen, ?int $usuario_id ) {
 		global $wpdb;
 
-		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO, self::ACCION_ELIMINADO, self::ACCION_ASIGNADO_MANUAL, self::ACCION_MARCA_QUITADA, self::ACCION_MARCA_PUESTA ), true ) || ! $this->origen_valido( $origen ) ) {
+		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO, self::ACCION_ELIMINADO, self::ACCION_ASIGNADO_MANUAL, self::ACCION_MARCA_QUITADA, self::ACCION_MARCA_PUESTA, self::ACCION_DESCARGA_ACTIVADA, self::ACCION_DESCARGA_DESACTIVADA ), true ) || ! $this->origen_valido( $origen ) ) {
 			return false;
 		}
 

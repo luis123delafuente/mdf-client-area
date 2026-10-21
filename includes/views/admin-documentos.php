@@ -89,7 +89,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 							</div>
 						</td>
 					</tr>
-					<tr data-mdf-ca-solo-no-347>
+					<tr>
 						<th scope="row"><label for="mdf-ca-documento-nombre">Nombre del documento</label></th>
 						<td>
 							<input
@@ -100,7 +100,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 								maxlength="255"
 								required
 							/>
-							<p class="description">En el Modelo 347 no se usa: el nombre es siempre "Modelo 347 &lt;sociedad&gt; &lt;ejercicio&gt;".</p>
+							<p class="description">Es también el nombre del fichero que descarga la farmacia.</p>
 						</td>
 					</tr>
 					<tr>
@@ -108,41 +108,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 						<td>
 							<select id="mdf-ca-documento-tipo" name="tipo_documento" required>
 								<option value="">-- Selecciona un tipo --</option>
-								<?php foreach ( Documento_Tipos::get_opciones() as $clave => $etiqueta ) : ?>
+								<?php foreach ( Documento_Tipos::get_opciones_subida_manual() as $clave => $etiqueta ) : ?>
 									<option value="<?php echo esc_attr( $clave ); ?>"><?php echo esc_html( $etiqueta ); ?></option>
 								<?php endforeach; ?>
 							</select>
+							<p class="description">
+								Para subir facturas usa <a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Admin_Subir_Facturas::MENU_SLUG ) ); ?>">Subir facturas</a> (también sirve para una sola);
+								para el Modelo 347, usa <a href="<?php echo esc_url( admin_url( 'admin.php?page=' . Admin_Modelo_347::MENU_SLUG ) ); ?>">Modelo 347</a>.
+							</p>
 						</td>
 					</tr>
-					<tr data-mdf-ca-solo-no-347>
+					<tr>
 						<th scope="row"><label for="mdf-ca-documento-fecha">Fecha del documento</label></th>
 						<td>
 							<input type="date" id="mdf-ca-documento-fecha" name="fecha_documento" min="2000-01-01" />
-							<p class="description">Obligatoria para las facturas (es la fecha de la factura, no la de subida); opcional en el resto. Con ella el cliente ve las facturas agrupadas por mes. No se usa en el Modelo 347.</p>
-						</td>
-					</tr>
-					<tr data-mdf-ca-solo-347>
-						<th scope="row"><label for="mdf-ca-documento-ejercicio">Ejercicio</label></th>
-						<td>
-							<select id="mdf-ca-documento-ejercicio" name="ejercicio">
-								<option value="">-- Selecciona un ejercicio --</option>
-								<?php for ( $anio = (int) wp_date( 'Y' ); $anio >= Documento_Service::EJERCICIO_MINIMO; $anio-- ) : ?>
-									<option value="<?php echo esc_attr( (string) $anio ); ?>"><?php echo esc_html( (string) $anio ); ?></option>
-								<?php endfor; ?>
-							</select>
-							<p class="description">Solo Modelo 347, obligatorio. El cliente lo ve agrupado por ejercicio.</p>
-						</td>
-					</tr>
-					<tr data-mdf-ca-solo-347>
-						<th scope="row"><label for="mdf-ca-documento-emisor">Sociedad emisora</label></th>
-						<td>
-							<select id="mdf-ca-documento-emisor" name="emisor_cif">
-								<option value="">-- Selecciona una sociedad --</option>
-								<?php foreach ( Factura_Emisores::get_opciones() as $cif_emisor => $nombre_emisor ) : ?>
-									<option value="<?php echo esc_attr( $cif_emisor ); ?>"><?php echo esc_html( $nombre_emisor . ' (' . $cif_emisor . ')' ); ?></option>
-								<?php endforeach; ?>
-							</select>
-							<p class="description">Solo Modelo 347, obligatoria. Una farmacia tiene un unico Modelo 347 por sociedad y ejercicio; para corregirlo, retira antes el anterior en la lista de abajo.</p>
+							<p class="description">Opcional. La fecha del documento, no la de subida.</p>
 						</td>
 					</tr>
 					<tr>
@@ -156,33 +136,27 @@ if ( ! defined( 'ABSPATH' ) ) {
 								<?php echo Admin_Zona_Archivos::atributos( 'PDF, JPG, PNG, WEBP o Excel (.xlsx)', Documento_Service::TAMANO_MAXIMO_BYTES ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- ya escapados. ?>
 								required
 							/>
-							<p class="description">PDF, JPG, PNG, WEBP o Excel (.xlsx, sin macros). Tamano maximo: 20 MB. Los Excel no se muestran en el visor: el cliente los descarga.</p>
+							<p class="description">PDF, JPG, PNG, WEBP o Excel (.xlsx, sin macros). Tamaño máximo: 20 MB.</p>
 						</td>
 					</tr>
 					<tr>
-						<th scope="row">Descarga</th>
+						<th scope="row">Configuración</th>
 						<td>
-							<label for="mdf-ca-documento-descargable">
-								<input type="checkbox" id="mdf-ca-documento-descargable" name="descargable" value="1" />
-								Permitir que la farmacia descargue el fichero
-							</label>
+							<fieldset>
+								<legend class="screen-reader-text">Configuración</legend>
+								<label for="mdf-ca-documento-descargable">
+									<input type="checkbox" id="mdf-ca-documento-descargable" name="descargable" value="1" <?php checked( Documento_Service::POR_DEFECTO_DESCARGABLE ); ?> />
+									Descargable
+								</label><br />
+								<label for="mdf-ca-documento-marca-agua">
+									<input type="checkbox" id="mdf-ca-documento-marca-agua" name="marca_agua" value="1" <?php checked( ! Documento_Service::POR_DEFECTO_SIN_MARCA ); ?> />
+									Marca de agua
+								</label>
+							</fieldset>
 							<p class="description">
-								Solo aplica a Excel. El cliente siempre lo ve en el visor. Con la casilla
-								marcada aparece ademas un boton "Descargar"; sin marcar (por defecto),
-								no hay forma de descargarlo.
-							</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">Marca de agua</th>
-						<td>
-							<label for="mdf-ca-documento-sin-marca">
-								<input type="checkbox" id="mdf-ca-documento-sin-marca" name="sin_marca" value="1" />
-								Mostrar sin marca de agua
-							</label>
-							<p class="description">
-								Por defecto el visor pinta el CIF y el nombre de la farmacia sobre el documento. Se puede
-								cambiar después desde esta lista o desde «Pendientes de publicar».
+								Descargable: la farmacia ve «Descargar» en su listado y en el visor. Sin marcar, solo puede verlo en el visor.
+								Marca de agua: el visor pinta el CIF y el nombre de la farmacia; lo descargado va siempre sin ella.
+								Las dos se pueden cambiar después desde esta lista o desde «Pendientes de publicar».
 							</p>
 						</td>
 					</tr>
@@ -229,7 +203,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 						<td>
 							<?php echo $documento->get_tamano_bytes() ? esc_html( size_format( $documento->get_tamano_bytes() ) ) : '-'; ?>
 						</td>
-						<td><?php echo Documento_Service::MIME_XLSX === $documento->get_tipo_mime() ? ( $documento->is_descargable() ? 'Si' : 'No' ) : '-'; ?></td>
+						<td>
+							<?php
+							$volver = 'documentos';
+							require MDF_CA_PLUGIN_DIR . 'includes/views/parcial-descarga.php';
+							?>
+						</td>
 						<td>
 							<?php if ( null !== $documento->get_ejercicio() ) : ?>
 								<?php echo esc_html( 'Ejercicio ' . $documento->get_ejercicio() ); ?>
@@ -250,6 +229,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 									<label><input type="checkbox" name="confirmar" value="1" required /> Confirmo</label>
 									<button type="submit" class="button button-small">Retirar para corrección</button>
 								</form>
+								<span class="description">Después, vuelve a generarlo desde el Excel en «Modelo 347».</span>
 							<?php else : ?>
 								-
 							<?php endif; ?>

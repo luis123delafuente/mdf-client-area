@@ -157,7 +157,7 @@ class Xlsx_Validator {
 	 * sigue rechazandose: su tipo efectivo es macroEnabled.main+xml venga de
 	 * donde venga, y un Override macroEnabled gana a un Default main.
 	 */
-	private static function tipo_de_parte( \SimpleXMLElement $tipos, string $parte ): ?string {
+	public static function tipo_de_parte( \SimpleXMLElement $tipos, string $parte ): ?string {
 		$parte     = strtolower( $parte );
 		$extension = strtolower( pathinfo( $parte, PATHINFO_EXTENSION ) );
 		$overrides = array();
@@ -185,7 +185,7 @@ class Xlsx_Validator {
 	}
 
 	/** Si los primeros bytes de esta entrada declaran un DOCTYPE o una ENTITY. Lee por stream, nunca la entrada entera. */
-	private static function declara_dtd( \ZipArchive $zip, string $nombre ): bool {
+	public static function declara_dtd( \ZipArchive $zip, string $nombre ): bool {
 		$stream = $zip->getStream( $nombre );
 
 		if ( false === $stream ) {

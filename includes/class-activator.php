@@ -18,6 +18,12 @@ class Activator {
 		Roles::conceder_capacidades_administrador();
 		update_option( 'mdf_ca_rol_gestor_v1', '1' );
 		update_option( 'mdf_ca_cap_catalogo_v1', '1' );
+		if ( self::migrar_catalogo_a_herramientas() ) {
+			update_option( 'mdf_ca_herramientas_v1', '1' );
+		}
+		if ( ( new Documento_Repository() )->marcar_todos_descargables() ) {
+			update_option( 'mdf_ca_documentos_descargables_v1', '1' );
+		}
 		Area_Privada_Pages::crear_paginas();
 
 		// Proteccion de la carpeta privada (#327): crea lo que falte y hace
@@ -31,7 +37,10 @@ class Activator {
 		// debe hacer en cada peticion) solo debe pasar al activar/desactivar.
 		Documento_Endpoint::registrar_rewrite();
 		Documento_Visor::registrar_rewrite();
+		Herramienta_Endpoint::registrar_rewrite();
 		flush_rewrite_rules();
+		update_option( 'mdf_ca_herramientas_rewrite_v1', '1' );
+		update_option( 'mdf_ca_documento_descarga_rewrite_v1', '1' );
 	}
 
 	/**
@@ -65,6 +74,10 @@ class Activator {
 		'mdf_ca_planes_migrados',
 		'mdf_ca_area_privada_paginas_creadas',
 		'mdf_ca_visor_rewrite_flushed',
+		'mdf_ca_herramientas_v1',
+		'mdf_ca_herramientas_rewrite_v1',
+		'mdf_ca_documentos_descargables_v1',
+		'mdf_ca_documento_descarga_rewrite_v1',
 	);
 
 	/**
@@ -226,6 +239,112 @@ class Activator {
 			flush_rewrite_rules();
 			update_option( 'mdf_ca_visor_rewrite_flushed', '1' );
 		}
+
+		// Herramientas del catalogo (esquema 1.21.0): los elementos que ya
+		// existen pasan a ser enlaces con categoria. Va despues de
+		// create_tables() (columnas y tablas nuevas). Solo se marca si todas
+		// las escrituras fueron bien; si no, se reintenta en la siguiente
+		// peticion, y repetirla no cambia nada.
+		if ( ! get_option( 'mdf_ca_herramientas_v1' ) && self::migrar_catalogo_a_herramientas() ) {
+			update_option( 'mdf_ca_herramientas_v1', '1' );
+		}
+
+		// Rutas /mdf-ca-herramienta/{id}/(ver|fichero|descargar)/: mismo motivo
+		// que el visor. Antes de wp_loaded, WordPress aplaza el flush hasta
+		// wp_loaded, cuando la regla ya esta registrada en 'init'.
+		if ( ! get_option( 'mdf_ca_herramientas_rewrite_v1' ) ) {
+			flush_rewrite_rules();
+			update_option( 'mdf_ca_herramientas_rewrite_v1', '1' );
+		}
+
+		// Documentos descargables por defecto (v0.36.0, decision de MDF): todos
+		// los existentes pasan a descargables; la marca de cada uno no se toca.
+		// Sin evento por documento (cambio masivo de configuracion, ver
+		// CLAUDE.md). Solo se marca si el UPDATE fue bien; repetirlo no cambia
+		// nada.
+		if ( ! get_option( 'mdf_ca_documentos_descargables_v1' ) && ( new Documento_Repository() )->marcar_todos_descargables() ) {
+			update_option( 'mdf_ca_documentos_descargables_v1', '1' );
+		}
+
+		// Ruta /mdf-ca-documento/{id}/descargar/ (v0.36.0): mismo motivo que el
+		// visor; WordPress aplaza el flush hasta wp_loaded.
+		if ( ! get_option( 'mdf_ca_documento_descarga_rewrite_v1' ) ) {
+			flush_rewrite_rules();
+			update_option( 'mdf_ca_documento_descarga_rewrite_v1', '1' );
+		}
+	}
+
+	/**
+	 * Herramientas (esquema 1.21.0). El catalogo pasa a ser solo
+	 * Herramientas: cada elemento antiguo (los que aun no tienen categoria)
+	 * pasa a ser de tipo enlace y conserva sus planes (la tabla puente no se
+	 * toca):
+	 * - los de la seccion Formacion, ocultos, en la categoria "Formacion
+	 *   (antigua)" (decision de MDF: Formacion es ahora una pagina de
+	 *   Elementor con un enlace a la Academia);
+	 * - los que no tienen enlace, ocultos, en "General": no se pueden abrir y
+	 *   el listado del backoffice los marca para completarlos;
+	 * - el resto, visibles, en "General".
+	 *
+	 * Las categorias se crean por slug solo si hacen falta. Idempotente: solo
+	 * toca filas con categoria_id IS NULL, y una segunda ejecucion no
+	 * encuentra ninguna. Solo INSERT y UPDATE simples, igual en MySQL 8.4 y
+	 * MariaDB 11.8. Devuelve false si alguna escritura falla.
+	 */
+	private static function migrar_catalogo_a_herramientas(): bool {
+		global $wpdb;
+
+		$catalogo = DB_Schema::get_catalogo_table_name();
+
+		$pendientes = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$catalogo} WHERE categoria_id IS NULL" );
+
+		if ( 0 === $pendientes ) {
+			return null !== $wpdb->get_var( "SELECT COUNT(*) FROM {$catalogo}" );
+		}
+
+		$categorias = Catalogo_Termino_Repository::categorias();
+
+		$hay_formacion = (int) $wpdb->get_var(
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$catalogo} WHERE categoria_id IS NULL AND seccion = %s", Catalogo_Secciones::FORMACION )
+		);
+
+		if ( $hay_formacion > 0 ) {
+			$formacion = $categorias->find_by_slug( 'formacion-antigua' ) ?? $categorias->insert( 'Formación (antigua)', 'formacion-antigua' );
+
+			if ( ! $formacion
+				|| false === $wpdb->query(
+					$wpdb->prepare(
+						"UPDATE {$catalogo} SET categoria_id = %d, recurso = 'enlace', visible = 0 WHERE categoria_id IS NULL AND seccion = %s",
+						$formacion->get_id(),
+						Catalogo_Secciones::FORMACION
+					)
+				) ) {
+				return false;
+			}
+		}
+
+		$general = $categorias->find_by_slug( 'general' ) ?? $categorias->insert( 'General', 'general' );
+
+		if ( ! $general ) {
+			return false;
+		}
+
+		// Sin enlace (NULL o vacio): oculta. Despues, el resto: visible.
+		$sin_enlace = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$catalogo} SET categoria_id = %d, recurso = 'enlace', visible = 0 WHERE categoria_id IS NULL AND ( enlace_url IS NULL OR enlace_url = '' )",
+				$general->get_id()
+			)
+		);
+
+		$con_enlace = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$catalogo} SET categoria_id = %d, recurso = 'enlace', visible = 1 WHERE categoria_id IS NULL",
+				$general->get_id()
+			)
+		);
+
+		return false !== $sin_enlace && false !== $con_enlace;
 	}
 
 	/**

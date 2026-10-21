@@ -9,6 +9,11 @@
  * Con el atributo data-mdf-ca-opcional en el contenedor (p. ej. el buscador
  * de "Documentos publicados") elegir farmacia no es obligatorio: se puede
  * enviar sin ninguna, y al vaciar el cuadro se quita la seleccion.
+ *
+ * Con data-mdf-ca-multiple (farmacias concretas de una herramienta del
+ * catalogo) se eligen varias: cada una pasa a la lista [data-mdf-ca-elegidas]
+ * como casilla marcada "farmacia_ids[]" con un boton "Quitar", y el cuadro
+ * se vacia para elegir la siguiente. Nunca bloquea el envio.
  */
 ( function () {
 	'use strict';
@@ -45,6 +50,68 @@
 		var activa = -1;
 		var form = input.form;
 		var opcional = contenedor.hasAttribute( 'data-mdf-ca-opcional' );
+		var multiple = contenedor.hasAttribute( 'data-mdf-ca-multiple' );
+		var elegidas = contenedor.querySelector( '[data-mdf-ca-elegidas]' );
+		var elegidasN = contenedor.querySelector( '[data-mdf-ca-elegidas-n]' );
+
+		function idsElegidos() {
+			return elegidas
+				? Array.prototype.map.call( elegidas.querySelectorAll( 'input[name="farmacia_ids[]"]:checked' ), function ( c ) { return c.value; } )
+				: [];
+		}
+
+		function actualizarElegidas() {
+			if ( elegidasN ) {
+				elegidasN.textContent = String( idsElegidos().length );
+			}
+			contenedor.dispatchEvent( new CustomEvent( 'mdf-ca-farmacias-cambiadas', { bubbles: true } ) );
+		}
+
+		function prepararQuitar( li ) {
+			var boton = li.querySelector( '[data-mdf-ca-quitar]' );
+			if ( ! boton ) {
+				return;
+			}
+			boton.hidden = false;
+			boton.setAttribute( 'aria-label', 'Quitar ' + li.querySelector( 'label' ).textContent.trim() );
+			boton.addEventListener( 'click', function () {
+				li.remove();
+				actualizarElegidas();
+				input.focus();
+			} );
+		}
+
+		function anadirElegida( f ) {
+			if ( idsElegidos().indexOf( String( f.id ) ) !== -1 ) {
+				return;
+			}
+			var li = document.createElement( 'li' );
+			li.dataset.farmaciaId = String( f.id );
+			var label = document.createElement( 'label' );
+			var casilla = document.createElement( 'input' );
+			casilla.type = 'checkbox';
+			casilla.name = 'farmacia_ids[]';
+			casilla.value = String( f.id );
+			casilla.checked = true;
+			label.appendChild( casilla );
+			label.appendChild( document.createTextNode( ' ' + etiqueta( f ) ) );
+			var boton = document.createElement( 'button' );
+			boton.type = 'button';
+			boton.className = 'button-link button-link-delete';
+			boton.setAttribute( 'data-mdf-ca-quitar', '' );
+			boton.textContent = 'Quitar';
+			li.appendChild( label );
+			li.appendChild( document.createTextNode( ' ' ) );
+			li.appendChild( boton );
+			elegidas.appendChild( li );
+			prepararQuitar( li );
+			actualizarElegidas();
+		}
+
+		if ( multiple && elegidas ) {
+			Array.prototype.forEach.call( elegidas.querySelectorAll( 'li' ), prepararQuitar );
+			elegidas.addEventListener( 'change', actualizarElegidas );
+		}
 
 		// En modo opcional la farmacia puede venir ya elegida desde el servidor
 		// (campo oculto con id y cuadro con su nombre): se recupera de la lista.
@@ -88,7 +155,7 @@
 				var li = document.createElement( 'li' );
 				li.className = 'mdf-ca-selector-farmacia__opcion' + ( i === activa ? ' is-activa' : '' );
 				li.setAttribute( 'role', 'option' );
-				li.setAttribute( 'aria-selected', seleccionada && seleccionada.id === f.id ? 'true' : 'false' );
+				li.setAttribute( 'aria-selected', ( seleccionada && seleccionada.id === f.id ) || ( multiple && idsElegidos().indexOf( String( f.id ) ) !== -1 ) ? 'true' : 'false' );
 				li.dataset.indice = String( i );
 				li.appendChild( document.createTextNode( f.nombre ) );
 				var detalle = document.createElement( 'small' );
@@ -119,6 +186,17 @@
 		}
 
 		function seleccionar( f ) {
+			if ( multiple ) {
+				anadirElegida( f );
+				contador.textContent = farmacias.length + ' farmacias';
+				seleccionada = null;
+				campoId.value = '';
+				input.value = '';
+				lista.hidden = true;
+				input.setAttribute( 'aria-expanded', 'false' );
+				return;
+			}
+
 			seleccionada = f;
 			campoId.value = String( f.id );
 			input.value = etiqueta( f );
@@ -233,6 +311,10 @@
 
 		if ( form ) {
 			form.addEventListener( 'submit', function ( e ) {
+				if ( multiple ) {
+					return;
+				}
+
 				if ( opcional && ! input.value ) {
 					campoId.value = '';
 					return;
