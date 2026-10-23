@@ -25,20 +25,25 @@ if ( ! defined( 'ABSPATH' ) ) {
  * - Programado con WP-Cron como evento unico a las 09:00 de wp_timezone(),
  *   reprogramado cada vez (no un evento recurrente: con "daily" la hora
  *   real se desplazaria una hora con el cambio horario).
- * - Si wp_mail() falla, no se marca nada: se reintenta en la siguiente
- *   ejecucion diaria, sin reintentos inmediatos.
+ * - Si el envio falla (Correo::enviar(), que tampoco intenta un email no
+ *   valido), no se marca nada: se reintenta en la siguiente ejecucion
+ *   diaria (09:00) mientras siga la causa, sin reintentos inmediatos. El
+ *   ultimo fallo se guarda en la usermeta META_ULTIMO_FALLO (fecha,
+ *   categoria y detalle) y se borra con el siguiente aviso que salga bien.
  * - Dos ejecuciones simultaneas: bloqueo propio en wp_options (ver
  *   tomar_bloqueo()). Ademas solo se marcan los ids enviados, con
  *   "AND notificado_en IS NULL".
  * - Riesgo asumido: si PHP muere entre un wp_mail() correcto y el marcado,
  *   ese aviso se repite al dia siguiente (preferible a perderlo).
- * - Logs: solo recuentos, nunca emails, CIF ni nombres.
+ * - Logs: solo recuentos, nunca emails, CIF ni nombres (el detalle del
+ *   fallo solo va a la usermeta, que ve el administrador).
  */
 class Aviso_Documentos_Service {
 
 	public const HOOK_CRON            = 'mdf_ca_enviar_avisos_documentos';
 	public const OPTION_ACTIVO        = 'mdf_ca_avisos_documentos_activos';
 	public const META_ULTIMO_AVISO    = 'mdf_ca_ultimo_aviso_documentos';
+	public const META_ULTIMO_FALLO    = 'mdf_ca_ultimo_fallo_aviso';
 	private const OPTION_BLOQUEO      = 'mdf_ca_avisos_documentos_bloqueo';
 	private const BLOQUEO_TTL         = 15 * MINUTE_IN_SECONDS;
 	private const HORA_ENVIO          = 9;
@@ -118,7 +123,9 @@ class Aviso_Documentos_Service {
 	// ------------------------------------------------------------------
 
 	/**
-	 * @return array{enviados: int, fallidos: int, sin_cuenta: int, ya_avisadas_hoy: int, documentos: int}|\WP_Error
+	 * fallos: uno por farmacia que fallo, para mostrarlo tras "Enviar ahora".
+	 *
+	 * @return array{enviados: int, fallidos: int, sin_cuenta: int, ya_avisadas_hoy: int, documentos: int, fallos: array<int, array{farmacia_id: int, categoria: string, detalle: string}>}|\WP_Error
 	 */
 	public function ejecutar() {
 		if ( ! self::esta_activo() ) {
@@ -137,6 +144,7 @@ class Aviso_Documentos_Service {
 			'sin_cuenta'      => 0,
 			'ya_avisadas_hoy' => 0,
 			'documentos'      => 0,
+			'fallos'          => array(),
 		);
 
 		try {
@@ -173,7 +181,7 @@ class Aviso_Documentos_Service {
 
 	/**
 	 * @param array<int, array{id: int, farmacia_id: int, tipo_documento: ?string}> $documentos
-	 * @param array<string, int> $resumen
+	 * @param array<string, mixed> $resumen
 	 */
 	private function procesar_farmacia( int $farmacia_id, array $documentos, array &$resumen ): void {
 		$farmacia = $this->farmacia_repository->find_by_id( $farmacia_id );
@@ -192,13 +200,18 @@ class Aviso_Documentos_Service {
 
 		$tipos = array_map( static fn( array $doc ): ?string => $doc['tipo_documento'], $documentos );
 
-		if ( ! wp_mail( $usuario->user_email, self::ASUNTO, self::cuerpo_email( $tipos ) ) ) {
+		$fallo = Correo::enviar( (string) $usuario->user_email, self::ASUNTO, self::cuerpo_email( $tipos ) );
+
+		if ( null !== $fallo ) {
 			++$resumen['fallidos'];
+			$resumen['fallos'][] = array( 'farmacia_id' => $farmacia_id ) + $fallo;
+			update_user_meta( $usuario->ID, self::META_ULTIMO_FALLO, array( 'fecha' => time() ) + $fallo );
 			return;
 		}
 
 		$marcados = $this->documento_repository->marcar_notificados( array_column( $documentos, 'id' ) );
 		update_user_meta( $usuario->ID, self::META_ULTIMO_AVISO, time() );
+		delete_user_meta( $usuario->ID, self::META_ULTIMO_FALLO );
 
 		++$resumen['enviados'];
 		$resumen['documentos'] += (int) $marcados;
@@ -215,6 +228,27 @@ class Aviso_Documentos_Service {
 		}
 
 		return $agrupados;
+	}
+
+	/**
+	 * Ultimo fallo del aviso a esta farmacia, o null si el ultimo salio bien
+	 * (o nunca fallo).
+	 *
+	 * @return array{fecha: int, categoria: string, detalle: string}|null
+	 */
+	public static function ultimo_fallo( Farmacia $farmacia ): ?array {
+		$user_id = (int) $farmacia->get_wp_user_id();
+		$fallo   = $user_id ? get_user_meta( $user_id, self::META_ULTIMO_FALLO, true ) : null;
+
+		if ( ! is_array( $fallo ) || ! isset( $fallo['fecha'], $fallo['categoria'], $fallo['detalle'] ) ) {
+			return null;
+		}
+
+		return array(
+			'fecha'     => (int) $fallo['fecha'],
+			'categoria' => (string) $fallo['categoria'],
+			'detalle'   => (string) $fallo['detalle'],
+		);
 	}
 
 	/** Como maximo un aviso por farmacia y dia natural (zona de wp_timezone()). */

@@ -214,6 +214,7 @@ class Admin_Modelo_347 {
 			get_current_user_id(),
 			sanitize_key( wp_unslash( $_POST['sim'] ?? '' ) ),
 			sanitize_key( wp_unslash( $_POST['huella'] ?? '' ) ),
+			! empty( $_POST['sociedad_confirmada'] ),
 			// Casillas "Marca de agua" (#321) y "Descargable" (v0.36.0), para
 			// toda la generacion; sin marcar no llegan en la peticion.
 			empty( $_POST['marca_agua'] ),
@@ -476,7 +477,15 @@ class Admin_Modelo_347 {
 		$resultado = ( new Modelo_347_Envio_Service() )->enviar_prueba( $documento_id );
 
 		if ( is_wp_error( $resultado ) ) {
-			self::guardar_aviso( 'error', $resultado->get_error_message() );
+			$mensaje = $resultado->get_error_message();
+			$detalle = $resultado->get_error_data()['detalle'] ?? '';
+
+			// El detalle tecnico del correo, solo al administrador.
+			if ( '' !== $detalle && current_user_can( Roles::CAP_ADMINISTRAR ) ) {
+				$mensaje .= ' Detalle técnico: ' . $detalle;
+			}
+
+			self::guardar_aviso( 'error', $mensaje );
 		} else {
 			self::guardar_aviso( 'success', 'Correo de prueba enviado a la dirección de prueba de los ajustes. No se ha publicado ni registrado nada.' );
 		}
@@ -502,6 +511,9 @@ class Admin_Modelo_347 {
 		$resultado = Modelo_347_Ajustes::guardar(
 			$emisor,
 			array(
+				'razon_social'   => wp_unslash( $_POST['razon_social'] ?? '' ),
+				'direccion'      => wp_unslash( $_POST['direccion'] ?? '' ),
+				'firma'          => wp_unslash( $_POST['firma'] ?? '' ),
 				'correo_admin'   => wp_unslash( $_POST['correo_admin'] ?? '' ),
 				'reply_to'       => wp_unslash( $_POST['reply_to'] ?? '' ),
 				'correo_prueba'  => wp_unslash( $_POST['correo_prueba'] ?? '' ),

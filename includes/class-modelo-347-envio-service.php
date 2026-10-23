@@ -17,9 +17,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  * - El PDF se lee de la carpeta privada (realpath + prefijo, como el
  *   endpoint) y se adjunta desde memoria con phpmailer_init: no se copia a
  *   ningun sitio.
- * - wp_mail() true: enviado y notificado_en marcado (el aviso generico ya
- *   excluye el 347). false: fallido, con el error de PHPMailer saneado; se
- *   reintenta solo con "Reintentar fallidos" o "Reenviar".
+ * - Envio con Correo::enviar(). Bien: enviado y notificado_en marcado (el
+ *   aviso generico ya excluye el 347). Mal: fallido, con "categoria|detalle"
+ *   (Correo::serializar()) en la columna error; la pantalla muestra la
+ *   categoria a todos y el detalle solo al administrador. Se reintenta solo
+ *   con "Reintentar fallidos" o "Reenviar".
  * - From: el del SMTP actual (no se toca). Reply-To: el del ajuste.
  * - Ritmo: ademas de la espera de la pantalla, el servidor rechaza una tanda
  *   que llegue antes de segundos_tanda desde la anterior (de cualquier usuario).
@@ -128,15 +130,15 @@ class Modelo_347_Envio_Service {
 		$pdf = self::leer_pdf( $documento );
 
 		if ( null === $pdf ) {
-			$this->envios->marcar_fallido( $envio_id, $email, 'No se pudo leer el PDF de la carta en el servidor.' );
+			$this->envios->marcar_fallido( $envio_id, $email, Correo::serializar( Correo::fallo( Correo::ADJUNTO, 'No se pudo leer el PDF de la carta en el servidor.' ) ) );
 
 			return 'fallidos';
 		}
 
-		$error = self::mandar( $email, self::asunto( $ejercicio ), self::cuerpo( $emisor_cif, $ejercicio ), $reply_to, $pdf, $documento->get_nombre() );
+		$fallo = self::mandar( $email, self::asunto( $ejercicio ), self::cuerpo( $emisor_cif, $ejercicio ), $reply_to, $pdf, $documento->get_nombre() );
 
-		if ( null !== $error ) {
-			$this->envios->marcar_fallido( $envio_id, $email, $error );
+		if ( null !== $fallo ) {
+			$this->envios->marcar_fallido( $envio_id, $email, Correo::serializar( $fallo ) );
 
 			return 'fallidos';
 		}
@@ -152,7 +154,8 @@ class Modelo_347_Envio_Service {
 	 * a la direccion de prueba del ajuste. No publica, no toca la tabla de
 	 * envios ni notificado_en.
 	 *
-	 * @return true|\WP_Error
+	 * @return true|\WP_Error Si el envio falla, el mensaje lleva la categoria
+	 *                        y el dato 'detalle', el detalle tecnico.
 	 */
 	public function enviar_prueba( int $documento_id ) {
 		$documento = $this->documentos->find_by_id( $documento_id );
@@ -175,7 +178,7 @@ class Modelo_347_Envio_Service {
 		}
 
 		$ejercicio = (int) $documento->get_ejercicio();
-		$error     = self::mandar(
+		$fallo     = self::mandar(
 			$ajustes['correo_prueba'],
 			'[PRUEBA] ' . self::asunto( $ejercicio ),
 			self::cuerpo( $emisor_cif, $ejercicio ),
@@ -184,47 +187,31 @@ class Modelo_347_Envio_Service {
 			$documento->get_nombre()
 		);
 
-		return null === $error ? true : new \WP_Error( 'mdf_ca_347_prueba_fallo', 'El correo de prueba no se pudo enviar: ' . $error );
+		if ( null === $fallo ) {
+			return true;
+		}
+
+		return new \WP_Error(
+			'mdf_ca_347_prueba_fallo',
+			'El correo de prueba no se pudo enviar: ' . Correo::texto_categoria( $fallo['categoria'] ) . '.',
+			array( 'detalle' => $fallo['detalle'] )
+		);
 	}
 
 	/**
-	 * wp_mail() con el PDF adjunto desde memoria. null si ha ido bien; si no,
-	 * el error saneado.
+	 * Correo::enviar() con el PDF adjunto desde memoria.
+	 *
+	 * @return array{categoria: string, detalle: string}|null null si ha ido bien.
 	 */
-	private static function mandar( string $para, string $asunto, string $cuerpo, ?string $reply_to, string $pdf, string $nombre_documento ): ?string {
-		$adjunto = sanitize_file_name( remove_accents( $nombre_documento ) ) . '.pdf';
-		$error   = null;
-
-		$adjuntar = static function ( $phpmailer ) use ( $pdf, $adjunto ): void {
-			$phpmailer->addStringAttachment( $pdf, $adjunto, 'base64', 'application/pdf' );
-		};
-		$capturar = static function ( \WP_Error $fallo ) use ( &$error ): void {
-			$error = $fallo->get_error_message();
-		};
-
+	private static function mandar( string $para, string $asunto, string $cuerpo, ?string $reply_to, string $pdf, string $nombre_documento ): ?array {
+		$adjunto   = sanitize_file_name( remove_accents( $nombre_documento ) ) . '.pdf';
 		$cabeceras = array( 'Content-Type: text/plain; charset=UTF-8' );
 
 		if ( null !== $reply_to ) {
 			$cabeceras[] = 'Reply-To: ' . $reply_to;
 		}
 
-		add_action( 'phpmailer_init', $adjuntar );
-		add_action( 'wp_mail_failed', $capturar );
-
-		try {
-			$ok = wp_mail( $para, $asunto, $cuerpo, $cabeceras );
-		} finally {
-			remove_action( 'phpmailer_init', $adjuntar );
-			remove_action( 'wp_mail_failed', $capturar );
-		}
-
-		if ( $ok ) {
-			return null;
-		}
-
-		$mensaje = is_string( $error ) && '' !== $error ? $error : 'wp_mail() devolvió false.';
-
-		return mb_substr( sanitize_text_field( $mensaje ), 0, 255 );
+		return Correo::enviar( $para, $asunto, $cuerpo, $cabeceras, array( $adjunto => $pdf ) );
 	}
 
 	/** Bytes del PDF guardado, con la misma defensa de ruta que Documento_Endpoint. */

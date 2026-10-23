@@ -28,7 +28,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  * - lista:            farmacia con cuenta activa y email: se genera y se envia.
  *
  * Avisos que no bloquean: trimestre negativo, trimestre vacio tomado como 0,
- * RECC distinto de 0/False.
+ * RECC distinto de 0/False, y "solo tiene facturas de la otra sociedad".
+ *
+ * Cruce con las facturas (sociedad): el Excel de SAGE no dice de que
+ * sociedad es (Mediformplus y Formacion exportan las mismas columnas), asi
+ * que se contrasta con las facturas del portal. Una fila es dudosa si su
+ * farmacia tiene facturas de otra sociedad y ninguna de la elegida. Si las
+ * dudosas son mas de la mitad de las filas cuya farmacia tiene alguna
+ * factura con emisor, la simulacion queda bloqueada: casi seguro se ha
+ * elegido la sociedad equivocada, y no se genera nada. Las filas sin
+ * facturas no dicen nada y no cuentan. Ademas, generar exige marcar una
+ * casilla que confirma la sociedad (Modelo_347_Generacion_Service::confirmar()).
  *
  * Modo: hoy solo "clientes" (cruce con el portal). El modo "proveedores"
  * (sin cruce, email de la columna Email, solo correo y sin guardar) se
@@ -93,7 +103,9 @@ class Modelo_347_Simulacion_Service {
 	 *     filas: array<int, array<string, mixed>>,
 	 *     recuentos: array<string, int>,
 	 *     total_dev_fichero: int, total_dev_lista: int, total_dev_sin_cuenta: int,
-	 *     filas_sin_dev: int, huella: string
+	 *     filas_sin_dev: int,
+	 *     sociedad: array{con_facturas: int, dudosas: int, bloquea: bool},
+	 *     huella: string
 	 * }
 	 */
 	public function simular( array $filas, string $emisor_cif, int $ejercicio ): array {
@@ -117,6 +129,13 @@ class Modelo_347_Simulacion_Service {
 			$por_cif[ $farmacia->get_cif() ] = $farmacia;
 		}
 
+		$emisores_facturas = $this->documentos->emisores_de_facturas( array_map( static fn( Farmacia $f ): int => $f->get_id(), $por_cif ) );
+		$sociedad          = array(
+			'con_facturas' => 0,
+			'dudosas'      => 0,
+			'bloquea'      => false,
+		);
+
 		$resultado = array();
 		$recuentos = array_fill_keys( array_keys( self::ETIQUETAS ), 0 );
 		$totales   = array(
@@ -130,6 +149,19 @@ class Modelo_347_Simulacion_Service {
 			$fila['avisos']      = self::avisos( $fila );
 			$fila['farmacia_id'] = null;
 			$fila['categoria']   = $this->categoria( $fila, $apariciones, $por_cif, $emisor_cif, $ejercicio );
+
+			// Cruce con las facturas: solo filas validas cuya farmacia esta en el portal.
+			$emisores_fila           = $fila['valido'] && isset( $por_cif[ $fila['nif'] ] ) ? ( $emisores_facturas[ $por_cif[ $fila['nif'] ]->get_id() ] ?? array() ) : array();
+			$fila['sociedad_dudosa'] = $emisores_fila && ! in_array( $emisor_cif, $emisores_fila, true );
+
+			if ( $emisores_fila ) {
+				++$sociedad['con_facturas'];
+			}
+
+			if ( $fila['sociedad_dudosa'] ) {
+				++$sociedad['dudosas'];
+				$fila['avisos'][] = 'Solo tiene facturas de ' . implode( ' y ', array_map( static fn( string $cif ): string => (string) ( Factura_Emisores::nombre_corto( $cif ) ?? $cif ), $emisores_fila ) ) . ' en el portal';
+			}
 
 			if ( isset( $por_cif[ $fila['nif'] ] ) && in_array( $fila['categoria'], array( self::YA_VIGENTE, self::SIN_CUENTA, self::LISTA ), true ) ) {
 				$fila['farmacia_id']     = $por_cif[ $fila['nif'] ]->get_id();
@@ -152,6 +184,8 @@ class Modelo_347_Simulacion_Service {
 			$resultado[] = $fila;
 		}
 
+		$sociedad['bloquea'] = $sociedad['dudosas'] * 2 > $sociedad['con_facturas'];
+
 		return array(
 			'filas'                => $resultado,
 			'recuentos'            => $recuentos,
@@ -159,6 +193,7 @@ class Modelo_347_Simulacion_Service {
 			'total_dev_lista'      => $totales['lista'],
 			'total_dev_sin_cuenta' => $totales['sin_cuenta'],
 			'filas_sin_dev'        => $totales['sin_dev'],
+			'sociedad'             => $sociedad,
 			'huella'               => self::huella( $resultado, $emisor_cif, $ejercicio ),
 		);
 	}
@@ -233,7 +268,8 @@ class Modelo_347_Simulacion_Service {
 
 	/**
 	 * Huella de lo simulado: sociedad, ejercicio y, por fila, linea,
-	 * categoria, farmacia, identificador, nombre, domicilio e importes. Si
+	 * categoria, farmacia, identificador, nombre, domicilio, importes y si es
+	 * dudosa en el cruce con las facturas. Si
 	 * algo de esto cambia entre la simulacion y la confirmacion (otra farmacia
 	 * activa su cuenta, alguien genera un 347...), la confirmacion no vale.
 	 *
@@ -243,7 +279,7 @@ class Modelo_347_Simulacion_Service {
 		$partes = array( $emisor_cif, $ejercicio );
 
 		foreach ( $filas as $f ) {
-			$partes[] = array( $f['linea'], $f['categoria'], $f['farmacia_id'], $f['nif'], $f['nombre'], $f['direccion'], $f['cp'], $f['poblacion'], $f['t1'], $f['t2'], $f['t3'], $f['t4'], $f['dev'] );
+			$partes[] = array( $f['linea'], $f['categoria'], $f['farmacia_id'], $f['nif'], $f['nombre'], $f['direccion'], $f['cp'], $f['poblacion'], $f['t1'], $f['t2'], $f['t3'], $f['t4'], $f['dev'], $f['sociedad_dudosa'] );
 		}
 
 		return hash( 'sha256', (string) wp_json_encode( $partes ) );

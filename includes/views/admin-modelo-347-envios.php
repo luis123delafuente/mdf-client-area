@@ -37,6 +37,9 @@ $etiquetas_envio = array(
 );
 $limite_interrumpido = gmdate( 'Y-m-d H:i:s', time() - Modelo_347_Envio_Repository::MINUTOS_INTERRUMPIDO * MINUTE_IN_SECONDS );
 $fecha_local         = static fn( ?string $utc ): string => $utc ? wp_date( 'd/m/Y H:i', (int) strtotime( $utc . ' UTC' ) ) : '—';
+// Motivo de un fallo: la categoria la ve todo el que gestiona el 347; el
+// detalle tecnico del correo, solo el administrador.
+$ver_detalle         = current_user_can( Roles::CAP_ADMINISTRAR );
 ?>
 <div class="wrap">
 	<?php require __DIR__ . '/parcial-modelo-347-cabecera.php'; ?>
@@ -174,7 +177,11 @@ $fecha_local         = static fn( ?string $utc ): string => $utc ? wp_date( 'd/m
 							<?php else : ?>
 								<?php echo esc_html( $interrumpido ? 'Interrumpido (puede haber salido)' : ( $etiquetas_envio[ $estado ] ?? $estado ) ); ?>
 								<?php if ( null !== $envio->error && '' !== $envio->error ) : ?>
-									<br><small><?php echo esc_html( $envio->error ); ?></small>
+									<?php $motivo = Correo::leer( (string) $envio->error ); ?>
+									<br><small><?php echo esc_html( $motivo['texto'] ); ?></small>
+									<?php if ( '' !== $motivo['detalle'] && $ver_detalle ) : ?>
+										<br><small>Detalle técnico: <code><?php echo esc_html( $motivo['detalle'] ); ?></code></small>
+									<?php endif; ?>
 								<?php endif; ?>
 							<?php endif; ?>
 						</td>

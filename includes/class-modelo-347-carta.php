@@ -9,7 +9,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Convierte los datos de una o varias cartas del Modelo 347 en un PDF (#307),
  * con la plantilla de la sociedad emisora (includes/plantillas-347/{CIF}.php).
  * Una sociedad esta habilitada para el generador si y solo si existe su
- * plantilla: Formacion sera anadir B88471149.php.
+ * plantilla (hoy Mediformplus, B82827635, y Formacion, B88471149). La
+ * plantilla solo pone la maqueta, el texto y el logo; los datos de la
+ * sociedad (razon social, direccion del pie, firma y correo de
+ * Administracion) salen de Modelo_347_Ajustes, nunca del codigo.
  *
  * Seguridad de dompdf (el HTML lo construye esta clase, pero los textos
  * vienen de un Excel):
@@ -33,7 +36,7 @@ class Modelo_347_Carta {
 
 	private const DIR_PLANTILLAS = 'includes/plantillas-347';
 
-	/** @var array<string, array{razon_social: string, logo: string, render: callable}> */
+	/** @var array<string, array{logo: ?string, render: callable}> */
 	private static array $plantillas = array();
 
 	public static function emisor_habilitado( string $emisor_cif ): bool {
@@ -55,9 +58,14 @@ class Modelo_347_Carta {
 		);
 	}
 
-	/** Razon social de la sociedad tal como sale en la carta ("MEDIFORMPLUS, S.L."). */
+	/**
+	 * Razon social de la sociedad tal como sale en la carta ("MEDIFORMPLUS,
+	 * S.L."), de los ajustes; si aun no esta configurada, el nombre corto.
+	 */
 	public static function razon_social_emisor( string $emisor_cif ): string {
-		return self::plantilla( $emisor_cif )['razon_social'];
+		$razon = Modelo_347_Ajustes::get( $emisor_cif )['razon_social'];
+
+		return '' !== $razon ? $razon : (string) ( Factura_Emisores::nombre_corto( $emisor_cif ) ?? $emisor_cif );
 	}
 
 	/** "1.234,56" a partir de centimos, con signo si es negativo. */
@@ -99,17 +107,21 @@ class Modelo_347_Carta {
 		}
 
 		$ajustes = Modelo_347_Ajustes::get( $emisor_cif );
+		$faltan  = Modelo_347_Ajustes::faltan_para_carta( $ajustes );
 
-		if ( '' === $ajustes['correo_admin'] ) {
-			return new \WP_Error( 'mdf_ca_347_sin_correo_admin', 'Configura el correo de Administración (Modelo 347 › Ajustes) antes de generar cartas: aparece en el texto de la carta.' );
+		if ( $faltan ) {
+			return new \WP_Error( 'mdf_ca_347_ajustes_carta', 'Configura ' . implode( ', ', $faltan ) . ' en Modelo 347 › Ajustes antes de generar cartas: aparecen en la carta.' );
 		}
 
 		$plantilla = self::plantilla( $emisor_cif );
 		$comun     = array(
-			'emisor_razon_social' => esc_html( $plantilla['razon_social'] ),
+			'emisor_razon_social' => esc_html( $ajustes['razon_social'] ),
 			'emisor_cif'          => esc_html( $emisor_cif ),
+			'emisor_direccion'    => esc_html( $ajustes['direccion'] ),
+			// Firma: varias lineas, cada una escapada.
+			'firma'               => implode( '<br>', array_map( 'esc_html', array_filter( array_map( 'trim', explode( "\n", $ajustes['firma'] ) ), 'strlen' ) ) ),
 			'correo_admin'        => esc_html( $ajustes['correo_admin'] ),
-			'logo'                => esc_attr( $plantilla['logo'] ),
+			'logo'                => null === $plantilla['logo'] ? '' : esc_attr( $plantilla['logo'] ),
 		);
 		$cartas    = array();
 
@@ -151,7 +163,7 @@ class Modelo_347_Carta {
 					'fontDir'              => Modelo_347_Librerias::dir_fuentes(),
 					'fontCache'            => Modelo_347_Librerias::dir_fuentes(),
 					'tempDir'              => $temporal,
-					'chroot'               => array( Modelo_347_Librerias::dir_fuentes(), dirname( $plantilla['logo'] ) ),
+					'chroot'               => array( Modelo_347_Librerias::dir_fuentes(), MDF_CA_PLUGIN_DIR . self::DIR_PLANTILLAS . '/img' ),
 					'defaultFont'          => 'liberation serif',
 					'defaultPaperSize'     => 'a4',
 					'logOutputFile'        => '',
@@ -162,7 +174,7 @@ class Modelo_347_Carta {
 			$dompdf->setPaper( 'A4' );
 			$dompdf->render();
 
-			$dompdf->addInfo( 'Title', 'Modelo 347 ' . $ejercicio );
+			$dompdf->addInfo( 'Title', 'Modelo 347 ' . $ajustes['razon_social'] . ' ' . $ejercicio );
 			$dompdf->addInfo( 'Creator', 'Area de Clientes Mediformplus' );
 
 			$bytes = $dompdf->output();
@@ -177,7 +189,10 @@ class Modelo_347_Carta {
 	}
 
 	/**
-	 * @return array{razon_social: string, logo: string, render: callable}
+	 * logo: ruta local dentro de includes/plantillas-347/img (el chroot de
+	 * dompdf), o null si la sociedad aun no tiene logo.
+	 *
+	 * @return array{logo: ?string, render: callable}
 	 */
 	private static function plantilla( string $emisor_cif ): array {
 		if ( ! isset( self::$plantillas[ $emisor_cif ] ) ) {

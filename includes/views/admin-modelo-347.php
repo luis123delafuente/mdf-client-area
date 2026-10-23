@@ -52,11 +52,21 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 
 	<?php elseif ( $simulacion && $sim ) : ?>
 
-		<h2>Simulación: <?php echo esc_html( Factura_Emisores::nombre_corto( $emisor ) . ' · ejercicio ' . $ejercicio ); ?></h2>
-		<p>Nada se ha guardado todavía. La simulación caduca en 15 minutos.</p>
+		<?php $faltan_ajustes = Modelo_347_Ajustes::faltan_para_carta( $ajustes ); ?>
+		<h2>Simulación: <?php echo esc_html( Factura_Emisores::nombre_corto( $emisor ) . ' (' . $emisor . ') · ejercicio ' . $ejercicio ); ?></h2>
+		<p>
+			Sociedad elegida: <strong><?php echo esc_html( ( '' !== $ajustes['razon_social'] ? $ajustes['razon_social'] : Factura_Emisores::nombre_corto( $emisor ) ) . ' (' . $emisor . ')' ); ?></strong>.
+			Nada se ha guardado todavía. La simulación caduca en 15 minutos.
+		</p>
 
-		<?php if ( '' === $ajustes['correo_admin'] ) : ?>
-			<div class="notice notice-error inline"><p>Falta el correo de Administración en <a href="<?php echo esc_url( Admin_Modelo_347::url( array( 'tab' => 'ajustes', 'emisor' => $emisor ) ) ); ?>">Ajustes</a>: aparece en la carta y sin él no se puede generar ni previsualizar.</p></div>
+		<?php if ( $faltan_ajustes ) : ?>
+			<div class="notice notice-error inline"><p>Falta <?php echo esc_html( implode( ', ', $faltan_ajustes ) ); ?> en <a href="<?php echo esc_url( Admin_Modelo_347::url( array( 'tab' => 'ajustes', 'emisor' => $emisor ) ) ); ?>">Ajustes</a>: aparece en la carta y sin ello no se puede generar ni previsualizar.</p></div>
+		<?php endif; ?>
+
+		<?php if ( $simulacion['sociedad']['bloquea'] ) : ?>
+			<div class="notice notice-error inline"><p><?php echo esc_html( Modelo_347_Generacion_Service::mensaje_sociedad_no_coincide( $emisor, $simulacion['sociedad'] ) ); ?></p></div>
+		<?php elseif ( $simulacion['sociedad']['dudosas'] > 0 ) : ?>
+			<div class="notice notice-warning inline"><p><?php echo esc_html( sprintf( '%d fila(s) son de farmacias que solo tienen facturas de otra sociedad en el portal (ver «Avisos»). Comprueba que el Excel es de %s.', $simulacion['sociedad']['dudosas'], Factura_Emisores::nombre_corto( $emisor ) ) ); ?></p></div>
 		<?php endif; ?>
 
 		<table class="widefat striped" style="max-width:48em">
@@ -83,12 +93,12 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 		$generables       = $simulacion['recuentos'][ Modelo_347_Simulacion_Service::LISTA ] + $simulacion['recuentos'][ Modelo_347_Simulacion_Service::SIN_CUENTA ];
 		$no_enviables     = $simulacion['recuentos'][ Modelo_347_Simulacion_Service::SIN_CUENTA ] + $simulacion['recuentos'][ Modelo_347_Simulacion_Service::NO_PORTAL ];
 		$previsualizables = count( array_filter( $simulacion['filas'], array( Modelo_347_Simulacion_Service::class, 'es_previsualizable' ) ) );
-		$puede_pintar     = '' !== $ajustes['correo_admin'];
+		$puede_pintar     = ! $faltan_ajustes;
 		$url_previa       = wp_nonce_url( add_query_arg( array( 'action' => 'mdf_ca_347_vista_previa', 'sim' => $sim_id ), admin_url( 'admin-post.php' ) ), 'mdf_ca_347_vista_previa' );
 		?>
 		<h3>Revisar cartas</h3>
 		<?php if ( ! $puede_pintar ) : ?>
-			<p>Configura el correo de Administración en Ajustes para ver las cartas y descargar el ZIP.</p>
+			<p>Completa los Ajustes de la sociedad para ver las cartas y descargar el ZIP.</p>
 		<?php elseif ( 0 === $previsualizables ) : ?>
 			<p>Ninguna fila tiene identificador válido y suma correcta: no hay ninguna carta que ver.</p>
 		<?php else : ?>
@@ -169,7 +179,7 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 		<?php endforeach; ?>
 
 		<div style="display:flex;gap:1em;margin-top:1.5em">
-			<?php if ( $generables > 0 && '' !== $ajustes['correo_admin'] ) : ?>
+			<?php if ( $generables > 0 && ! $faltan_ajustes && ! $simulacion['sociedad']['bloquea'] ) : ?>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 					<?php wp_nonce_field( 'mdf_ca_347_confirmar' ); ?>
 					<input type="hidden" name="action" value="mdf_ca_347_confirmar">
@@ -179,6 +189,12 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 						Todas las cartas de esta generación:
 						<label><input type="checkbox" name="descargable" value="1" <?php checked( Documento_Service::POR_DEFECTO_DESCARGABLE ); ?>> Descargable</label>
 						<label><input type="checkbox" name="marca_agua" value="1" <?php checked( ! Documento_Service::POR_DEFECTO_SIN_MARCA ); ?>> Marca de agua</label>
+					</p>
+					<p>
+						<label>
+							<input type="checkbox" name="sociedad_confirmada" value="1" required>
+							Confirmo que este Excel es el del Modelo 347 de <strong><?php echo esc_html( $ajustes['razon_social'] . ' (' . $emisor . ')' ); ?></strong> exportado de SAGE
+						</label>
 					</p>
 					<?php submit_button( sprintf( 'Generar %d cartas (quedan pendientes de publicar)', $generables ), 'primary', 'submit', false ); ?>
 				</form>
@@ -196,7 +212,9 @@ $eur = static fn( int $centimos ): string => Modelo_347_Carta::formatear_importe
 		<h2>Subir el Excel de SAGE</h2>
 		<p>
 			Hoja «347» con las columnas Código, Nombre, NIF, Dirección, Población, Código postal, Trimestre 1 a 4,
-			Importe DEV, Importe RECC y RECC (Email es opcional). Primero se simula: nada se guarda hasta que confirmes.
+			Importe DEV, Importe RECC y RECC (Email es opcional). Mediformplus y Formación exportan las mismas columnas:
+			el Excel no dice de qué sociedad es, así que elige bien la sociedad. La simulación lo contrasta con las facturas
+			del portal y, para generar, tendrás que confirmarla. Primero se simula: nada se guarda hasta que confirmes.
 			El Excel no se guarda en el servidor.
 		</p>
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" enctype="multipart/form-data">

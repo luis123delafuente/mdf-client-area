@@ -8,7 +8,8 @@
  * @var bool                                       $forzado_apagado
  * @var int|false                                  $proxima
  * @var array{documentos: int, farmacias_activas: int, farmacias_sin_cuenta: int} $pendientes
- * @var array{tipo: string, mensaje: string}|null  $aviso
+ * @var array<int, array{farmacia: string, documentos: int, fecha: int, categoria: string, detalle: string}> $con_fallo Pendientes cuyo ultimo aviso fallo.
+ * @var array{tipo: string, mensaje: string, fallos?: array<int, array{farmacia: string, categoria: string, detalle: string}>}|null $aviso
  */
 
 namespace MdfClientArea;
@@ -23,6 +24,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 	<?php if ( $aviso ) : ?>
 		<div class="notice notice-<?php echo esc_attr( in_array( $aviso['tipo'], array( 'error', 'warning' ), true ) ? $aviso['tipo'] : 'success' ); ?> is-dismissible">
 			<p><?php echo esc_html( $aviso['mensaje'] ); ?></p>
+			<?php if ( ! empty( $aviso['fallos'] ) ) : ?>
+				<p>Avisos que no han salido:</p>
+				<ul class="ul-disc">
+					<?php foreach ( $aviso['fallos'] as $fallo ) : ?>
+						<li>
+							<strong><?php echo esc_html( $fallo['farmacia'] ); ?></strong>: <?php echo esc_html( $fallo['categoria'] ); ?>.
+							<?php if ( '' !== $fallo['detalle'] ) : ?>
+								<br><small>Detalle técnico: <code><?php echo esc_html( $fallo['detalle'] ); ?></code></small>
+							<?php endif; ?>
+						</li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
 		</div>
 	<?php endif; ?>
 
@@ -56,6 +70,29 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<?php echo esc_html( (string) $pendientes['documentos'] ); ?> documentos:
 					<?php echo esc_html( (string) $pendientes['farmacias_activas'] ); ?> farmacias con cuenta activa,
 					<?php echo esc_html( (string) $pendientes['farmacias_sin_cuenta'] ); ?> sin cuenta activa.
+					<?php if ( $con_fallo ) : ?>
+						<p><strong>Farmacias cuyo último aviso falló</strong> (se reintenta cada día a las 09:00 mientras siga la causa):</p>
+						<table class="widefat striped" style="max-width:60em">
+							<thead>
+								<tr><th>Farmacia</th><th>Documentos pendientes</th><th>Último fallo</th><th>Motivo</th></tr>
+							</thead>
+							<tbody>
+								<?php foreach ( $con_fallo as $fila ) : ?>
+									<tr>
+										<td><?php echo esc_html( $fila['farmacia'] ); ?></td>
+										<td><?php echo esc_html( (string) $fila['documentos'] ); ?></td>
+										<td><?php echo esc_html( wp_date( 'd/m/Y H:i', $fila['fecha'] ) ); ?></td>
+										<td>
+											<?php echo esc_html( $fila['categoria'] ); ?>
+											<?php if ( '' !== $fila['detalle'] ) : ?>
+												<br><small><code><?php echo esc_html( $fila['detalle'] ); ?></code></small>
+											<?php endif; ?>
+										</td>
+									</tr>
+								<?php endforeach; ?>
+							</tbody>
+						</table>
+					<?php endif; ?>
 				</td>
 			</tr>
 			<tr>

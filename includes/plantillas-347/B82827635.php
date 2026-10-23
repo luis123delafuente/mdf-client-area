@@ -14,7 +14,10 @@
  * crudo del Excel), y devuelve el HTML que dompdf convierte en PDF. Ningun recurso remoto: el logo es un fichero local
  * dentro del chroot de dompdf.
  *
- * $comun: emisor_razon_social, emisor_cif, correo_admin, logo (ruta local).
+ * $comun: emisor_razon_social, emisor_cif, emisor_direccion, firma (lineas
+ * ya escapadas unidas con <br>, o vacia), correo_admin y logo (ruta local).
+ * Los datos de la sociedad salen de Modelo_347_Ajustes (pestana Ajustes),
+ * no de esta plantilla.
  * Cada carta: razon_social, nif, domicilio, ejercicio, t1, t2, t3, t4 y
  * total (importes ya formateados, "1.234,56").
  */
@@ -26,9 +29,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 return array(
-	'razon_social' => 'MEDIFORMPLUS, S.L.',
-	'logo'         => __DIR__ . '/img/mediformplus.png',
-	'render'       => static function ( array $cartas, array $comun ): string {
+	'logo'   => __DIR__ . '/img/mediformplus.png',
+	'render' => static function ( array $cartas, array $comun ): string {
 		ob_start();
 		?>
 <!DOCTYPE html>
@@ -55,11 +57,14 @@ return array(
 	.correo { color: #0000FF; font-weight: bold; text-decoration: underline; }
 	.carta { page-break-after: always; }
 	.carta:last-child { page-break-after: auto; }
+	/* Firma (ajuste opcional): sin margen inferior, para que quepa en la
+	   misma pagina que el resto (la carta la ocupa casi entera). */
+	.firma { margin-bottom: 0; }
 </style>
 </head>
 <body>
 	<div class="cabecera"><img src="<?php echo $comun['logo']; // phpcs:ignore WordPress.Security.EscapeOutput -- ya escapado ?>" alt=""></div>
-	<div class="pie">MEDIFORMPLUS, S.L. B82827635. - Calle Mahón, 6. - 28290 Las Rozas. - MADRID</div>
+	<div class="pie"><?php echo $comun['emisor_razon_social'] . ' ' . $comun['emisor_cif'] . '. - ' . $comun['emisor_direccion']; // phpcs:ignore WordPress.Security.EscapeOutput -- ya escapado ?></div>
 
 	<?php foreach ( $cartas as $v ) : ?>
 	<div class="carta">
@@ -81,6 +86,9 @@ return array(
 	<p>En caso de detectar alguna diferencia, le agradeceríamos que nos lo comunicara a la mayor brevedad posible, indicando el trimestre y los importes afectados, para que podamos realizar las comprobaciones oportunas antes de presentar la declaración.</p>
 	<p>Para cualquier consulta o aclaración, puede contactar con nuestro Departamento de Administración a través del correo electrónico <span class="correo"><?php echo $comun['correo_admin']; // phpcs:ignore WordPress.Security.EscapeOutput ?></span></p>
 	<p>Agradecemos de antemano su colaboración y atención.</p>
+	<?php if ( '' !== $comun['firma'] ) : ?>
+	<p class="firma"><?php echo $comun['firma']; // phpcs:ignore WordPress.Security.EscapeOutput -- ya escapado ?></p>
+	<?php endif; ?>
 	</div>
 	<?php endforeach; ?>
 </body>

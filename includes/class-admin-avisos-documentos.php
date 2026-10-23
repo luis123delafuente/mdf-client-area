@@ -15,6 +15,11 @@ if ( ! defined( 'ABSPATH' ) ) {
  * ejecucion, y permite encender/apagar los avisos y lanzar un envio
  * ahora (que respeta el interruptor, el bloqueo y el limite diario por
  * farmacia: es la misma Aviso_Documentos_Service::ejecutar() que el cron).
+ *
+ * Fallos: tras "Enviar ahora", la lista de farmacias que fallaron con la
+ * categoria y el detalle tecnico; y, entre los pendientes, las farmacias
+ * cuyo ultimo aviso fallo (usermeta, tambien los del cron). La pantalla es
+ * solo del administrador, asi que el detalle se muestra siempre.
  */
 class Admin_Avisos_Documentos {
 
@@ -61,6 +66,7 @@ class Admin_Avisos_Documentos {
 			'farmacias_activas'   => 0,
 			'farmacias_sin_cuenta' => 0,
 		);
+		$con_fallo           = array();
 
 		foreach ( ( new Aviso_Documentos_Service() )->pendientes_por_farmacia() as $farmacia_id => $documentos ) {
 			$pendientes['documentos'] += count( $documentos );
@@ -68,6 +74,18 @@ class Admin_Avisos_Documentos {
 
 			if ( $farmacia && 'activa' === Invitacion_Service::estado_cuenta( $farmacia )['estado'] ) {
 				++$pendientes['farmacias_activas'];
+
+				$fallo = Aviso_Documentos_Service::ultimo_fallo( $farmacia );
+
+				if ( null !== $fallo ) {
+					$con_fallo[] = array(
+						'farmacia'   => $farmacia->get_nombre() . ' (' . $farmacia->get_cif() . ')',
+						'documentos' => count( $documentos ),
+						'fecha'      => $fallo['fecha'],
+						'categoria'  => Correo::texto_categoria( $fallo['categoria'] ),
+						'detalle'    => $fallo['detalle'],
+					);
+				}
 			} else {
 				++$pendientes['farmacias_sin_cuenta'];
 			}
@@ -116,7 +134,8 @@ class Admin_Avisos_Documentos {
 					$resultado['fallidos'],
 					$resultado['sin_cuenta'],
 					$resultado['ya_avisadas_hoy']
-				)
+				),
+				self::fallos_para_pantalla( $resultado['fallos'] )
 			);
 		}
 
@@ -128,19 +147,43 @@ class Admin_Avisos_Documentos {
 		exit;
 	}
 
-	private static function guardar_aviso( string $tipo, string $mensaje ): void {
+	/**
+	 * @param array<int, array{farmacia_id: int, categoria: string, detalle: string}> $fallos
+	 * @return array<int, array{farmacia: string, categoria: string, detalle: string}>
+	 */
+	private static function fallos_para_pantalla( array $fallos ): array {
+		$farmacia_repository = new Farmacia_Repository();
+		$lista               = array();
+
+		foreach ( $fallos as $fallo ) {
+			$farmacia = $farmacia_repository->find_by_id( $fallo['farmacia_id'] );
+			$lista[]  = array(
+				'farmacia'  => $farmacia ? $farmacia->get_nombre() . ' (' . $farmacia->get_cif() . ')' : 'Farmacia ID ' . $fallo['farmacia_id'],
+				'categoria' => Correo::texto_categoria( $fallo['categoria'] ),
+				'detalle'   => $fallo['detalle'],
+			);
+		}
+
+		return $lista;
+	}
+
+	/**
+	 * @param array<int, array{farmacia: string, categoria: string, detalle: string}> $fallos
+	 */
+	private static function guardar_aviso( string $tipo, string $mensaje, array $fallos = array() ): void {
 		set_transient(
 			self::NOTICE_KEY_PREFIX . get_current_user_id(),
 			array(
 				'tipo'    => $tipo,
 				'mensaje' => $mensaje,
+				'fallos'  => $fallos,
 			),
 			30
 		);
 	}
 
 	/**
-	 * @return array{tipo: string, mensaje: string}|null
+	 * @return array{tipo: string, mensaje: string, fallos?: array<int, array{farmacia: string, categoria: string, detalle: string}>}|null
 	 */
 	private static function consumir_aviso(): ?array {
 		$key   = self::NOTICE_KEY_PREFIX . get_current_user_id();

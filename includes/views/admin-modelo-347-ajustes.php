@@ -33,6 +33,27 @@ $tab = 'ajustes';
 			<table class="form-table" role="presentation">
 				<tbody>
 					<tr>
+						<th scope="row"><label for="mdf-ca-347-razon-social">Razón social</label></th>
+						<td>
+							<input type="text" id="mdf-ca-347-razon-social" name="razon_social" class="regular-text" maxlength="200" value="<?php echo esc_attr( $ajustes['razon_social'] ); ?>">
+							<p class="description">Tal como sale en la carta y en su pie, por ejemplo «MEDIFORMPLUS, S.L.». El CIF (<?php echo esc_html( $emisor ); ?>) no se edita. Obligatoria para generar.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mdf-ca-347-direccion">Dirección</label></th>
+						<td>
+							<input type="text" id="mdf-ca-347-direccion" name="direccion" class="large-text" maxlength="200" value="<?php echo esc_attr( $ajustes['direccion'] ); ?>">
+							<p class="description">Domicilio de la sociedad en una línea, para el pie de la carta (sale detrás de la razón social y el CIF). Obligatoria para generar.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="mdf-ca-347-firma">Firma</label></th>
+						<td>
+							<textarea id="mdf-ca-347-firma" name="firma" rows="3" class="large-text" maxlength="500"><?php echo esc_textarea( $ajustes['firma'] ); ?></textarea>
+							<p class="description">Opcional. Sale al final de la carta, línea a línea (por ejemplo «Departamento de Administración»). Vacía, la carta termina en el agradecimiento.</p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><label for="mdf-ca-347-correo-admin">Correo de Administración</label></th>
 						<td>
 							<input type="email" id="mdf-ca-347-correo-admin" name="correo_admin" class="regular-text" value="<?php echo esc_attr( $ajustes['correo_admin'] ); ?>">

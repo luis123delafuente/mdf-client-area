@@ -80,6 +80,45 @@ class Documento_Repository {
 	}
 
 	/**
+	 * Sociedades de las que cada farmacia tiene alguna factura en el portal
+	 * (pendiente, publicada o despublicada), para el cruce del generador del
+	 * 347: un Excel de una sociedad no debe generarse como de la otra. Las
+	 * facturas sin emisor (subidas a mano antes de la v0.36.0) no cuentan:
+	 * emisor_cif = %s ya deja fuera los NULL, a proposito.
+	 *
+	 * @param int[] $farmacia_ids
+	 * @return array<int, string[]> farmacia_id => CIF de los emisores
+	 */
+	public function emisores_de_facturas( array $farmacia_ids ): array {
+		global $wpdb;
+
+		$farmacia_ids = array_values( array_unique( array_filter( array_map( 'intval', $farmacia_ids ) ) ) );
+
+		if ( ! $farmacia_ids ) {
+			return array();
+		}
+
+		$table        = DB_Schema::get_documentos_table_name();
+		$placeholders = implode( ',', array_fill( 0, count( $farmacia_ids ), '%d' ) );
+		$rows         = $wpdb->get_results(
+			$wpdb->prepare(
+				// phpcs:ignore WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- placeholders generados arriba.
+				"SELECT DISTINCT farmacia_id, emisor_cif FROM {$table} WHERE tipo_documento = %s AND emisor_cif IS NOT NULL AND farmacia_id IN ({$placeholders})",
+				array_merge( array( 'factura' ), $farmacia_ids )
+			),
+			ARRAY_A
+		);
+
+		$emisores = array();
+
+		foreach ( $rows ?: array() as $row ) {
+			$emisores[ (int) $row['farmacia_id'] ][] = (string) $row['emisor_cif'];
+		}
+
+		return $emisores;
+	}
+
+	/**
 	 * Modelo 347 vigente de esta farmacia, emisor y ejercicio (#307). El
 	 * UNIQUE modelo_347 garantiza uno como maximo; los retirados no cuentan.
 	 */

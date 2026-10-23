@@ -106,10 +106,14 @@ class Documento_Visor {
 
 		$endpoint_url = home_url( 'mdf-ca-documento/' . $documento_id . '/' );
 		$documento    = ( new Documento_Repository() )->find_by_id( $documento_id );
+		$usuario      = wp_get_current_user();
+		$puede_verlo  = Permissions::puede_ver_documento( $usuario, $documento );
 		// Sin marca de agua (#321) solo si el documento lo tiene guardado asi;
-		// ningun parametro de la peticion lo decide.
-		$marca_agua = $documento && $documento->is_sin_marca_de_agua() ? '' : self::get_marca_agua_texto();
-		$usuario    = wp_get_current_user();
+		// ningun parametro de la peticion lo decide. Y solo se mira si el
+		// usuario puede verlo: con un documento ajeno, la pagina tiene que ser
+		// identica a la de un id inexistente (v0.37.0; antes, un ajeno sin
+		// marca dejaba la marca vacia y delataba que el id existia).
+		$marca_agua = $puede_verlo && $documento->is_sin_marca_de_agua() ? '' : self::get_marca_agua_texto();
 
 		// Boton "Descargar" solo si Permissions lo permite (v0.36.0: cualquier
 		// documento marcado como descargable). Descarga por su propia ruta.
@@ -119,7 +123,7 @@ class Documento_Visor {
 		// siempre que el documento sea visible: desde la 0.36.0 el endpoint lo
 		// exige tambien a los descargables. Si no es visible, el endpoint dara
 		// 404 igualmente y no se emite nada.
-		$token = Permissions::puede_ver_documento( $usuario, $documento )
+		$token = $puede_verlo
 			? Documento_Token::emitir( (int) $usuario->ID, $documento_id )
 			: '';
 

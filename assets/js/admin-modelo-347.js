@@ -212,7 +212,7 @@
 				var resumen = 'Enviados: ' + totales.enviados + ' · Fallidos: ' + totales.fallidos + ' · Cancelados: ' + totales.cancelados + ' · Quedan: ' + d.quedan;
 
 				if ( 0 === d.quedan ) {
-					detener( resumen + '. Terminado: recarga la página para ver el detalle.' );
+					detener( resumen + '. Terminado: recarga la página para ver el detalle.' + ( totales.fallidos > 0 ? ' ' + totales.fallidos + ' fallidos: ver el motivo en la tabla.' : '' ) );
 					return;
 				}
 

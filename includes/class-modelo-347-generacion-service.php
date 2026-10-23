@@ -114,13 +114,22 @@ class Modelo_347_Generacion_Service {
 	 * coincide, guarda la simulacion recalculada (para ensenarla) y devuelve
 	 * ERROR_CAMBIADO con el id nuevo en los datos del error.
 	 *
+	 * $sociedad_confirmada: la casilla "Confirmo que este Excel es de ..."
+	 * (el Excel no dice de que sociedad es). Sin ella no se consume nada.
+	 * Ademas, si el cruce con las facturas bloquea la simulacion
+	 * (Modelo_347_Simulacion_Service, "sociedad"), no se genera.
+	 *
 	 * $sin_marca (#321) y $descargable (v0.36.0): la configuracion de todas
 	 * las cartas de esta generacion; se guarda en el trabajo y no se vuelve a
 	 * leer de la peticion.
 	 *
 	 * @return array{job_id: string, total: int}|\WP_Error
 	 */
-	public function confirmar( int $usuario_id, string $sim_id, string $huella, bool $sin_marca = Documento_Service::POR_DEFECTO_SIN_MARCA, bool $descargable = Documento_Service::POR_DEFECTO_DESCARGABLE ) {
+	public function confirmar( int $usuario_id, string $sim_id, string $huella, bool $sociedad_confirmada, bool $sin_marca = Documento_Service::POR_DEFECTO_SIN_MARCA, bool $descargable = Documento_Service::POR_DEFECTO_DESCARGABLE ) {
+		if ( ! $sociedad_confirmada ) {
+			return new \WP_Error( 'mdf_ca_347_sociedad_sin_confirmar', 'Marca la casilla que confirma de qué sociedad es el Excel. No se ha generado nada.', array( 'sim_id' => $sim_id ) );
+		}
+
 		$sim = self::consumir_simulacion( $usuario_id, $sim_id );
 
 		if ( ! $sim ) {
@@ -137,6 +146,12 @@ class Modelo_347_Generacion_Service {
 				'Los datos han cambiado desde la simulación (alguna farmacia, cuenta o carta). No se ha generado nada: revisa la simulación actualizada.',
 				array( 'sim_id' => $nuevo )
 			);
+		}
+
+		if ( $actual['sociedad']['bloquea'] ) {
+			$nuevo = self::guardar_simulacion( $usuario_id, $sim['emisor_cif'], (int) $sim['ejercicio'], $sim['filas'] );
+
+			return new \WP_Error( 'mdf_ca_347_sociedad_no_coincide', self::mensaje_sociedad_no_coincide( $sim['emisor_cif'], $actual['sociedad'] ), array( 'sim_id' => $nuevo ) );
 		}
 
 		$generables = array_values(
@@ -168,6 +183,21 @@ class Modelo_347_Generacion_Service {
 		return array(
 			'job_id' => $job_id,
 			'total'  => count( $generables ),
+		);
+	}
+
+	/**
+	 * Texto del bloqueo por el cruce con las facturas, el mismo en la
+	 * simulacion y al confirmar.
+	 *
+	 * @param array{con_facturas: int, dudosas: int} $sociedad
+	 */
+	public static function mensaje_sociedad_no_coincide( string $emisor_cif, array $sociedad ): string {
+		return sprintf(
+			'Este Excel no parece de %1$s: de las %2$d farmacias del fichero que tienen facturas en el portal, %3$d solo tienen facturas de otra sociedad. ¿Has elegido la sociedad correcta? No se puede generar: descarta la simulación y vuelve a subir el Excel con la sociedad que corresponda.',
+			Factura_Emisores::nombre_corto( $emisor_cif ) ?? $emisor_cif,
+			$sociedad['con_facturas'],
+			$sociedad['dudosas']
 		);
 	}
 
