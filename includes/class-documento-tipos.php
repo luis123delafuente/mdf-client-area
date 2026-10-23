@@ -41,14 +41,17 @@ class Documento_Tipos {
 		'otro'        => 'Otros',
 	);
 
-	/** Singular y plural en minusculas, para el desglose del aviso por email. */
+	/**
+	 * Singular y plural, para el desglose del aviso por email. "Otro" no
+	 * se lee bien solo ("2 otros"): va como "documento(s) de otro tipo".
+	 */
 	private const RECUENTO = array(
 		'contrato'    => array( 'contrato', 'contratos' ),
 		'factura'     => array( 'factura', 'facturas' ),
 		'modelo_347'  => array( 'Modelo 347', 'Modelos 347' ),
 		'presupuesto' => array( 'presupuesto', 'presupuestos' ),
 		'entregable'  => array( 'entregable', 'entregables' ),
-		'otro'        => array( 'otro', 'otros' ),
+		'otro'        => array( 'documento de otro tipo', 'documentos de otro tipo' ),
 	);
 
 	/**
@@ -60,7 +63,7 @@ class Documento_Tipos {
 		return null !== $tipo && isset( self::TIPOS[ $tipo ] ) ? $tipo : 'otro';
 	}
 
-	/** "1 factura", "3 facturas", "2 otros". */
+	/** "1 factura", "3 facturas", "2 documentos de otro tipo". */
 	public static function texto_recuento( string $clave, int $cantidad ): string {
 		$formas = self::RECUENTO[ $clave ] ?? self::RECUENTO['otro'];
 

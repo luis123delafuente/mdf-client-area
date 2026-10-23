@@ -119,6 +119,7 @@ Estas reglas no se negocian ni se posponen por velocidad. Cualquier código que 
 - Bloqueo propio en `wp_options` con `INSERT IGNORE` y toma de caducados por `UPDATE` condicionado (no `add_option()`); se libera siempre en `finally`
 - Se marca como notificado solo si el envío sale bien; si falla, **se reintenta cada día a las 09:00 mientras siga la causa** (sin reintentos inmediatos ni bucle). Riesgo asumido: aviso duplicado antes que perdido. Desde la v0.38.0 el motivo se ve (ver «Motivo de los correos fallidos»)
 - Farmacias sin cuenta activa: sus documentos quedan pendientes y entran en el primer aviso tras activar. El email solo lleva recuentos por tipo y un enlace a Documentación; nunca nombres, CIF ni enlaces al fichero
+- Desglose por tipo (`Documento_Tipos::texto_recuento()`), en singular y plural: «1 factura» / «2 facturas», igual con contrato, presupuesto y entregable, «Modelo 347» / «Modelos 347» y, desde la v0.38.1, «1 documento de otro tipo» / «2 documentos de otro tipo» (antes «2 otros»; los documentos sin tipo cuentan aquí). Comprobado en Mailpit con 1 y 2 de tipo «Otro» y con varios tipos mezclados
 - Interruptor `mdf_ca_avisos_documentos_activos` apagado por defecto (MDF prefiere no avisar de momento); `MDF_CA_AVISOS_DESACTIVADOS` en wp-config.php lo anula
 - Pendiente: opción de baja; los documentos silenciados son indistinguibles de los notificados
 
