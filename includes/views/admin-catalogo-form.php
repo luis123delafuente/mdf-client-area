@@ -71,7 +71,14 @@ $farmacias_elegidas  = array_values( array_filter( array_map( static fn( $id ) =
 					<td>
 						<input type="text" id="mdf-ca-h-descripcion" name="descripcion" class="large-text" maxlength="<?php echo esc_attr( (string) Catalogo_Service::MAX_DESCRIPCION ); ?>"
 							value="<?php echo esc_attr( $valores['descripcion'] ); ?>" />
-						<p class="description">Una línea.</p>
+						<p class="description">Una línea. Se ve en la tarjeta de la herramienta.</p>
+					</td>
+				</tr>
+				<tr>
+					<th scope="row"><label for="mdf-ca-h-descripcion-detallada">Descripción detallada <span class="description">(opcional)</span></label></th>
+					<td>
+						<textarea id="mdf-ca-h-descripcion-detallada" name="descripcion_detallada" class="large-text" rows="4" maxlength="<?php echo esc_attr( (string) Catalogo_Service::MAX_DESCRIPCION_DETALLADA ); ?>"><?php echo esc_textarea( $valores['descripcion_detallada'] ); ?></textarea>
+						<p class="description">Un párrafo que explica con más detalle qué hace la herramienta. Se ve al abrirla en el área de clientes; si se deja vacío, se muestra la descripción breve. Máximo <?php echo esc_html( (string) Catalogo_Service::MAX_DESCRIPCION_DETALLADA ); ?> caracteres.</p>
 					</td>
 				</tr>
 				<tr>

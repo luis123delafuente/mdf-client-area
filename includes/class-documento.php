@@ -36,6 +36,7 @@ class Documento {
 	private bool $vigente;
 	private bool $retirado;
 	private bool $sin_marca;
+	private ?Presupuesto_Estado $presupuesto = null;
 
 	public function __construct(
 		int $id,
@@ -74,7 +75,7 @@ class Documento {
 	}
 
 	public static function from_db_row( object $row ): self {
-		return new self(
+		$documento = new self(
 			(int) $row->id,
 			(int) $row->farmacia_id,
 			$row->nombre,
@@ -94,6 +95,15 @@ class Documento {
 			// Sin la columna (fila anterior a #321) lleva marca.
 			! empty( $row->sin_marca )
 		);
+
+		$documento->presupuesto = Presupuesto_Estado::from_db_row( $row );
+
+		return $documento;
+	}
+
+	/** Estado del presupuesto (v0.44.0); null si no es un presupuesto. */
+	public function get_presupuesto(): ?Presupuesto_Estado {
+		return $this->presupuesto;
 	}
 
 	/**

@@ -1,0 +1,535 @@
+/*
+ * Pantalla de acceso (wp-login.php) con la imagen del área de clientes:
+ * los colores y la tipografía de mediformplus.com (ver DESIGN.md). Solo
+ * presentación; el flujo de login sigue siendo el nativo de WordPress.
+ */
+
+@font-face {
+	font-family: 'Montserrat';
+	font-style: normal;
+	font-weight: 400 700;
+	font-display: swap;
+	src: url('../fonts/montserrat-latin-ext.woff2') format('woff2');
+	unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+	font-family: 'Montserrat';
+	font-style: normal;
+	font-weight: 400 700;
+	font-display: swap;
+	src: url('../fonts/montserrat-latin.woff2') format('woff2');
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+body.login {
+	--mdf-verde: #70ba65;
+	--mdf-verde-oscuro: #5fa854;
+	--mdf-verde-suave: #eaf5e7;
+	--mdf-texto: #222222;
+	--mdf-texto-secundario: #555555;
+	--mdf-borde: #d9d9d9;
+	--mdf-superficie: #f5f5f5;
+	--mdf-fondo: #fcfbfe;
+
+	display: grid;
+	grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+	grid-template-rows: 1fr auto;
+	min-height: 100vh;
+	margin: 0;
+	padding: 0;
+	background: var(--mdf-superficie);
+	font-family: 'Montserrat', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	color: var(--mdf-texto);
+}
+
+/* ---------- Panel de marca ---------- */
+
+.mdf-login-marca {
+	grid-column: 1;
+	grid-row: 1 / span 2;
+	position: relative;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	gap: 48px;
+	padding: 48px 56px;
+	background: var(--mdf-verde) linear-gradient(135deg, #70ba65 0%, #5fa854 100%);
+	color: var(--mdf-texto);
+}
+
+.mdf-login-marca > * {
+	position: relative;
+	z-index: 1;
+}
+
+.mdf-login-marca__logo {
+	display: block;
+	align-self: flex-start;
+	width: auto;
+	height: 72px;
+}
+
+.mdf-login-marca__titulo {
+	margin: 0 0 16px;
+	font-size: 44px;
+	font-weight: 700;
+	line-height: 1.1;
+	letter-spacing: -0.02em;
+}
+
+.mdf-login-marca__texto {
+	max-width: 26rem;
+	margin: 0 0 28px;
+	font-size: 18px;
+	line-height: 1.55;
+}
+
+.mdf-login-marca__lista {
+	display: grid;
+	gap: 12px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.mdf-login-marca__lista li {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	font-size: 15px;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.mdf-login-marca__lista li::before {
+	content: '\2713';
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	border-radius: 50%;
+	background: var(--mdf-fondo);
+	font-size: 14px;
+	font-weight: 700;
+	color: var(--mdf-texto);
+}
+
+.mdf-login-marca__ayuda {
+	margin: 0;
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.mdf-login-marca__ayuda a {
+	font-weight: 700;
+	color: var(--mdf-texto);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.mdf-login-marca__ayuda a:focus-visible,
+.mdf-login-pie a:focus-visible,
+.login #nav a:focus-visible {
+	outline: 3px solid var(--mdf-texto);
+	outline-offset: 2px;
+	box-shadow: none;
+}
+
+.mdf-login-marca .mdf-login-marca__agua {
+	position: absolute;
+	right: -88px;
+	bottom: -48px;
+	z-index: 0;
+	width: auto;
+	height: 340px;
+	opacity: 0.14;
+	pointer-events: none;
+}
+
+/* ---------- Columna del formulario ---------- */
+
+.login #login {
+	grid-column: 2;
+	grid-row: 1;
+	align-self: center;
+	justify-self: center;
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 488px;
+	margin: 0;
+	padding: 48px 24px 24px;
+}
+
+.login h1.wp-login-logo,
+.login #backtoblog,
+.login .language-switcher {
+	display: none;
+}
+
+.mdf-login-cabecera {
+	margin: 0 0 24px;
+}
+
+.mdf-login-cabecera__titulo {
+	margin: 0 0 8px;
+	font-size: 30px;
+	font-weight: 700;
+	line-height: 1.2;
+	letter-spacing: -0.02em;
+	color: var(--mdf-texto);
+}
+
+.mdf-login-cabecera__texto {
+	margin: 0;
+	font-size: 15px;
+	line-height: 1.55;
+	color: var(--mdf-texto-secundario);
+}
+
+.login form {
+	margin: 0;
+	padding: 32px;
+	border: 1px solid var(--mdf-borde);
+	border-radius: 12px;
+	background: var(--mdf-fondo);
+	box-shadow: 0 16px 40px rgba(47, 94, 42, 0.08);
+	overflow: visible;
+}
+
+.login form p,
+.login .user-pass-wrap {
+	margin: 0;
+}
+
+.login label {
+	display: inline-block;
+	margin-bottom: 8px;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.4;
+	color: var(--mdf-texto);
+}
+
+.login form .input,
+.login input[type='text'],
+.login input[type='password'],
+.login input[type='email'] {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 48px;
+	margin: 0 0 20px;
+	padding: 10px 14px;
+	border: 1px solid var(--mdf-borde);
+	border-radius: 12px;
+	background: #ffffff;
+	box-shadow: none;
+	font-family: inherit;
+	font-size: 16px;
+	line-height: 1.4;
+	color: var(--mdf-texto);
+	transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.login form .input:focus,
+.login input[type='text']:focus,
+.login input[type='password']:focus,
+.login input[type='email']:focus {
+	border-color: var(--mdf-verde-oscuro);
+	box-shadow: 0 0 0 3px rgba(112, 186, 101, 0.35);
+	outline: none;
+}
+
+.login .wp-pwd {
+	position: relative;
+}
+
+.login .wp-pwd input[type='password'],
+.login .wp-pwd input[type='text'] {
+	padding-right: 52px;
+}
+
+.login .button.wp-hide-pw {
+	top: 0;
+	right: 0;
+	width: 48px;
+	height: 48px;
+	min-height: 48px;
+	border: 0;
+	border-radius: 12px;
+	background: transparent;
+	color: var(--mdf-texto-secundario);
+	box-shadow: none;
+}
+
+.login .button.wp-hide-pw:hover {
+	color: var(--mdf-texto);
+}
+
+.login .button.wp-hide-pw:focus {
+	border: 0;
+	box-shadow: 0 0 0 3px rgba(112, 186, 101, 0.45);
+	outline: none;
+}
+
+.login .forgetmenot {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	float: none;
+	margin: 0 0 20px;
+}
+
+.login .forgetmenot label {
+	margin: 0;
+	font-weight: 500;
+}
+
+.login input[type='checkbox'] {
+	width: 18px;
+	height: 18px;
+	margin: 0;
+	border-color: var(--mdf-borde);
+	border-radius: 4px;
+	accent-color: var(--mdf-verde-oscuro);
+}
+
+.login input[type='checkbox']:checked::before {
+	filter: grayscale(1) brightness(0.3);
+}
+
+.login input[type='checkbox']:focus {
+	border-color: var(--mdf-verde-oscuro);
+	box-shadow: 0 0 0 3px rgba(112, 186, 101, 0.35);
+}
+
+.login .wp-tooltip__toggle {
+	color: var(--mdf-texto-secundario);
+}
+
+.login .submit {
+	margin: 0;
+	padding: 0;
+}
+
+.login .button-primary,
+.login .submit .button-primary {
+	float: none;
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 48px;
+	padding: 10px 20px;
+	border: 0;
+	border-radius: 12px;
+	background: var(--mdf-verde);
+	box-shadow: none;
+	text-shadow: none;
+	font-family: inherit;
+	font-size: 16px;
+	font-weight: 600;
+	line-height: 1.3;
+	color: var(--mdf-texto);
+	transition: background-color 0.2s;
+}
+
+.login .button-primary:hover,
+.login .button-primary:active {
+	background: var(--mdf-verde-oscuro);
+	color: var(--mdf-texto);
+}
+
+.login .button-primary:focus {
+	background: var(--mdf-verde-oscuro);
+	color: var(--mdf-texto);
+	box-shadow: none;
+	outline: 3px solid var(--mdf-texto);
+	outline-offset: 2px;
+}
+
+/* Pantalla de elegir contraseña: botón secundario «Generar contraseña». */
+.login .button:not(.button-primary):not(.wp-hide-pw) {
+	min-height: 44px;
+	padding: 8px 16px;
+	border: 1px solid var(--mdf-borde);
+	border-radius: 12px;
+	background: #ffffff;
+	box-shadow: none;
+	font-family: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--mdf-texto);
+}
+
+.login .reset-pass-submit {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.login .reset-pass-submit .button {
+	flex: 1 1 auto;
+	margin: 0;
+}
+
+.login #pass-strength-result {
+	box-sizing: border-box;
+	width: 100%;
+	margin: -12px 0 20px;
+	padding: 8px 12px;
+	border-radius: 12px;
+	font-size: 13px;
+}
+
+.login .description,
+.login .indicator-hint {
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--mdf-texto-secundario);
+}
+
+.login #nav {
+	margin: 20px 0 0;
+	padding: 0;
+	text-align: center;
+	font-size: 14px;
+}
+
+.login #nav a {
+	color: var(--mdf-texto);
+	text-decoration: underline;
+	text-decoration-color: var(--mdf-verde);
+	text-decoration-thickness: 2px;
+	text-underline-offset: 4px;
+}
+
+.login #nav a:hover {
+	color: var(--mdf-texto);
+	text-decoration-color: var(--mdf-texto);
+}
+
+/* Avisos y errores de WordPress (y el de bienvenida de la invitación). */
+.login .message,
+.login .notice,
+.login .success,
+.login #login_error {
+	margin: 0 0 20px;
+	padding: 12px 16px;
+	border: 1px solid var(--mdf-borde);
+	border-left: 4px solid var(--mdf-verde);
+	border-radius: 12px;
+	background: #ffffff;
+	box-shadow: none;
+	font-size: 14px;
+	line-height: 1.5;
+	color: var(--mdf-texto);
+}
+
+.login #login_error,
+.login .notice-error {
+	border-left-color: #b42318;
+}
+
+/* La cabecera ya da la instrucción de «Recuperar contraseña»; el aviso
+   informativo nativo la repetiría. Los errores van en #login_error. */
+body.login-action-lostpassword .message,
+body.login-action-retrievepassword .message {
+	display: none;
+}
+
+/* ---------- Pie ---------- */
+
+.mdf-login-pie {
+	grid-column: 2;
+	grid-row: 2;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 8px 20px;
+	padding: 16px 24px 28px;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--mdf-texto-secundario);
+}
+
+.mdf-login-pie a {
+	color: var(--mdf-texto-secundario);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.mdf-login-pie a:hover {
+	color: var(--mdf-texto);
+}
+
+/* ---------- Tableta y móvil ---------- */
+
+@media (max-width: 900px) {
+	body.login {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: auto 1fr auto;
+	}
+
+	.mdf-login-marca {
+		grid-column: 1;
+		grid-row: 1;
+		gap: 20px;
+		padding: 24px 20px 28px;
+	}
+
+	.mdf-login-marca__logo {
+		height: 48px;
+	}
+
+	.mdf-login-marca__titulo {
+		margin: 0 0 6px;
+		font-size: 26px;
+	}
+
+	.mdf-login-marca__texto {
+		margin: 0;
+		font-size: 15px;
+	}
+
+	.mdf-login-marca__lista,
+	.mdf-login-marca__ayuda {
+		display: none;
+	}
+
+	.mdf-login-marca .mdf-login-marca__agua {
+		right: -40px;
+		bottom: -28px;
+		height: 150px;
+		opacity: 0.12;
+	}
+
+	.login #login {
+		grid-column: 1;
+		grid-row: 2;
+		align-self: start;
+		max-width: 480px;
+		padding: 28px 16px 8px;
+	}
+
+	.mdf-login-cabecera__titulo {
+		font-size: 24px;
+	}
+
+	.login form {
+		padding: 24px 20px;
+	}
+
+	.mdf-login-pie {
+		grid-column: 1;
+		grid-row: 3;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.login form .input,
+	.login .button-primary {
+		transition: none;
+	}
+}

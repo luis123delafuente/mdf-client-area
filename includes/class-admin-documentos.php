@@ -154,9 +154,14 @@ class Admin_Documentos {
 
 		// Facturas y Modelo 347 no entran por aqui (v0.36.0): lo rechaza
 		// Documento_Service::subir() aunque se fuerce el tipo.
+		// Estado del presupuesto (v0.44.0): solo cuenta si el tipo es
+		// presupuesto; lo valida Documento_Service::subir().
+		$estado_presupuesto = isset( $_POST['presupuesto_estado'] ) ? sanitize_key( wp_unslash( $_POST['presupuesto_estado'] ) ) : '';
+
 		$resultado = ( new Documento_Service() )
 			->descargable( $descargable )
 			->sin_marca_de_agua( $sin_marca )
+			->estado_presupuesto( $estado_presupuesto )
 			->subir( $farmacia_id, $nombre, $tipo_documento, $archivo, true, $fecha_documento );
 
 		if ( is_wp_error( $resultado ) ) {

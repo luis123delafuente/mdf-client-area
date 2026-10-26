@@ -1,0 +1,40 @@
+/*
+ * Estado de los presupuestos en [mdf_ca_listado_documentos] (v0.44.0). El
+ * resto del listado lo estila la clase mdf-listado de Elementor; esto va en
+ * el plugin para que la etiqueta se vea igual sin depender del kit. Mismos
+ * colores que la franja del visor (documento-visor.css).
+ */
+
+/* En la fila (rejilla de mdf-listado), bajo el nombre y la fecha, a su
+   ancho: sin esto ocupa la columna entera. */
+.mdf-ca-listado-documentos__item .mdf-ca-listado-documentos__estado {
+	grid-column: 1;
+	justify-self: start;
+	align-self: start;
+	width: fit-content;
+	margin-top: 4px;
+}
+
+.mdf-ca-listado-documentos__estado {
+	display: inline-block;
+	padding: 2px 10px;
+	border-radius: 12px;
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 1.6;
+	white-space: nowrap;
+	color: #222222;
+	background: #eeeeee;
+}
+
+.mdf-ca-listado-documentos__estado--pendiente {
+	background: #fff4d6;
+}
+
+.mdf-ca-listado-documentos__estado--aceptado {
+	background: #eaf5e7;
+}
+
+.mdf-ca-listado-documentos__estado--rechazado {
+	background: #fbe4e4;
+}

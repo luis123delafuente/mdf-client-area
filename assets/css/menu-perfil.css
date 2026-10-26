@@ -1,34 +1,87 @@
+/*
+ * Menu de perfil del area de clientes (v0.40.0): boton «Mi cuenta» en la
+ * esquina de la cabecera blanca de las paginas del area, con los colores,
+ * el radio (12 px) y la tipografia de DESIGN.md. Fijo: no depende de que la
+ * maqueta de Elementor lo coloque.
+ */
+
 .mdf-ca-menu-perfil {
+	--mdf-perfil-verde: #70ba65;
+	--mdf-perfil-verde-suave: #eaf5e7;
+	--mdf-perfil-texto: #222222;
+	--mdf-perfil-texto-secundario: #555555;
+	--mdf-perfil-borde: #d9d9d9;
+	--mdf-perfil-fondo: #fcfbfe;
+
 	position: fixed;
-	top: 16px;
+	top: 14px;
 	right: 16px;
 	z-index: 9999;
-	font-family: inherit;
+	font-family: 'Montserrat', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	color: var(--mdf-perfil-texto);
 }
 
-.mdf-ca-menu-perfil__toggle {
+.mdf-ca-menu-perfil button.mdf-ca-menu-perfil__toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	height: 44px;
+	margin: 0;
+	padding: 0 12px 0 6px;
+	border: 1px solid var(--mdf-perfil-borde);
+	border-radius: 12px;
+	background: var(--mdf-perfil-fondo);
+	box-shadow: 0 4px 14px rgba(47, 94, 42, 0.08);
+	font-family: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1;
+	color: var(--mdf-perfil-texto);
+	cursor: pointer;
+	transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Especificidad alta a proposito: el reset del tema (Hello Elementor) pinta
+   en rosa los botones en :hover y :focus. */
+.mdf-ca-menu-perfil button.mdf-ca-menu-perfil__toggle:hover,
+.mdf-ca-menu-perfil button.mdf-ca-menu-perfil__toggle:focus,
+.mdf-ca-menu-perfil button.mdf-ca-menu-perfil__toggle:active,
+.mdf-ca-menu-perfil button.mdf-ca-menu-perfil__toggle[aria-expanded='true'] {
+	border-color: var(--mdf-perfil-verde);
+	background: var(--mdf-perfil-fondo);
+	color: var(--mdf-perfil-texto);
+	box-shadow: 0 8px 22px rgba(47, 94, 42, 0.14);
+}
+
+.mdf-ca-menu-perfil__avatar {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	width: 44px;
-	height: 44px;
-	padding: 0;
-	border: 1px solid #d0d5dd;
+	width: 32px;
+	height: 32px;
 	border-radius: 50%;
-	background: #fff;
-	color: #344054;
-	cursor: pointer;
-	box-shadow: 0 1px 3px rgba(16, 24, 40, 0.15);
+	background: var(--mdf-perfil-verde-suave);
+	color: var(--mdf-perfil-texto);
 }
 
-.mdf-ca-menu-perfil__toggle:hover,
-.mdf-ca-menu-perfil__toggle[aria-expanded="true"] {
-	background: #f2f4f7;
+.mdf-ca-menu-perfil__flecha {
+	display: flex;
+	color: var(--mdf-perfil-texto-secundario);
+	transition: transform 0.2s;
 }
 
-.mdf-ca-menu-perfil__toggle:focus-visible,
+.mdf-ca-menu-perfil__flecha svg {
+	width: 16px;
+	height: 16px;
+}
+
+.mdf-ca-menu-perfil__toggle[aria-expanded='true'] .mdf-ca-menu-perfil__flecha {
+	transform: rotate(180deg);
+}
+
+.mdf-ca-menu-perfil button.mdf-ca-menu-perfil__toggle:focus-visible,
 .mdf-ca-menu-perfil__logout:focus-visible {
-	outline: 2px solid #2563eb;
+	outline: 3px solid var(--mdf-perfil-texto);
 	outline-offset: 2px;
 }
 
@@ -36,44 +89,90 @@
 	position: absolute;
 	top: calc(100% + 8px);
 	right: 0;
-	min-width: 220px;
-	padding: 16px;
-	border: 1px solid #d0d5dd;
-	border-radius: 8px;
-	background: #fff;
-	box-shadow: 0 8px 24px rgba(16, 24, 40, 0.15);
+	box-sizing: border-box;
+	width: 280px;
+	max-width: calc(100vw - 32px);
+	padding: 8px;
+	border: 1px solid var(--mdf-perfil-borde);
+	border-radius: 12px;
+	background: var(--mdf-perfil-fondo);
+	box-shadow: 0 18px 44px rgba(47, 94, 42, 0.18);
 }
 
 .mdf-ca-menu-perfil__panel[hidden] {
 	display: none;
 }
 
+.mdf-ca-menu-perfil__cabecera {
+	margin: 0 0 8px;
+	padding: 12px 12px 14px;
+	border-radius: 12px;
+	background: var(--mdf-perfil-verde-suave);
+}
+
 .mdf-ca-menu-perfil__etiqueta {
-	margin: 0;
+	margin: 0 0 4px;
 	font-size: 12px;
-	color: #667085;
+	font-weight: 500;
+	line-height: 1.4;
+	color: var(--mdf-perfil-texto-secundario);
+}
+
+.mdf-ca-menu-perfil__nombre {
+	margin: 0 0 2px;
+	font-size: 15px;
+	font-weight: 700;
+	line-height: 1.35;
+	color: var(--mdf-perfil-texto);
+	overflow-wrap: anywhere;
 }
 
 .mdf-ca-menu-perfil__usuario {
-	margin: 2px 0 14px;
-	font-size: 16px;
-	font-weight: 600;
-	color: #101828;
-	word-break: break-all;
+	margin: 0;
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 1.4;
+	letter-spacing: 0.02em;
+	color: var(--mdf-perfil-texto-secundario);
+	overflow-wrap: anywhere;
 }
 
 .mdf-ca-menu-perfil__logout {
-	display: block;
-	padding: 10px 12px;
-	border-radius: 6px;
-	background: #101828;
-	color: #fff;
-	text-align: center;
-	text-decoration: none;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 44px;
+	padding: 0 12px;
+	border-radius: 12px;
 	font-size: 14px;
+	font-weight: 600;
+	color: var(--mdf-perfil-texto);
+	text-decoration: none;
+	transition: background-color 0.2s;
 }
 
 .mdf-ca-menu-perfil__logout:hover {
-	background: #344054;
-	color: #fff;
+	background: #f1f1f1;
+	color: var(--mdf-perfil-texto);
+}
+
+/* Tableta y movil: la cabecera es mas baja y el menu va en dos filas. */
+@media (max-width: 1024px) {
+	.mdf-ca-menu-perfil {
+		top: 8px;
+	}
+}
+
+@media (max-width: 380px) {
+	.mdf-ca-menu-perfil__texto {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.mdf-ca-menu-perfil__toggle,
+	.mdf-ca-menu-perfil__flecha,
+	.mdf-ca-menu-perfil__logout {
+		transition: none;
+	}
 }

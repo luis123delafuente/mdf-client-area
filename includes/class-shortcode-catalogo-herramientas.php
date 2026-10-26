@@ -24,10 +24,19 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Sin sesion, sin farmacia o sin nada visible: el mensaje de vacio, nunca un
  * error ni una herramienta que no toca.
+ *
+ * v0.43.0: cada tarjeta lleva su ventana (<dialog class="mdf-ca-ficha">)
+ * con el nombre, el tipo, la descripcion detallada (o la breve si no hay),
+ * las etiquetas y los mismos botones. La abre un clic en la tarjeta o en el
+ * nombre (un <button>, para el teclado); los botones de la tarjeta siguen
+ * yendo directos. Todo sale ya pintado: catalogo-herramientas.js solo abre y
+ * cierra, no pide datos. Sin JS, la tarjeta funciona como antes.
  */
 class Shortcode_Catalogo_Herramientas {
 
 	private const TAG = 'mdf_ca_catalogo_herramientas';
+
+	private const HANDLE = 'mdf-ca-catalogo-herramientas';
 
 	public static function register_hooks(): void {
 		add_shortcode( self::TAG, array( __CLASS__, 'render' ) );
@@ -78,7 +87,15 @@ class Shortcode_Catalogo_Herramientas {
 			}
 		}
 
+		self::encolar_recursos();
+
 		return '<div class="mdf-ca-herramientas">' . $html . '</div>';
+	}
+
+	/** Al pintar el shortcode: solo cargan en la pagina que lo usa. */
+	private static function encolar_recursos(): void {
+		wp_enqueue_style( self::HANDLE, Recursos::url( 'assets/css/catalogo-herramientas.css' ), array(), Recursos::version( 'assets/css/catalogo-herramientas.css' ) );
+		wp_enqueue_script( self::HANDLE, Recursos::url( 'assets/js/catalogo-herramientas.js' ), array(), Recursos::version( 'assets/js/catalogo-herramientas.js' ), true );
 	}
 
 	/**
@@ -108,31 +125,79 @@ class Shortcode_Catalogo_Herramientas {
 			)
 		);
 
-		$tipo = $item->es_archivo() ? (string) $item->get_formato() : Catalogo_Item::RECURSO_ENLACE;
+		$tipo     = $item->es_archivo() ? (string) $item->get_formato() : Catalogo_Item::RECURSO_ENLACE;
+		$ficha_id = 'mdf-ca-ficha-' . $item->get_id();
+		$botones  = self::render_botones( $item );
 
 		$html  = '<li class="mdf-ca-herramienta"'
 			. ' data-categoria="' . esc_attr( $categoria->get_slug() ) . '"'
 			. ' data-etiquetas="' . esc_attr( implode( ' ', array_map( static fn( Catalogo_Termino $e ): string => $e->get_slug(), $suyas ) ) ) . '"'
-			. ' data-tipo="' . esc_attr( $tipo ) . '">';
-		$html .= '<h3 class="mdf-ca-herramienta__nombre">' . esc_html( $item->get_nombre() ) . '</h3>';
+			. ' data-tipo="' . esc_attr( $tipo ) . '"'
+			. ' data-ficha="' . esc_attr( $ficha_id ) . '">';
+		$html .= '<h3 class="mdf-ca-herramienta__nombre">'
+			. '<button type="button" class="mdf-ca-herramienta__abrir-ficha" aria-haspopup="dialog" aria-controls="' . esc_attr( $ficha_id ) . '">'
+			. esc_html( $item->get_nombre() )
+			. '<span class="mdf-ca-herramienta__oculto">' . esc_html__( ', más información', 'mdf-client-area' ) . '</span>'
+			. '</button></h3>';
 
 		if ( $item->get_descripcion() ) {
 			$html .= '<p class="mdf-ca-herramienta__descripcion">' . esc_html( $item->get_descripcion() ) . '</p>';
 		}
 
-		if ( $suyas ) {
-			$html .= '<ul class="mdf-ca-herramienta__etiquetas">';
-
-			foreach ( $suyas as $etiqueta ) {
-				$html .= '<li class="mdf-ca-herramienta__etiqueta" data-etiqueta="' . esc_attr( $etiqueta->get_slug() ) . '">' . esc_html( $etiqueta->get_nombre() ) . '</li>';
-			}
-
-			$html .= '</ul>';
-		}
-
-		$html .= '<div class="mdf-ca-herramienta__acciones">' . self::render_botones( $item ) . '</div>';
+		$html .= self::render_etiquetas( $suyas );
+		$html .= '<div class="mdf-ca-herramienta__acciones">' . $botones . '</div>';
+		$html .= self::render_ficha( $item, $ficha_id, $suyas, $botones );
 
 		return $html . '</li>';
+	}
+
+	/**
+	 * @param Catalogo_Termino[] $suyas
+	 */
+	private static function render_etiquetas( array $suyas ): string {
+		if ( ! $suyas ) {
+			return '';
+		}
+
+		$html = '<ul class="mdf-ca-herramienta__etiquetas">';
+
+		foreach ( $suyas as $etiqueta ) {
+			$html .= '<li class="mdf-ca-herramienta__etiqueta" data-etiqueta="' . esc_attr( $etiqueta->get_slug() ) . '">' . esc_html( $etiqueta->get_nombre() ) . '</li>';
+		}
+
+		return $html . '</ul>';
+	}
+
+	/**
+	 * La ventana de la herramienta. Los botones son los de la tarjeta (mismo
+	 * HTML, mismos permisos), asi que el estilo de la tarjeta les vale.
+	 *
+	 * @param Catalogo_Termino[] $suyas
+	 */
+	private static function render_ficha( Catalogo_Item $item, string $ficha_id, array $suyas, string $botones ): string {
+		$texto = $item->get_descripcion_detallada() ?? $item->get_descripcion();
+		$tipo  = $item->es_archivo() ? Catalogo_Formatos::get_etiqueta( $item->get_formato() ) : __( 'Enlace web', 'mdf-client-area' );
+
+		$html  = '<dialog class="mdf-ca-ficha" id="' . esc_attr( $ficha_id ) . '" tabindex="-1" aria-labelledby="' . esc_attr( $ficha_id . '-titulo' ) . '">';
+		$html .= '<div class="mdf-ca-ficha__caja">';
+		$html .= '<div class="mdf-ca-ficha__cabecera">'
+			. '<span class="mdf-ca-ficha__tipo">' . esc_html( $tipo ) . '</span>'
+			. '<button type="button" class="mdf-ca-ficha__cerrar" aria-label="' . esc_attr__( 'Cerrar', 'mdf-client-area' ) . '">'
+			. '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg>'
+			. '</button></div>';
+		$html .= '<h2 class="mdf-ca-ficha__titulo" id="' . esc_attr( $ficha_id . '-titulo' ) . '">' . esc_html( $item->get_nombre() ) . '</h2>';
+
+		if ( $texto ) {
+			$html .= '<p class="mdf-ca-ficha__texto">' . esc_html( $texto ) . '</p>';
+		}
+
+		$html .= self::render_etiquetas( $suyas );
+
+		if ( '' !== $botones ) {
+			$html .= '<div class="mdf-ca-herramienta__acciones mdf-ca-ficha__acciones">' . $botones . '</div>';
+		}
+
+		return $html . '</div></dialog>';
 	}
 
 	/**

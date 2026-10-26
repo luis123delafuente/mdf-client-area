@@ -27,6 +27,7 @@ class Catalogo_Item {
 	private string $seccion;
 	private string $nombre;
 	private ?string $descripcion;
+	private ?string $descripcion_detallada;
 	private ?int $categoria_id;
 	private string $recurso;
 	private ?string $enlace_url;
@@ -57,6 +58,7 @@ class Catalogo_Item {
 		$item->seccion        = (string) $row->seccion;
 		$item->nombre         = (string) $row->nombre;
 		$item->descripcion    = isset( $row->descripcion ) && '' !== $row->descripcion ? (string) $row->descripcion : null;
+		$item->descripcion_detallada = isset( $row->descripcion_detallada ) && '' !== $row->descripcion_detallada ? (string) $row->descripcion_detallada : null;
 		$item->categoria_id   = isset( $row->categoria_id ) ? (int) $row->categoria_id : null;
 		$item->recurso        = self::RECURSO_ARCHIVO === ( $row->recurso ?? '' ) ? self::RECURSO_ARCHIVO : self::RECURSO_ENLACE;
 		$item->enlace_url     = $row->enlace_url ?: null;
@@ -89,6 +91,11 @@ class Catalogo_Item {
 
 	public function get_descripcion(): ?string {
 		return $this->descripcion;
+	}
+
+	/** El parrafo de la ventana de la herramienta (esquema 1.22.0). */
+	public function get_descripcion_detallada(): ?string {
+		return $this->descripcion_detallada;
 	}
 
 	public function get_categoria_id(): ?int {

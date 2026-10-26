@@ -45,6 +45,122 @@ class Login_Personalizado {
 		add_filter( 'auth_cookie_expiration', array( __CLASS__, 'filtrar_duracion_sesion' ), 10, 3 );
 		add_filter( 'login_message', array( __CLASS__, 'anadir_mensaje_invitacion' ) );
 		add_action( 'resetpass_form', array( __CLASS__, 'preservar_marcador_invitacion' ) );
+
+		// Imagen del area de clientes en wp-login.php (v0.40.0). Solo
+		// presentacion: el formulario, los errores y la redireccion siguen
+		// siendo los nativos (y los de Endurecimiento).
+		add_action( 'login_enqueue_scripts', array( __CLASS__, 'encolar_estilos' ) );
+		add_action( 'login_header', array( __CLASS__, 'pintar_panel_marca' ) );
+		add_filter( 'login_message', array( __CLASS__, 'anadir_cabecera' ), 20 );
+		add_action( 'login_footer', array( __CLASS__, 'pintar_pie' ) );
+		add_filter( 'login_headerurl', array( __CLASS__, 'url_logo' ) );
+		add_filter( 'login_headertext', array( __CLASS__, 'texto_logo' ) );
+		add_filter( 'login_title', array( __CLASS__, 'titulo_pestana' ), 10, 2 );
+		add_filter( 'login_display_language_dropdown', '__return_false' );
+	}
+
+	private const CSS_LOGIN = 'assets/css/login.css';
+
+	public static function encolar_estilos(): void {
+		wp_enqueue_style( 'mdf-ca-login', Recursos::url( self::CSS_LOGIN ), array( 'login' ), Recursos::version( self::CSS_LOGIN ) );
+	}
+
+	/**
+	 * Panel verde de la izquierda (arriba en movil), con el logo y la marca
+	 * de agua de mediformplus.com. 'login_header' se dispara justo antes de
+	 * <div id="login">, asi que el panel queda como hermano del formulario.
+	 */
+	public static function pintar_panel_marca(): void {
+		$logo = Recursos::url_versionada( 'assets/img/mdf-logo-blanco.png' );
+		?>
+		<aside class="mdf-login-marca">
+			<img class="mdf-login-marca__logo" src="<?php echo esc_url( $logo ); ?>" alt="MDF Mediformplus" width="600" height="266">
+			<div class="mdf-login-marca__cuerpo">
+				<p class="mdf-login-marca__titulo">Área de clientes</p>
+				<p class="mdf-login-marca__texto">Tus facturas, documentos y herramientas de MDF, en un solo sitio.</p>
+				<ul class="mdf-login-marca__lista">
+					<li>Facturas y Modelo 347</li>
+					<li>Herramientas incluidas en tu plan</li>
+					<li>Formación en la Academia MDF</li>
+				</ul>
+			</div>
+			<p class="mdf-login-marca__ayuda">¿Necesitas ayuda? Llama a MDF al <a href="tel:+34916364818">91 636 48 18</a></p>
+			<img class="mdf-login-marca__agua" src="<?php echo esc_url( $logo ); ?>" alt="" aria-hidden="true" width="600" height="266">
+		</aside>
+		<?php
+	}
+
+	/**
+	 * Titulo y pista encima del formulario, segun la pantalla. Prioridad 20:
+	 * va delante del aviso de invitacion (prioridad 10) y del mensaje nativo.
+	 * Las acciones que no estan aqui (confirmar el correo del administrador,
+	 * etc.) se quedan como estan.
+	 *
+	 * @param string $mensaje
+	 */
+	public static function anadir_cabecera( $mensaje ) {
+		global $action;
+
+		$recuperar = array( 'Recupera tu contraseña', 'Escribe tu usuario o tu correo electrónico y te enviaremos un enlace para elegir una nueva.' );
+		$elegir    = array( 'Elige tu contraseña', 'Usa una contraseña segura que no utilices en otros sitios.' );
+		$cabeceras = array(
+			'login'            => array( 'Accede a tu área', 'Entra con tu usuario (tu CIF o NIF) o tu correo electrónico, y tu contraseña.' ),
+			'lostpassword'     => $recuperar,
+			'retrievepassword' => $recuperar,
+			'rp'               => $elegir,
+			'resetpass'        => $elegir,
+			'checkemail'       => array( 'Revisa tu correo', 'Si la cuenta existe, te hemos enviado un enlace.' ),
+		);
+
+		$clave = is_string( $action ) && '' !== $action ? $action : 'login';
+
+		if ( ! isset( $cabeceras[ $clave ] ) ) {
+			return $mensaje;
+		}
+
+		list( $titulo, $texto ) = $cabeceras[ $clave ];
+
+		return '<div class="mdf-login-cabecera">'
+			. '<h2 class="mdf-login-cabecera__titulo">' . esc_html( $titulo ) . '</h2>'
+			. '<p class="mdf-login-cabecera__texto">' . esc_html( $texto ) . '</p>'
+			. '</div>'
+			. $mensaje;
+	}
+
+	public static function pintar_pie(): void {
+		$enlaces = array(
+			'Aviso legal'         => 'https://www.mediformplus.com/aviso-legal/',
+			'LOPD'                => 'https://www.mediformplus.com/lopd/',
+			'Política de cookies' => 'https://www.mediformplus.com/politica-de-cookies/',
+			'mediformplus.com'    => 'https://www.mediformplus.com/',
+		);
+		?>
+		<footer class="mdf-login-pie">
+			<span>&copy; <?php echo esc_html( wp_date( 'Y' ) ); ?> MEDIFORMPLUS</span>
+			<?php foreach ( $enlaces as $texto => $url ) : ?>
+				<a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener"><?php echo esc_html( $texto ); ?></a>
+			<?php endforeach; ?>
+		</footer>
+		<?php
+	}
+
+	/** El logo nativo (oculto por CSS) deja de apuntar a wordpress.org. */
+	public static function url_logo(): string {
+		return 'https://www.mediformplus.com/';
+	}
+
+	public static function texto_logo(): string {
+		return 'MDF Mediformplus';
+	}
+
+	/**
+	 * "Acceder | Area de clientes MDF" en vez de "Acceder < Sitio — WordPress".
+	 *
+	 * @param string $titulo_completo
+	 * @param string $titulo
+	 */
+	public static function titulo_pestana( $titulo_completo, $titulo ): string {
+		return $titulo . ' | Área de clientes MDF';
 	}
 
 	/**
@@ -87,7 +203,7 @@ class Login_Personalizado {
 		}
 
 		$aviso = '<p class="message">'
-			. esc_html__( 'Bienvenido al Area de Clientes de Mediformplus. Elige tu contrasena para activar tu acceso.', 'mdf-client-area' )
+			. esc_html__( 'Bienvenido al Área de clientes de Mediformplus. Elige tu contraseña para activar tu acceso.', 'mdf-client-area' )
 			. '</p>';
 
 		return $aviso . $mensaje;

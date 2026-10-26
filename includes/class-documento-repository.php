@@ -237,6 +237,9 @@ class Documento_Repository {
 	 *        Solo los Modelo 347 (#307): emisor y ejercicio ya validados por
 	 *        Documento_Service. Nace vigente (vigente = 1): el UNIQUE
 	 *        modelo_347 rechaza un segundo vigente de la misma combinacion.
+	 * @param array{estado: string, usuario_id: int}|null $presupuesto
+	 *        Solo los presupuestos (v0.44.0): estado ya validado (pendiente o
+	 *        aceptado) y quien lo sube. Aceptado al subir = via "mdf".
 	 */
 	public function insert(
 		int $farmacia_id,
@@ -252,7 +255,8 @@ class Documento_Repository {
 		?string $fecha_documento = null,
 		?array $factura = null,
 		?array $modelo_347 = null,
-		bool $sin_marca = false
+		bool $sin_marca = false,
+		?array $presupuesto = null
 	): ?Documento {
 		global $wpdb;
 
@@ -315,6 +319,18 @@ class Documento_Repository {
 			$data['ejercicio']  = $modelo_347['ejercicio'];
 			$data['vigente']    = 1;
 			array_push( $format, '%s', '%d', '%d' );
+		}
+
+		if ( null !== $presupuesto ) {
+			$data['presupuesto_estado'] = $presupuesto['estado'];
+			$format[]                   = '%s';
+
+			if ( Presupuesto_Estado::PENDIENTE !== $presupuesto['estado'] ) {
+				$data['presupuesto_cambiado_en']  = current_time( 'mysql', true );
+				$data['presupuesto_cambiado_por'] = $presupuesto['usuario_id'];
+				$data['presupuesto_via']          = Presupuesto_Estado::VIA_MDF;
+				array_push( $format, '%s', '%d', '%s' );
+			}
 		}
 
 		// Solo la recepcion automatica puede crear documentos pendientes de
@@ -653,6 +669,113 @@ class Documento_Repository {
 		$table = DB_Schema::get_documentos_table_name();
 
 		return false !== $wpdb->query( "UPDATE {$table} SET descargable = 1 WHERE descargable = 0" );
+	}
+
+	// ------------------------------------------------------------------
+	// Presupuestos (v0.44.0)
+	// ------------------------------------------------------------------
+
+	/**
+	 * Cambia el estado de un presupuesto solo si sigue en uno de $desde (la
+	 * condicion va en el propio UPDATE: dos aceptaciones a la vez, una gana).
+	 * $datos: las columnas presupuesto_* que se escriben, sin el prefijo.
+	 *
+	 * @param string[]             $desde
+	 * @param array<string, mixed> $datos estado, cambiado_en, cambiado_por, via, motivo, hash, aviso_pendiente.
+	 * @return int|false Filas cambiadas (0 o 1), o false si falla.
+	 */
+	public function cambiar_estado_presupuesto( int $id, array $desde, array $datos ) {
+		global $wpdb;
+
+		$table    = DB_Schema::get_documentos_table_name();
+		$formatos = array(
+			'estado'          => '%s',
+			'cambiado_en'     => '%s',
+			'cambiado_por'    => '%d',
+			'via'             => '%s',
+			'motivo'          => '%s',
+			'hash'            => '%s',
+			'aviso_pendiente' => '%d',
+		);
+		$sets     = array();
+		$args     = array();
+
+		foreach ( $datos as $columna => $valor ) {
+			if ( ! isset( $formatos[ $columna ] ) ) {
+				return false;
+			}
+
+			if ( null === $valor ) {
+				$sets[] = "presupuesto_{$columna} = NULL";
+				continue;
+			}
+
+			$sets[] = "presupuesto_{$columna} = " . $formatos[ $columna ];
+			$args[] = $valor;
+		}
+
+		if ( ! $sets || ! $desde ) {
+			return false;
+		}
+
+		$en   = implode( ', ', array_fill( 0, count( $desde ), '%s' ) );
+		$args = array_merge( $args, array( $id, Presupuesto_Estado::TIPO_DOCUMENTO ), $desde );
+
+		return $wpdb->query(
+			$wpdb->prepare( "UPDATE {$table} SET " . implode( ', ', $sets ) . " WHERE id = %d AND tipo_documento = %s AND presupuesto_estado IN ({$en})", $args ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- columnas de la lista fija de arriba.
+		);
+	}
+
+	/**
+	 * Presupuestos para la pantalla de MDF, del mas reciente al mas antiguo.
+	 *
+	 * @return Documento[]
+	 */
+	public function find_presupuestos( ?string $estado, int $limite = 500 ): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$sql   = null !== $estado
+			? $wpdb->prepare( "SELECT * FROM {$table} WHERE tipo_documento = %s AND presupuesto_estado = %s ORDER BY id DESC LIMIT %d", Presupuesto_Estado::TIPO_DOCUMENTO, $estado, $limite )
+			: $wpdb->prepare( "SELECT * FROM {$table} WHERE tipo_documento = %s ORDER BY id DESC LIMIT %d", Presupuesto_Estado::TIPO_DOCUMENTO, $limite );
+		$rows  = $wpdb->get_results( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- preparada arriba.
+
+		return array_map( array( 'MdfClientArea\Documento', 'from_db_row' ), $rows ?: array() );
+	}
+
+	/**
+	 * Presupuestos cuyo correo al responsable no ha salido todavia.
+	 *
+	 * @return Documento[]
+	 */
+	public function find_presupuestos_aviso_pendiente( int $limite = 50 ): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE presupuesto_aviso_pendiente = 1 AND tipo_documento = %s ORDER BY id LIMIT %d", Presupuesto_Estado::TIPO_DOCUMENTO, $limite )
+		);
+
+		return array_map( array( 'MdfClientArea\Documento', 'from_db_row' ), $rows ?: array() );
+	}
+
+	public function marcar_aviso_presupuesto_enviado( int $id ): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return false !== $wpdb->query( $wpdb->prepare( "UPDATE {$table} SET presupuesto_aviso_pendiente = 0 WHERE id = %d", $id ) );
+	}
+
+	/** Migracion de la v0.44.0: los presupuestos sin estado pasan a pendiente. */
+	public function marcar_presupuestos_sin_estado_pendientes(): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return false !== $wpdb->query(
+			$wpdb->prepare( "UPDATE {$table} SET presupuesto_estado = %s WHERE tipo_documento = %s AND presupuesto_estado IS NULL", Presupuesto_Estado::PENDIENTE, Presupuesto_Estado::TIPO_DOCUMENTO )
+		);
 	}
 
 	public function find_by_id_para_actualizar( int $id ): ?Documento {

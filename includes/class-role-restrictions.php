@@ -129,7 +129,7 @@ class Role_Restrictions {
 	 * anonimos".
 	 */
 	public static function proteger_area_privada(): void {
-		$ids = array_values( Area_Privada_Pages::get_page_ids() );
+		$ids = Area_Privada_Pages::get_ids_protegidos();
 
 		if ( ! $ids || ! is_page( $ids ) ) {
 			return;
@@ -181,7 +181,7 @@ class Role_Restrictions {
 			return $args;
 		}
 
-		$ids = array_values( Area_Privada_Pages::get_page_ids() );
+		$ids = Area_Privada_Pages::get_ids_protegidos();
 
 		if ( ! $ids ) {
 			return $args;
@@ -219,7 +219,7 @@ class Role_Restrictions {
 			return $result;
 		}
 
-		$ids = array_values( Area_Privada_Pages::get_page_ids() );
+		$ids = Area_Privada_Pages::get_ids_protegidos();
 
 		if ( ! in_array( (int) $coincidencias[1], $ids, true ) ) {
 			return $result;
@@ -237,11 +237,21 @@ class Role_Restrictions {
 
 	/**
 	 * Destino tras login para mdf_cliente y punto de referencia general
-	 * del "area de clientes": la pagina de Documentacion si ya existe
-	 * (Area_Privada_Pages), o el filtro/fallback previo si por lo que sea
-	 * todavia no se ha creado.
+	 * del "area de clientes": la portada del area (v0.39.0) si existe y esta
+	 * publicada; si no, la pagina de Documentacion (Area_Privada_Pages); y si
+	 * tampoco, el filtro/fallback previo.
 	 */
 	public static function get_area_privada_url(): string {
+		$inicio_id = (int) ( Area_Privada_Pages::get_paginas_adicionales_ids()[ Area_Privada_Pages::SLUG_INICIO ] ?? 0 );
+
+		if ( $inicio_id && 'publish' === get_post_status( $inicio_id ) ) {
+			$url_inicio = get_permalink( $inicio_id );
+
+			if ( $url_inicio ) {
+				return apply_filters( 'mdf_ca_area_privada_url', $url_inicio );
+			}
+		}
+
 		$ids               = Area_Privada_Pages::get_page_ids();
 		$documentacion_id  = $ids[ Area_Privada_Pages::SLUG_DOCUMENTACION ] ?? 0;
 		$url_documentacion = $documentacion_id ? get_permalink( $documentacion_id ) : false;

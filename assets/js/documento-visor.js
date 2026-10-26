@@ -802,7 +802,7 @@
 	function actualizarControles() {
 		elAnterior.disabled = renderizando || paginaActual <= 1;
 		elSiguiente.disabled = renderizando || paginaActual >= totalPaginas;
-		elPagina.textContent = totalPaginas > 1 ? ( ( hojaActual ? 'Filas ' + ( ( paginaActual - 1 ) * hojaActual.filasPagina + 1 ) + '-' + Math.min( paginaActual * hojaActual.filasPagina, hojaActual.filas ) + ' (pagina ' : 'Pagina ' ) + paginaActual + ' de ' + totalPaginas + ( hojaActual ? ')' : '' ) ) : '';
+		elPagina.textContent = totalPaginas > 1 ? ( ( hojaActual ? 'Filas ' + ( ( paginaActual - 1 ) * hojaActual.filasPagina + 1 ) + '-' + Math.min( paginaActual * hojaActual.filasPagina, hojaActual.filas ) + ' (página ' : 'Página ' ) + paginaActual + ' de ' + totalPaginas + ( hojaActual ? ')' : '' ) ) : '';
 	}
 
 	function mostrarEstado( mensaje, elementoExtra ) {

@@ -21,6 +21,7 @@ class Catalogo_Repository {
 	private const COLUMNAS = array(
 		'nombre'             => '%s',
 		'descripcion'        => '%s',
+		'descripcion_detallada' => '%s',
 		'categoria_id'       => '%d',
 		'recurso'            => '%s',
 		'enlace_url'         => '%s',

@@ -19,8 +19,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * tambien; si el evento falla, el estado no cambia. Esta clase no abre
  * transacciones.
  *
- * Datos personales: solo usuario_id (una persona de MDF; en eventos antiguos,
- * el robot de recepcion, retirado en #336), fecha,
+ * Datos personales: solo usuario_id (una persona de MDF o, desde la
+ * v0.44.0, el usuario de la farmacia que acepta o rechaza un presupuesto; en
+ * eventos antiguos, el robot de recepcion, retirado en #336), fecha,
  * accion, origen y lote. Nada de IP, user agent ni datos fiscales.
  */
 class Publicacion_Evento_Repository {
@@ -49,6 +50,15 @@ class Publicacion_Evento_Repository {
 	public const ACCION_DESCARGA_ACTIVADA    = 'descarga_activada';
 	public const ACCION_DESCARGA_DESACTIVADA = 'descarga_desactivada';
 
+	/**
+	 * Estado de un presupuesto (v0.44.0). No cambian publicado. Aceptado y
+	 * rechazado: por la farmacia (origen area_cliente) o por MDF; pendiente,
+	 * solo MDF. El motivo y la huella del fichero van en la fila del documento.
+	 */
+	public const ACCION_PRESUPUESTO_ACEPTADO  = 'presupuesto_aceptado';
+	public const ACCION_PRESUPUESTO_RECHAZADO = 'presupuesto_rechazado';
+	public const ACCION_PRESUPUESTO_PENDIENTE = 'presupuesto_pendiente';
+
 	public const ORIGEN_INDIVIDUAL        = 'individual';
 	public const ORIGEN_POR_FARMACIA      = 'por_farmacia';
 	public const ORIGEN_BLOQUE            = 'bloque';
@@ -62,6 +72,8 @@ class Publicacion_Evento_Repository {
 	public const ORIGEN_SUBIDA_FACTURAS = 'subida_facturas';
 	/** Bandeja de facturas no reconocidas (#335): asignada a mano o con "Volver a comprobar". */
 	public const ORIGEN_BANDEJA = 'bandeja';
+	/** La farmacia, desde el visor del area de clientes (v0.44.0). */
+	public const ORIGEN_AREA_CLIENTE = 'area_cliente';
 
 	/** Filas por INSERT (6 columnas cada una). */
 	private const TANDA = 500;
@@ -77,7 +89,7 @@ class Publicacion_Evento_Repository {
 	public function insertar_para( array $filas, string $accion, string $origen, ?int $usuario_id ) {
 		global $wpdb;
 
-		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO, self::ACCION_ELIMINADO, self::ACCION_ASIGNADO_MANUAL, self::ACCION_MARCA_QUITADA, self::ACCION_MARCA_PUESTA, self::ACCION_DESCARGA_ACTIVADA, self::ACCION_DESCARGA_DESACTIVADA ), true ) || ! $this->origen_valido( $origen ) ) {
+		if ( ! in_array( $accion, array( self::ACCION_PUBLICADO, self::ACCION_DESPUBLICADO, self::ACCION_RETIRADO, self::ACCION_RECIBIDO, self::ACCION_ELIMINADO, self::ACCION_ASIGNADO_MANUAL, self::ACCION_MARCA_QUITADA, self::ACCION_MARCA_PUESTA, self::ACCION_DESCARGA_ACTIVADA, self::ACCION_DESCARGA_DESACTIVADA, self::ACCION_PRESUPUESTO_ACEPTADO, self::ACCION_PRESUPUESTO_RECHAZADO, self::ACCION_PRESUPUESTO_PENDIENTE ), true ) || ! $this->origen_valido( $origen ) ) {
 			return false;
 		}
 
@@ -147,6 +159,7 @@ class Publicacion_Evento_Repository {
 				self::ORIGEN_MODELO_347,
 				self::ORIGEN_SUBIDA_FACTURAS,
 				self::ORIGEN_BANDEJA,
+				self::ORIGEN_AREA_CLIENTE,
 			),
 			true
 		);

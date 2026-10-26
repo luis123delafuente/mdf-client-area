@@ -118,6 +118,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 							</p>
 						</td>
 					</tr>
+					<tr data-mdf-ca-solo-presupuesto>
+						<th scope="row"><label for="mdf-ca-documento-presupuesto-estado">Estado del presupuesto</label></th>
+						<td>
+							<select id="mdf-ca-documento-presupuesto-estado" name="presupuesto_estado">
+								<option value="">-- Selecciona el estado --</option>
+								<?php foreach ( Presupuesto_Estado::opciones_mdf() as $clave => $etiqueta ) : ?>
+									<option value="<?php echo esc_attr( $clave ); ?>"><?php echo esc_html( $etiqueta ); ?></option>
+								<?php endforeach; ?>
+							</select>
+							<p class="description">
+								Solo para presupuestos. «Pendiente»: la farmacia podrá aceptarlo o rechazarlo desde el área de clientes.
+								«Aceptado»: ya se aceptó por otra vía; la farmacia lo verá como aceptado y no se envía ningún aviso.
+							</p>
+						</td>
+					</tr>
 					<tr>
 						<th scope="row"><label for="mdf-ca-documento-fecha">Fecha del documento</label></th>
 						<td>
@@ -165,6 +180,30 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 			<?php submit_button( 'Subir documento' ); ?>
 		</form>
+		<script>
+			// Estado del presupuesto (v0.44.0): solo con el tipo presupuesto, y
+			// entonces obligatorio. Sin JS la fila se ve siempre y el servidor
+			// lo valida igual.
+			( function () {
+				var tipo = document.getElementById( 'mdf-ca-documento-tipo' );
+				var fila = document.querySelector( '[data-mdf-ca-solo-presupuesto]' );
+				var estado = document.getElementById( 'mdf-ca-documento-presupuesto-estado' );
+
+				if ( ! tipo || ! fila || ! estado ) {
+					return;
+				}
+
+				function actualizar() {
+					var esPresupuesto = <?php echo wp_json_encode( Presupuesto_Estado::TIPO_DOCUMENTO ); ?> === tipo.value;
+					fila.hidden = ! esPresupuesto;
+					estado.disabled = ! esPresupuesto;
+					estado.required = esPresupuesto;
+				}
+
+				tipo.addEventListener( 'change', actualizar );
+				actualizar();
+			} )();
+		</script>
 	<?php endif; ?>
 
 	<h2>Documentos existentes</h2>

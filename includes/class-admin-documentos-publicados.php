@@ -51,6 +51,9 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ACCION_MARCA_PUESTA    => 'Marca de agua puesta',
 		Publicacion_Evento_Repository::ACCION_DESCARGA_ACTIVADA    => 'Descarga activada',
 		Publicacion_Evento_Repository::ACCION_DESCARGA_DESACTIVADA => 'Descarga desactivada',
+		Publicacion_Evento_Repository::ACCION_PRESUPUESTO_ACEPTADO  => 'Presupuesto aceptado',
+		Publicacion_Evento_Repository::ACCION_PRESUPUESTO_RECHAZADO => 'Presupuesto rechazado',
+		Publicacion_Evento_Repository::ACCION_PRESUPUESTO_PENDIENTE => 'Presupuesto devuelto a pendiente',
 	);
 
 	private const ORIGENES = array(
@@ -65,6 +68,7 @@ class Admin_Documentos_Publicados {
 		Publicacion_Evento_Repository::ORIGEN_MODELO_347        => 'Generador del Modelo 347',
 		Publicacion_Evento_Repository::ORIGEN_SUBIDA_FACTURAS   => '«Subir facturas»',
 		Publicacion_Evento_Repository::ORIGEN_BANDEJA           => 'Bandeja de facturas',
+		Publicacion_Evento_Repository::ORIGEN_AREA_CLIENTE      => 'La farmacia, desde el área de clientes',
 	);
 
 	public static function register_hooks(): void {

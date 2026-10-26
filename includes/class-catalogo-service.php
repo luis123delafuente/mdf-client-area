@@ -28,6 +28,9 @@ class Catalogo_Service {
 	public const MAX_NOMBRE      = 255;
 	public const MAX_DESCRIPCION = 255;
 
+	/** Un parrafo, el de la ventana de la herramienta (esquema 1.22.0). */
+	public const MAX_DESCRIPCION_DETALLADA = 600;
+
 	private Catalogo_Repository $repository;
 	private Plan_Repository $plan_repository;
 
@@ -44,7 +47,7 @@ class Catalogo_Service {
 	 * Crea ($id = 0) o actualiza una herramienta.
 	 *
 	 * @param array{
-	 *   nombre: string, descripcion: string, categoria_id: int, etiqueta_ids: int[],
+	 *   nombre: string, descripcion: string, descripcion_detallada?: string, categoria_id: int, etiqueta_ids: int[],
 	 *   recurso: string, enlace_url: string, descargable: bool, marca_agua: bool,
 	 *   plan_ids: int[], solo_farmacias: bool, farmacia_ids: int[], visible: bool
 	 * } $entrada
@@ -60,6 +63,7 @@ class Catalogo_Service {
 
 		$nombre       = trim( $entrada['nombre'] );
 		$descripcion  = trim( $entrada['descripcion'] );
+		$detallada    = trim( $entrada['descripcion_detallada'] ?? '' );
 		$farmacia_ids = $entrada['solo_farmacias'] ? array_values( array_unique( array_map( 'intval', $entrada['farmacia_ids'] ) ) ) : array();
 		$plan_ids     = array_values( array_unique( array_map( 'intval', $entrada['plan_ids'] ) ) );
 		$etiqueta_ids = array_values( array_unique( array_map( 'intval', $entrada['etiqueta_ids'] ) ) );
@@ -70,9 +74,14 @@ class Catalogo_Service {
 			return $validacion;
 		}
 
+		if ( mb_strlen( $detallada ) > self::MAX_DESCRIPCION_DETALLADA ) {
+			return new \WP_Error( 'mdf_ca_catalogo_descripcion_detallada_larga', sprintf( 'La descripción detallada no puede tener más de %d caracteres.', self::MAX_DESCRIPCION_DETALLADA ) );
+		}
+
 		$datos = array(
 			'nombre'             => $nombre,
 			'descripcion'        => '' !== $descripcion ? $descripcion : null,
+			'descripcion_detallada' => '' !== $detallada ? $detallada : null,
 			'categoria_id'       => (int) $entrada['categoria_id'],
 			'recurso'            => $entrada['recurso'],
 			'visible'            => (bool) $entrada['visible'],

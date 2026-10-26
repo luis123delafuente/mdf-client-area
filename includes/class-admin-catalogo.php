@@ -127,6 +127,7 @@ class Admin_Catalogo {
 			return array(
 				'nombre'         => '',
 				'descripcion'    => '',
+				'descripcion_detallada' => '',
 				'categoria_id'   => 0,
 				'etiqueta_ids'   => array(),
 				'recurso'        => Catalogo_Item::RECURSO_ARCHIVO,
@@ -143,6 +144,7 @@ class Admin_Catalogo {
 		return array(
 			'nombre'         => $item->get_nombre(),
 			'descripcion'    => (string) $item->get_descripcion(),
+			'descripcion_detallada' => (string) $item->get_descripcion_detallada(),
 			'categoria_id'   => (int) $item->get_categoria_id(),
 			'etiqueta_ids'   => $item->get_etiqueta_ids(),
 			'recurso'        => $item->get_recurso(),
@@ -165,6 +167,8 @@ class Admin_Catalogo {
 		$entrada = array(
 			'nombre'         => isset( $_POST['nombre'] ) ? sanitize_text_field( wp_unslash( $_POST['nombre'] ) ) : '',
 			'descripcion'    => isset( $_POST['descripcion'] ) ? sanitize_text_field( wp_unslash( $_POST['descripcion'] ) ) : '',
+			// Un solo parrafo: sanitize_text_field() convierte los saltos de linea en espacios.
+			'descripcion_detallada' => isset( $_POST['descripcion_detallada'] ) ? sanitize_text_field( wp_unslash( $_POST['descripcion_detallada'] ) ) : '',
 			'categoria_id'   => isset( $_POST['categoria_id'] ) ? (int) $_POST['categoria_id'] : 0,
 			'etiqueta_ids'   => self::ids_de_post( 'etiqueta_ids' ),
 			'recurso'        => isset( $_POST['recurso'] ) ? sanitize_key( wp_unslash( $_POST['recurso'] ) ) : '',

@@ -80,6 +80,9 @@ class Documento_Service {
 	/** Lo que se de de alta con esta instancia nace descargable (v0.36.0). */
 	private bool $descargable = self::POR_DEFECTO_DESCARGABLE;
 
+	/** Estado con el que nace un presupuesto (v0.44.0): pendiente o aceptado. */
+	private string $estado_presupuesto = Presupuesto_Estado::PENDIENTE;
+
 	public function __construct( ?Documento_Repository $repository = null, ?Farmacia_Repository $farmacia_repository = null, ?Publicacion_Evento_Repository $eventos = null ) {
 		$this->repository          = $repository ?? new Documento_Repository();
 		$this->farmacia_repository = $farmacia_repository ?? new Farmacia_Repository();
@@ -105,6 +108,18 @@ class Documento_Service {
 	 */
 	public function descargable( bool $descargable ): self {
 		$this->descargable = $descargable;
+
+		return $this;
+	}
+
+	/**
+	 * Estado con el que nace un presupuesto subido con esta instancia
+	 * (v0.44.0): pendiente o aceptado (aceptado por otra via antes de
+	 * subirlo). Lo valida subir(); en otros tipos no se usa. Aceptado deja,
+	 * en la misma transaccion del alta, el evento "presupuesto_aceptado".
+	 */
+	public function estado_presupuesto( string $estado ): self {
+		$this->estado_presupuesto = $estado;
 
 		return $this;
 	}
@@ -175,6 +190,10 @@ class Documento_Service {
 
 		if ( '' === $nombre ) {
 			return new \WP_Error( 'mdf_ca_documento_nombre_vacio', 'El nombre del documento no puede estar vacio.' );
+		}
+
+		if ( Presupuesto_Estado::TIPO_DOCUMENTO === $tipo_documento && ! isset( Presupuesto_Estado::opciones_mdf()[ $this->estado_presupuesto ] ) ) {
+			return new \WP_Error( 'mdf_ca_documento_estado_presupuesto_invalido', 'Elige el estado del presupuesto: pendiente o aceptado.' );
 		}
 
 		// La subida de backoffice siempre publica.
@@ -464,7 +483,14 @@ class Documento_Service {
 		// (o "asignado_manual") porque nace pendiente. Si nace sin marca de agua
 		// (#321), tambien: el evento "marca_quitada" va en la misma transaccion;
 		// y si nace no descargable (v0.36.0), "descarga_desactivada".
-		$con_evento = $publicar || null !== $origen_alta || $this->sin_marca || ! $this->descargable;
+		$presupuesto = Presupuesto_Estado::TIPO_DOCUMENTO === $tipo_documento
+			? array(
+				'estado'     => $this->estado_presupuesto,
+				'usuario_id' => get_current_user_id(),
+			)
+			: null;
+		$aceptado    = null !== $presupuesto && Presupuesto_Estado::ACEPTADO === $presupuesto['estado'];
+		$con_evento  = $publicar || null !== $origen_alta || $this->sin_marca || ! $this->descargable || $aceptado;
 
 		if ( $con_evento
 			&& ( ! DB_Schema::tabla_es_innodb( DB_Schema::get_documentos_table_name() )
@@ -511,7 +537,8 @@ class Documento_Service {
 				$fecha_documento,
 				$factura,
 				$modelo_347,
-				$this->sin_marca
+				$this->sin_marca,
+				$presupuesto
 			);
 		} finally {
 			if ( $silenciar ) {
@@ -558,6 +585,15 @@ class Documento_Service {
 				$evento = $this->eventos->insertar_para(
 					array( $documento->get_id() => null ),
 					Publicacion_Evento_Repository::ACCION_MARCA_QUITADA,
+					$origen,
+					get_current_user_id()
+				);
+			}
+
+			if ( false !== $evento && $aceptado ) {
+				$evento = $this->eventos->insertar_para(
+					array( $documento->get_id() => null ),
+					Publicacion_Evento_Repository::ACCION_PRESUPUESTO_ACEPTADO,
 					$origen,
 					get_current_user_id()
 				);

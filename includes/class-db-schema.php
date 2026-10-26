@@ -301,6 +301,13 @@ class DB_Schema {
 		// sin_marca (#321, esquema 1.20.0): 1 = el visor (de la farmacia y la
 		// vista previa del administrador) no pinta la marca de agua. DEFAULT 0:
 		// todo lo existente y todo lo nuevo la lleva salvo que se quite a mano.
+		// Estado de los presupuestos (esquema 1.23.0), solo en filas de tipo
+		// presupuesto (NULL en el resto): pendiente, aceptado o rechazado.
+		// cambiado_en (UTC) y cambiado_por: el ultimo cambio; via: "area" si
+		// lo hizo la farmacia en el visor, "mdf" si lo puso MDF (al subirlo o
+		// despues). motivo: el del rechazo. hash: SHA-256 del fichero en el
+		// momento en que la farmacia acepto o rechazo. aviso_pendiente = 1:
+		// falta que salga el correo al responsable (Presupuesto_Aviso).
 		$documentos_sql = "CREATE TABLE {$documentos_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			farmacia_id BIGINT UNSIGNED NOT NULL,
@@ -323,6 +330,13 @@ class DB_Schema {
 			ejercicio SMALLINT UNSIGNED NULL,
 			vigente TINYINT(1) NULL,
 			retirado_en DATETIME NULL,
+			presupuesto_estado VARCHAR(10) NULL,
+			presupuesto_cambiado_en DATETIME NULL,
+			presupuesto_cambiado_por BIGINT UNSIGNED NULL,
+			presupuesto_via VARCHAR(4) NULL,
+			presupuesto_motivo TEXT NULL,
+			presupuesto_hash CHAR(64) NULL,
+			presupuesto_aviso_pendiente TINYINT(1) NOT NULL DEFAULT 0,
 			PRIMARY KEY  (id),
 			KEY farmacia_id (farmacia_id),
 			KEY notificado_en (notificado_en,farmacia_id),
@@ -330,7 +344,8 @@ class DB_Schema {
 			KEY publicacion_lote (publicacion_lote_id,publicado),
 			UNIQUE KEY hash_sha256 (hash_sha256),
 			UNIQUE KEY factura (emisor_cif,factura_serie,factura_numero),
-			UNIQUE KEY modelo_347 (farmacia_id,emisor_cif,ejercicio,vigente)
+			UNIQUE KEY modelo_347 (farmacia_id,emisor_cif,ejercicio,vigente),
+			KEY presupuesto_aviso (presupuesto_aviso_pendiente)
 		) {$charset_collate};";
 
 		// Lotes de publicacion en bloque (#317). creado_en y deshecho_en en
@@ -362,10 +377,13 @@ class DB_Schema {
 		// documento (documentos.publicacion_lote_id se pone a NULL, el evento
 		// conserva ese dato). Sin FK, como el resto. El indice sirve el
 		// historial de un documento.
+		// accion VARCHAR(30) desde el esquema 1.23.0: "presupuesto_rechazado"
+		// no cabia en 20 (MySQL estricto rechaza el INSERT y la transaccion
+		// entera se deshace).
 		$eventos_sql = "CREATE TABLE {$eventos_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			documento_id BIGINT UNSIGNED NOT NULL,
-			accion VARCHAR(20) NOT NULL,
+			accion VARCHAR(30) NOT NULL,
 			origen VARCHAR(20) NOT NULL,
 			usuario_id BIGINT UNSIGNED NULL,
 			fecha DATETIME NOT NULL,
@@ -420,7 +438,8 @@ class DB_Schema {
 		// NOT NULL). Recurso: enlace (enlace_url) o archivo (formato,
 		// ruta_fichero dentro de Clientes/private-docs/herramientas/,
 		// tipo_mime, tamano). descargable y marca_agua solo aplican a un
-		// archivo del visor; visible = 0 es "Oculta".
+		// archivo del visor; visible = 0 es "Oculta". descripcion_detallada
+		// (esquema 1.22.0): el parrafo de la ventana de la herramienta.
 		$catalogo_sql = "CREATE TABLE {$catalogo_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			seccion VARCHAR(20) NOT NULL,
@@ -429,6 +448,7 @@ class DB_Schema {
 			enlace_url VARCHAR(500) NULL,
 			fecha_creacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			descripcion VARCHAR(255) NULL,
+			descripcion_detallada TEXT NULL,
 			categoria_id BIGINT UNSIGNED NULL,
 			recurso VARCHAR(10) NOT NULL DEFAULT 'enlace',
 			formato VARCHAR(10) NULL,

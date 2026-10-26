@@ -32,6 +32,19 @@ if ( ! defined( 'ABSPATH' ) ) {
  * - "plana": el listado de siempre, byte a byte (ul/li sin agrupar).
  * El agrupado es solo presentacion: una unica consulta, el filtrado de
  * visibilidad sigue siendo solo de Permissions, y todo se agrupa en memoria.
+ *
+ * Atributo opcional "tipo" (v0.39.0, una pagina por tipo de documento): una
+ * clave de Documento_Tipos::get_grupos_listado() (factura, modelo_347,
+ * contrato, presupuesto, entregable, otro). Se aplica DESPUES de
+ * Permissions::filtrar_documentos_visibles(): no decide visibilidad, solo
+ * elige cuales de los ya visibles se pintan; "otro" recoge tambien los
+ * documentos sin tipo, igual que el grupo del listado. En la vista agrupada
+ * se omite el <details> del tipo (la pagina ya lleva su titulo) y su
+ * contenido va directamente en el contenedor, con la clase
+ * mdf-ca-listado-documentos--tipo-{clave}. Un tipo desconocido no lista
+ * nada (estado vacio): una pagina "Contratos" mal configurada no debe
+ * mostrar todos los documentos. Sin documentos del tipo, el vacio dice
+ * cuales faltan ("No hay facturas disponibles.").
  */
 class Shortcode_Listado_Documentos {
 
@@ -54,11 +67,23 @@ class Shortcode_Listado_Documentos {
 	 * @param array<string, string>|string $atts
 	 */
 	public static function render( $atts = array() ): string {
-		$atts     = shortcode_atts( array( 'vista' => 'agrupada' ), is_array( $atts ) ? $atts : array(), self::TAG );
+		$atts     = shortcode_atts(
+			array(
+				'vista' => 'agrupada',
+				'tipo'  => '',
+			),
+			is_array( $atts ) ? $atts : array(),
+			self::TAG
+		);
+		$tipo     = strtolower( trim( (string) $atts['tipo'] ) );
 		$farmacia = self::farmacia_actual();
 
-		if ( ! $farmacia ) {
+		if ( '' !== $tipo && ! isset( Documento_Tipos::get_grupos_listado()[ $tipo ] ) ) {
 			return self::render_estado_vacio();
+		}
+
+		if ( ! $farmacia ) {
+			return self::render_estado_vacio( $tipo );
 		}
 
 		// La consulta ya viene acotada a la farmacia, pero quien decide que
@@ -70,18 +95,36 @@ class Shortcode_Listado_Documentos {
 			( new Documento_Repository() )->find_by_farmacia_id( $farmacia->get_id() )
 		);
 
+		// El tipo solo elige entre los ya visibles (presentacion).
+		if ( '' !== $tipo ) {
+			$documentos = array_values(
+				array_filter(
+					$documentos,
+					static fn( Documento $documento ): bool => Documento_Tipos::clave_para_recuento( $documento->get_tipo_documento() ) === $tipo
+				)
+			);
+		}
+
 		if ( ! $documentos ) {
-			return self::render_estado_vacio();
+			return self::render_estado_vacio( $tipo );
 		}
 
 		self::$descargables = Permissions::filtrar_documentos_descargables( wp_get_current_user(), $documentos );
+
+		// Estado de los presupuestos (v0.44.0): su CSS, solo si hay alguno.
+		foreach ( $documentos as $documento ) {
+			if ( $documento->get_presupuesto() ) {
+				wp_enqueue_style( 'mdf-ca-listado-documentos', Recursos::url( 'assets/css/listado-documentos.css' ), array(), Recursos::version( 'assets/css/listado-documentos.css' ) );
+				break;
+			}
+		}
 
 		// Cualquier valor que no sea "plana" es la vista agrupada.
 		if ( 'plana' === strtolower( trim( (string) $atts['vista'] ) ) ) {
 			return self::render_lista( $documentos );
 		}
 
-		return self::render_agrupado( $documentos );
+		return '' !== $tipo ? self::render_tipo( $tipo, $documentos ) : self::render_agrupado( $documentos );
 	}
 
 	private static function farmacia_actual(): ?Farmacia {
@@ -92,10 +135,47 @@ class Shortcode_Listado_Documentos {
 		return ( new Farmacia_Repository() )->find_by_wp_user_id( get_current_user_id() );
 	}
 
-	private static function render_estado_vacio(): string {
+	/** Vacio de una pagina por tipo: dice que falta, nunca por que. */
+	private const VACIO_POR_TIPO = array(
+		'factura'     => 'No hay facturas disponibles.',
+		'modelo_347'  => 'No hay cartas del Modelo 347 disponibles.',
+		'contrato'    => 'No hay contratos disponibles.',
+		'presupuesto' => 'No hay presupuestos disponibles.',
+		'entregable'  => 'No hay entregables disponibles.',
+		'otro'        => 'No hay otros documentos disponibles.',
+	);
+
+	private static function render_estado_vacio( string $tipo = '' ): string {
 		return '<p class="mdf-ca-listado-documentos mdf-ca-listado-documentos--vacio">' .
-			esc_html__( 'No hay documentos disponibles.', 'mdf-client-area' ) .
+			esc_html( self::VACIO_POR_TIPO[ $tipo ] ?? __( 'No hay documentos disponibles.', 'mdf-client-area' ) ) .
 			'</p>';
+	}
+
+	/**
+	 * Un solo tipo, sin el <details> del grupo: la pagina ya lleva el titulo.
+	 * Mismo cuerpo que ese tipo tiene en render_agrupado().
+	 *
+	 * @param Documento[] $documentos Ya filtrados por Permissions y por tipo.
+	 */
+	private static function render_tipo( string $tipo, array $documentos ): string {
+		return '<div class="mdf-ca-listado-documentos mdf-ca-listado-documentos--agrupado mdf-ca-listado-documentos--tipo-' . esc_attr( $tipo ) . '">'
+			. self::cuerpo_grupo( $tipo, $documentos )
+			. '</div>';
+	}
+
+	/**
+	 * @param Documento[] $documentos
+	 */
+	private static function cuerpo_grupo( string $clave, array $documentos ): string {
+		if ( 'factura' === $clave ) {
+			return self::render_facturas( $documentos );
+		}
+
+		if ( 'modelo_347' === $clave ) {
+			return self::render_modelo_347( $documentos );
+		}
+
+		return self::render_items( self::ordenar_por_subida( $documentos ), false );
 	}
 
 	/**
@@ -127,8 +207,25 @@ class Shortcode_Listado_Documentos {
 		return '<li class="mdf-ca-listado-documentos__item">'
 			. '<a href="' . esc_url( $url ) . '">' . esc_html( $documento->get_nombre() ) . '</a>'
 			. ' <span class="mdf-ca-listado-documentos__fecha">' . esc_html( $fecha ) . '</span>'
+			. self::estado_presupuesto( $documento )
 			. self::enlace_descargar( $documento )
 			. '</li>';
+	}
+
+	/**
+	 * Estado de un presupuesto (v0.44.0): "Pendiente", "Aceptado el
+	 * 26/10/2026", "Rechazado el 26/10/2026" o "Aceptado" (puesto por MDF).
+	 * Vacio en cualquier otro documento.
+	 */
+	private static function estado_presupuesto( Documento $documento ): string {
+		$presupuesto = $documento->get_presupuesto();
+
+		if ( ! $presupuesto ) {
+			return '';
+		}
+
+		return ' <span class="mdf-ca-listado-documentos__estado mdf-ca-listado-documentos__estado--' . esc_attr( $presupuesto->get_estado() ) . '">'
+			. esc_html( $presupuesto->texto_para_farmacia() ) . '</span>';
 	}
 
 	/**
@@ -183,13 +280,7 @@ class Shortcode_Listado_Documentos {
 				continue;
 			}
 
-			if ( 'factura' === $clave ) {
-				$cuerpo = self::render_facturas( $grupos[ $clave ] );
-			} elseif ( 'modelo_347' === $clave ) {
-				$cuerpo = self::render_modelo_347( $grupos[ $clave ] );
-			} else {
-				$cuerpo = self::render_items( self::ordenar_por_subida( $grupos[ $clave ] ), false );
-			}
+			$cuerpo = self::cuerpo_grupo( $clave, $grupos[ $clave ] );
 
 			$html .= self::seccion( 'mdf-ca-listado-documentos__grupo mdf-ca-listado-documentos__grupo--' . $clave, $etiqueta, count( $grupos[ $clave ] ), $cuerpo, true );
 		}
@@ -366,6 +457,7 @@ class Shortcode_Listado_Documentos {
 
 			$items .= '<li class="mdf-ca-listado-documentos__item">'
 				. '<a href="' . esc_url( $url ) . '">' . esc_html( $documento->get_nombre() ) . '</a>' . ( '' !== $fecha ? ' ' . $fecha : '' )
+				. self::estado_presupuesto( $documento )
 				. self::enlace_descargar( $documento )
 				. '</li>';
 		}

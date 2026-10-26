@@ -1,0 +1,195 @@
+/*
+ * Ventana de cada herramienta del catalogo (v0.43.0), con la imagen del area
+ * (DESIGN.md, seccion 1: valores escritos a mano, como en el visor). La
+ * tarjeta la estila la clase mdf-catalogo de Elementor; aqui solo va lo que
+ * hace falta para abrirla y la propia ventana. Los botones y las etiquetas de
+ * la ventana usan las mismas clases que la tarjeta y heredan su estilo.
+ *
+ * Especificidad alta a proposito: Hello Elementor pinta todos los <button>
+ * con borde y fondo rosa (como en menu-perfil.css).
+ */
+
+.mdf-ca-herramientas .mdf-ca-herramienta {
+	cursor: pointer;
+}
+
+.mdf-ca-herramientas .mdf-ca-herramienta__abrir-ficha,
+.mdf-ca-herramientas .mdf-ca-herramienta__abrir-ficha:hover,
+.mdf-ca-herramientas .mdf-ca-herramienta__abrir-ficha:focus {
+	display: inline;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	font: inherit;
+	letter-spacing: inherit;
+	text-align: left;
+	text-transform: none;
+	white-space: normal;
+	color: inherit;
+	cursor: pointer;
+}
+
+.mdf-ca-herramientas .mdf-ca-herramienta__abrir-ficha:focus-visible {
+	outline: 3px solid #222222;
+	outline-offset: 3px;
+	border-radius: 4px;
+}
+
+.mdf-ca-herramientas .mdf-ca-herramienta__oculto {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+/* ---------- Ventana ---------- */
+
+html:has(.mdf-ca-ficha[open]) {
+	overflow: hidden;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha {
+	width: min(560px, calc(100% - 32px));
+	max-width: none;
+	max-height: calc(100dvh - 32px);
+	margin: auto;
+	padding: 0;
+	overflow: auto;
+	border: 0;
+	border-radius: 12px;
+	background: #fcfbfe;
+	box-shadow: 0 24px 64px rgba(34, 34, 34, 0.24), 0 2px 8px rgba(34, 34, 34, 0.08);
+	font-family: 'Montserrat', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	color: #222222;
+	cursor: auto;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha:focus {
+	outline: none;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha[open] {
+	animation: mdf-ca-ficha-entrar 0.18s ease-out;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha::backdrop {
+	background: rgba(34, 34, 34, 0.5);
+}
+
+@keyframes mdf-ca-ficha-entrar {
+	from {
+		opacity: 0;
+		transform: translateY(8px) scale(0.98);
+	}
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha__caja {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	padding: 24px 28px 28px;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha__cabecera {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha__tipo {
+	padding: 3px 8px;
+	border: 1px solid #d9d9d9;
+	border-radius: 12px;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	line-height: 1.4;
+	text-transform: uppercase;
+	color: #555555;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha__cerrar,
+.mdf-ca-herramientas .mdf-ca-ficha__cerrar:hover,
+.mdf-ca-herramientas .mdf-ca-ficha__cerrar:focus {
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	margin: -6px -10px -6px 0;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 12px;
+	background: none;
+	box-shadow: none;
+	color: #222222;
+	cursor: pointer;
+	transition: border-color 0.2s;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha__cerrar:hover {
+	border-color: #d9d9d9;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha__cerrar:focus-visible {
+	outline: 3px solid #222222;
+	outline-offset: 2px;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha__titulo {
+	margin: 0;
+	font-family: inherit;
+	font-size: 24px;
+	font-weight: 700;
+	line-height: 1.25;
+	letter-spacing: -0.01em;
+	color: #222222;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha__texto {
+	margin: 0;
+	font-family: inherit;
+	font-size: 16px;
+	line-height: 1.6;
+	color: #555555;
+}
+
+.mdf-ca-herramientas .mdf-ca-ficha .mdf-ca-ficha__acciones {
+	margin-top: 8px;
+	padding-top: 20px;
+	border-top: 1px solid #d9d9d9;
+}
+
+/* ---------- Movil ---------- */
+
+@media (max-width: 640px) {
+	.mdf-ca-herramientas .mdf-ca-ficha {
+		width: calc(100% - 16px);
+		max-height: calc(100dvh - 16px);
+	}
+
+	.mdf-ca-herramientas .mdf-ca-ficha__caja {
+		padding: 16px 20px 24px;
+	}
+
+	.mdf-ca-herramientas .mdf-ca-ficha__titulo {
+		font-size: 20px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.mdf-ca-herramientas .mdf-ca-ficha[open] {
+		animation: none;
+	}
+
+	.mdf-ca-herramientas .mdf-ca-ficha__cerrar {
+		transition: none;
+	}
+}

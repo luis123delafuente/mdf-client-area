@@ -127,7 +127,7 @@ class Herramienta_Endpoint {
 		$token        = Documento_Token::emitir( (int) $usuario->ID, $item->get_id(), self::AMBITO_TOKEN );
 
 		nocache_headers();
-		Documento_Visor::pintar( self::url( $item->get_id(), self::FICHERO ), $token, $marca, $url_descarga, $item->get_nombre() );
+		Documento_Visor::pintar( self::url( $item->get_id(), self::FICHERO ), $token, $marca, $url_descarga, $item->get_nombre(), Documento_Visor::url_pagina_area( Area_Privada_Pages::SLUG_HERRAMIENTAS ) );
 		exit;
 	}
 

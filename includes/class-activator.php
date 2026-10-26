@@ -24,7 +24,13 @@ class Activator {
 		if ( ( new Documento_Repository() )->marcar_todos_descargables() ) {
 			update_option( 'mdf_ca_documentos_descargables_v1', '1' );
 		}
+		if ( ( new Documento_Repository() )->marcar_presupuestos_sin_estado_pendientes() ) {
+			update_option( 'mdf_ca_presupuestos_estado_v1', '1' );
+		}
 		Area_Privada_Pages::crear_paginas();
+		if ( Area_Privada_Pages::crear_paginas_adicionales() ) {
+			update_option( 'mdf_ca_area_privada_paginas_adicionales_v1', '1' );
+		}
 
 		// Proteccion de la carpeta privada (#327): crea lo que falte y hace
 		// la comprobacion HTTP (como mucho 5 s, solo al activar). La option
@@ -73,11 +79,13 @@ class Activator {
 		'mdf_ca_proteccion_carpeta_v1',
 		'mdf_ca_planes_migrados',
 		'mdf_ca_area_privada_paginas_creadas',
+		'mdf_ca_area_privada_paginas_adicionales_v1',
 		'mdf_ca_visor_rewrite_flushed',
 		'mdf_ca_herramientas_v1',
 		'mdf_ca_herramientas_rewrite_v1',
 		'mdf_ca_documentos_descargables_v1',
 		'mdf_ca_documento_descarga_rewrite_v1',
+		'mdf_ca_presupuestos_estado_v1',
 	);
 
 	/**
@@ -226,6 +234,15 @@ class Activator {
 			update_option( 'mdf_ca_area_privada_paginas_creadas', '1' );
 		}
 
+		// Portada del area y paginas por tipo de documento (v0.39.0). Va
+		// despues de crear_paginas(): las de tipo cuelgan de Documentacion. La
+		// marca solo se pone si estan todas; si falta Documentacion, se
+		// reintenta en la siguiente peticion.
+		if ( ! get_option( 'mdf_ca_area_privada_paginas_adicionales_v1' )
+			&& Area_Privada_Pages::crear_paginas_adicionales() ) {
+			update_option( 'mdf_ca_area_privada_paginas_adicionales_v1', '1' );
+		}
+
 		// La rewrite rule de Documento_Visor (#248) se registra en cada
 		// carga via 'init' igual que la de Documento_Endpoint, pero
 		// WordPress cachea las reglas activas en la option "rewrite_rules"
@@ -271,6 +288,13 @@ class Activator {
 		if ( ! get_option( 'mdf_ca_documento_descarga_rewrite_v1' ) ) {
 			flush_rewrite_rules();
 			update_option( 'mdf_ca_documento_descarga_rewrite_v1', '1' );
+		}
+
+		// Estado de los presupuestos (v0.44.0, esquema 1.23.0): los que ya
+		// hay pasan a pendiente. Sin evento por documento, como la migracion
+		// de descargables. Repetida no cambia nada.
+		if ( ! get_option( 'mdf_ca_presupuestos_estado_v1' ) && ( new Documento_Repository() )->marcar_presupuestos_sin_estado_pendientes() ) {
+			update_option( 'mdf_ca_presupuestos_estado_v1', '1' );
 		}
 	}
 
