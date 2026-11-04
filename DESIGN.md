@@ -240,7 +240,7 @@ Inicio, además, lleva en el hero un panel de **accesos directos** (Mis facturas
 ## 9. Pendiente / decisiones abiertas
 
 - [ ] **Identidad de MDF** (logo, paleta y tipografía definitivas): pedirla a Víctor o a MKT. Hasta entonces, valen los valores `PROVISIONAL` de la sección 1.
-- [ ] **Llevar el área a producción:** al desplegar la v0.39.0, el plugin creará allí la portada y las seis páginas de tipo **solo con su shortcode**. Hay que llevar los diseños de Elementor (exportar e importar las once páginas), las clases y variables globales del kit y los medios (iconos y logos; en local, IDs 113–126 y 229–231, que allí cambiarán).
+- [ ] **Llevar el área a producción** (04/11/2026: en producción no estaba Elementor, por eso tras el login se veían las páginas solo con su shortcode). Hay un paquete de migración probado, fuera de este repositorio (`AreaCliente/migracion-elementor/`, con su `LEEME.md`): Elementor 4.3.5, kit, medios y las 11 páginas con los IDs reasignados, por pasos (revisión en borrador, aplicar, deshacer). Detalle anterior: al desplegar la v0.39.0, el plugin creará allí la portada y las seis páginas de tipo **solo con su shortcode**. Hay que llevar los diseños de Elementor (exportar e importar las once páginas), las clases y variables globales del kit y los medios (iconos y logos; en local, IDs 113–126 y 229–231, que allí cambiarán).
 - [ ] **Comprobar con una sesión de farmacia real** (Chrome y Safari) el menú de perfil en las páginas nuevas y que tras el login se llega a la portada.
 - [ ] **Visor de documentos:** probar un PDF de varias páginas, un Excel con varias hojas, la vista previa del administrador y Safari.
 - [ ] **Borrar los borradores de diseño 24, 68, 69 y 70** cuando se dé por bueno el resultado en 13–16.

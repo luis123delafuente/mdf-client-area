@@ -2,3 +2,6 @@
 node_modules/
 /vendor/
 *.log
+
+# Paquete de la migracion del diseno (v0.45.0): se despliega por SFTP, no va al repo (publico).
+/migracion-diseno/datos/
