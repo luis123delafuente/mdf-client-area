@@ -17,7 +17,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Admin_Invitaciones: menu propio, capacidad Admin_Farmacias::CAPACIDAD
  * (mdf_cliente nunca la tiene, y Role_Restrictions::bloquear_acceso_admin()
  * ya lo saca de todo wp-admin antes de llegar aqui), admin-post.php con
- * nonce. Sin edicion ni borrado de farmacias aqui: tambien Fase 4. El alta
+ * nonce. Sin edicion. Desde la v0.46.0, "Eliminar" una farmacia sin
+ * documentos ni cuenta, solo el administrador (ver
+ * Farmacia_Eliminacion_Service), con pantalla de confirmacion. El alta
  * masiva por CSV (Fase 4) vive en Admin_Importador_Farmacias, submenu de
  * esta pantalla, sobre Farmacia_Import_Service.
  *
@@ -39,9 +41,17 @@ class Admin_Farmacias {
 	private const NONCE_ACTION      = 'mdf_ca_crear_farmacia';
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_farmacias_notice_';
 
+	/**
+	 * Eliminar una farmacia (v0.46.0): solo el administrador, como borrar
+	 * usuarios. Nonce por farmacia: ACCION_ELIMINAR . '_' . id.
+	 */
+	public const CAPACIDAD_ELIMINAR = Roles::CAP_ADMINISTRAR;
+	private const ACCION_ELIMINAR   = 'mdf_ca_eliminar_farmacia';
+
 	public static function register_hooks(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ) );
 		add_action( 'admin_post_mdf_ca_crear_farmacia', array( __CLASS__, 'gestionar_crear' ) );
+		add_action( 'admin_post_' . self::ACCION_ELIMINAR, array( __CLASS__, 'gestionar_eliminar' ) );
 	}
 
 	public static function registrar_menu(): void {
@@ -61,11 +71,67 @@ class Admin_Farmacias {
 			wp_die( 'No tienes permiso para acceder a esta pagina.' );
 		}
 
-		$planes    = ( new Plan_Repository() )->find_all();
-		$farmacias = ( new Farmacia_Repository() )->find_all();
-		$aviso     = self::consumir_aviso();
+		// Solo pinta la confirmacion; el borrado (gestionar_eliminar) exige nonce.
+		if ( isset( $_GET['eliminar'] ) && current_user_can( self::CAPACIDAD_ELIMINAR ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			self::render_confirmar_eliminar( (int) $_GET['eliminar'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+
+		$planes           = ( new Plan_Repository() )->find_all();
+		$farmacias        = ( new Farmacia_Repository() )->find_all();
+		$aviso            = self::consumir_aviso();
+		$puede_eliminar   = current_user_can( self::CAPACIDAD_ELIMINAR );
+		$bloqueos         = array();
+		$documentos_total = ( new Documento_Repository() )->contar_todos_por_farmacia();
+
+		if ( $puede_eliminar ) {
+			cache_users( array_filter( array_map( fn( Farmacia $f ) => (int) $f->get_wp_user_id(), $farmacias ) ) );
+
+			foreach ( $farmacias as $farmacia ) {
+				$bloqueos[ $farmacia->get_id() ] = Farmacia_Eliminacion_Service::bloqueo( $farmacia, $documentos_total[ $farmacia->get_id() ] ?? 0 );
+			}
+		}
 
 		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-farmacias.php';
+	}
+
+	public static function url_eliminar( int $farmacia_id ): string {
+		return add_query_arg(
+			array(
+				'page'     => self::MENU_SLUG,
+				'eliminar' => $farmacia_id,
+			),
+			admin_url( 'admin.php' )
+		);
+	}
+
+	private static function render_confirmar_eliminar( int $farmacia_id ): void {
+		$farmacia   = ( new Farmacia_Repository() )->find_by_id( $farmacia_id );
+		$bloqueo    = Farmacia_Eliminacion_Service::bloqueo( $farmacia, $farmacia ? ( new Documento_Repository() )->contar_de_farmacia( $farmacia_id ) : 0 );
+		$accion     = self::ACCION_ELIMINAR;
+		$url_volver = admin_url( 'admin.php?page=' . self::MENU_SLUG );
+
+		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-eliminar-farmacia.php';
+	}
+
+	public static function gestionar_eliminar(): void {
+		if ( ! current_user_can( self::CAPACIDAD_ELIMINAR ) ) {
+			wp_die( 'No tienes permiso para realizar esta accion.', '', array( 'response' => 403 ) );
+		}
+
+		$id = isset( $_POST['farmacia_id'] ) ? (int) $_POST['farmacia_id'] : 0;
+
+		check_admin_referer( self::ACCION_ELIMINAR . '_' . $id );
+
+		$resultado = ( new Farmacia_Eliminacion_Service() )->eliminar( $id );
+
+		if ( is_wp_error( $resultado ) ) {
+			self::guardar_aviso( 'error', $resultado->get_error_message() );
+		} else {
+			self::guardar_aviso( 'success', sprintf( 'Farmacia «%s» (%s) eliminada.', $resultado['nombre'], $resultado['cif'] ) );
+		}
+
+		self::redirigir( admin_url( 'admin.php?page=' . self::MENU_SLUG ) );
 	}
 
 	public static function gestionar_crear(): void {

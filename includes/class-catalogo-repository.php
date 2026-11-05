@@ -173,6 +173,17 @@ class Catalogo_Repository {
 	}
 
 	/**
+	 * Quita una farmacia de la lista "farmacias concretas" de todas las
+	 * herramientas. Solo lo usa Farmacia_Eliminacion_Service, dentro de su
+	 * transaccion. Devuelve false si la BD da error.
+	 */
+	public function quitar_farmacia( int $farmacia_id ): bool {
+		global $wpdb;
+
+		return false !== $wpdb->delete( DB_Schema::get_catalogo_farmacias_table_name(), array( 'farmacia_id' => $farmacia_id ), array( '%d' ) );
+	}
+
+	/**
 	 * @return string[]
 	 */
 	private static function tablas_puente(): array {

@@ -103,6 +103,82 @@ class Farmacia_Repository {
 		return $row ? Farmacia::from_db_row( $row ) : null;
 	}
 
+	/** Como find_by_id(), con la fila bloqueada: solo dentro de una transaccion. */
+	public function find_by_id_para_actualizar( int $id ): ?Farmacia {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+		$row   = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d FOR UPDATE", $id )
+		);
+
+		return $row ? Farmacia::from_db_row( $row ) : null;
+	}
+
+	/**
+	 * Al borrar un usuario de WordPress (v0.46.0): la farmacia que lo tenia
+	 * vinculado vuelve a "Sin cuenta" (wp_user_id NULL) y se puede invitar
+	 * de nuevo. Sin esto quedaba en "usuario_roto" y Invitacion_Service se
+	 * negaba a invitarla.
+	 */
+	public function desvincular_usuario( int $wp_user_id ): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+
+		return false !== $wpdb->query(
+			$wpdb->prepare( "UPDATE {$table} SET wp_user_id = NULL WHERE wp_user_id = %d", $wp_user_id )
+		);
+	}
+
+	/**
+	 * Migracion de una vez (v0.46.0): las farmacias cuyo usuario ya no existe
+	 * (borrado antes de que existiera desvincular_usuario()) vuelven a "Sin
+	 * cuenta". UPDATE multitabla con LEFT JOIN: igual en MySQL 8.4 y MariaDB
+	 * 11.8. Repetida no cambia nada.
+	 */
+	public function desvincular_usuarios_inexistentes(): bool {
+		global $wpdb;
+
+		$table = DB_Schema::get_farmacias_table_name();
+
+		return false !== $wpdb->query(
+			"UPDATE {$table} f LEFT JOIN {$wpdb->users} u ON u.ID = f.wp_user_id
+			SET f.wp_user_id = NULL
+			WHERE f.wp_user_id IS NOT NULL AND u.ID IS NULL"
+		);
+	}
+
+	/**
+	 * DELETE de una farmacia, solo si sigue sin documentos, sin envios del
+	 * 347 y sin un usuario vinculado que exista. Repite en SQL la regla de
+	 * Farmacia_Eliminacion_Service::bloqueo(), para que nada que haya
+	 * llegado entre la comprobacion y el borrado se quede huerfano (sin
+	 * FOREIGN KEY, ver CLAUDE.md). wp_user_id admite NULL: entra con IS NULL.
+	 *
+	 * @return int|false Filas borradas (0 si ya no cumple), false si la BD da error.
+	 */
+	public function eliminar_sin_dependencias( int $id ) {
+		global $wpdb;
+
+		$table      = DB_Schema::get_farmacias_table_name();
+		$documentos = DB_Schema::get_documentos_table_name();
+		$envios     = DB_Schema::get_modelo_347_envios_table_name();
+
+		return $wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$table}
+				WHERE id = %d
+				AND NOT EXISTS ( SELECT 1 FROM {$documentos} d WHERE d.farmacia_id = %d )
+				AND NOT EXISTS ( SELECT 1 FROM {$envios} e WHERE e.farmacia_id = %d )
+				AND ( wp_user_id IS NULL OR NOT EXISTS ( SELECT 1 FROM {$wpdb->users} u WHERE u.ID = wp_user_id ) )",
+				$id,
+				$id,
+				$id
+			)
+		);
+	}
+
 	/**
 	 * Inserta una farmacia nueva. wp_user_id es opcional a nivel de
 	 * persistencia (ver Farmacia): la obligatoriedad de vincular un usuario

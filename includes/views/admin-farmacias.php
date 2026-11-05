@@ -4,11 +4,15 @@
  * la logica (validacion de CIF, duplicados, plan) vive en
  * Farmacia_Import_Service, el mismo servicio que el importador CSV.
  *
- * Alta manual sin edicion ni borrado (ver cabecera de Admin_Farmacias).
+ * Alta manual sin edicion; "Eliminar" solo para el administrador (v0.46.0,
+ * ver cabecera de Admin_Farmacias).
  *
  * @var \MdfClientArea\Plan[]     $planes
  * @var \MdfClientArea\Farmacia[] $farmacias
  * @var array{tipo: string, mensaje: string}|null $aviso
+ * @var bool                      $puede_eliminar
+ * @var array<int, array{corto: string, largo: string}|null> $bloqueos Por farmacia; solo si $puede_eliminar.
+ * @var array<int, int>           $documentos_total Documentos por farmacia (cualquier estado).
  */
 
 namespace MdfClientArea;
@@ -102,6 +106,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<th>Nombre</th>
 					<th>CIF / NIF</th>
 					<th>Alta</th>
+					<th>Documentos</th>
+					<?php if ( $puede_eliminar ) : ?>
+						<th>Acciones</th>
+					<?php endif; ?>
 				</tr>
 			</thead>
 			<tbody>
@@ -110,6 +118,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 						<td><?php echo esc_html( $farmacia->get_nombre() ); ?></td>
 						<td><?php echo esc_html( $farmacia->get_cif() ); ?></td>
 						<td><?php echo esc_html( $farmacia->get_fecha_alta() ); ?></td>
+						<td><?php echo esc_html( (string) ( $documentos_total[ $farmacia->get_id() ] ?? 0 ) ); ?></td>
+						<?php if ( $puede_eliminar ) : ?>
+							<td>
+								<?php if ( null === $bloqueos[ $farmacia->get_id() ] ) : ?>
+									<a href="<?php echo esc_url( Admin_Farmacias::url_eliminar( $farmacia->get_id() ) ); ?>" class="button-link-delete">
+										Eliminar<span class="screen-reader-text"> <?php echo esc_html( $farmacia->get_nombre() ); ?></span>
+									</a>
+								<?php else : ?>
+									<span class="description" title="<?php echo esc_attr( $bloqueos[ $farmacia->get_id() ]['largo'] ); ?>"><?php echo esc_html( $bloqueos[ $farmacia->get_id() ]['corto'] ); ?></span>
+								<?php endif; ?>
+							</td>
+						<?php endif; ?>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>

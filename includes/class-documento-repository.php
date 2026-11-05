@@ -188,6 +188,39 @@ class Documento_Repository {
 	}
 
 	/**
+	 * Documentos de cada farmacia, en cualquier estado (publicados,
+	 * pendientes, despublicados y 347 retirados), en una sola consulta. Para
+	 * Farmacias MDF y Farmacia_Eliminacion_Service (v0.46.0).
+	 *
+	 * @return array<int, int> farmacia_id => numero de documentos (solo las que tienen alguno).
+	 */
+	public function contar_todos_por_farmacia(): array {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+		$rows  = $wpdb->get_results( "SELECT farmacia_id, COUNT(*) AS total FROM {$table} GROUP BY farmacia_id" );
+
+		$totales = array();
+
+		foreach ( $rows as $row ) {
+			$totales[ (int) $row->farmacia_id ] = (int) $row->total;
+		}
+
+		return $totales;
+	}
+
+	/** Documentos de una farmacia en cualquier estado (ver contar_todos_por_farmacia()). */
+	public function contar_de_farmacia( int $farmacia_id ): int {
+		global $wpdb;
+
+		$table = DB_Schema::get_documentos_table_name();
+
+		return (int) $wpdb->get_var(
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE farmacia_id = %d", $farmacia_id )
+		);
+	}
+
+	/**
 	 * Documentos de una farmacia, mas recientes primero. Usado por el
 	 * listado de front (#241): la consulta ya viene acotada a la farmacia,
 	 * asi que quien la consume no necesita repetir la comprobacion de

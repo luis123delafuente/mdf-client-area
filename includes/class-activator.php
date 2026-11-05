@@ -86,6 +86,7 @@ class Activator {
 		'mdf_ca_documentos_descargables_v1',
 		'mdf_ca_documento_descarga_rewrite_v1',
 		'mdf_ca_presupuestos_estado_v1',
+		'mdf_ca_farmacias_usuario_inexistente_v1',
 	);
 
 	/**
@@ -295,6 +296,14 @@ class Activator {
 		// de descargables. Repetida no cambia nada.
 		if ( ! get_option( 'mdf_ca_presupuestos_estado_v1' ) && ( new Documento_Repository() )->marcar_presupuestos_sin_estado_pendientes() ) {
 			update_option( 'mdf_ca_presupuestos_estado_v1', '1' );
+		}
+
+		// Farmacias con un usuario que ya no existe (v0.46.0): vuelven a "Sin
+		// cuenta" para poder invitarlas. Desde esta version el hook deleted_user
+		// lo hace al borrar el usuario; esto cubre lo borrado antes. Repetida no
+		// cambia nada.
+		if ( ! get_option( 'mdf_ca_farmacias_usuario_inexistente_v1' ) && ( new Farmacia_Repository() )->desvincular_usuarios_inexistentes() ) {
+			update_option( 'mdf_ca_farmacias_usuario_inexistente_v1', '1' );
 		}
 	}
 
