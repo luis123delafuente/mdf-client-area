@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * (mdf_cliente nunca la tiene, y Role_Restrictions::bloquear_acceso_admin()
  * ya lo saca de todo wp-admin antes de llegar aqui), admin-post.php con
  * nonce. Sin edicion. Desde la v0.46.0, "Eliminar" una farmacia sin
- * documentos ni cuenta, solo el administrador (ver
+ * documentos ni cuenta; desde la v0.47.1 tambien el gestor (ver
  * Farmacia_Eliminacion_Service), con pantalla de confirmacion. El alta
  * masiva por CSV (Fase 4) vive en Admin_Importador_Farmacias, submenu de
  * esta pantalla, sobre Farmacia_Import_Service.
@@ -42,10 +42,14 @@ class Admin_Farmacias {
 	private const NOTICE_KEY_PREFIX = 'mdf_ca_farmacias_notice_';
 
 	/**
-	 * Eliminar una farmacia (v0.46.0): solo el administrador, como borrar
-	 * usuarios. Nonce por farmacia: ACCION_ELIMINAR . '_' . id.
+	 * Eliminar una farmacia (v0.46.0; desde la v0.47.1, quien gestiona
+	 * farmacias, tambien el gestor, a peticion de MDF). Es seguro darselo:
+	 * Farmacia_Eliminacion_Service::bloqueo() solo deja borrar una farmacia
+	 * sin ningun documento ni usuario vinculado, y el gestor no puede
+	 * borrar usuarios, asi que nunca elimina una farmacia con cuenta.
+	 * Nonce por farmacia: ACCION_ELIMINAR . '_' . id.
 	 */
-	public const CAPACIDAD_ELIMINAR = Roles::CAP_ADMINISTRAR;
+	public const CAPACIDAD_ELIMINAR = Roles::CAP_GESTIONAR_FARMACIAS;
 	private const ACCION_ELIMINAR   = 'mdf_ca_eliminar_farmacia';
 
 	public static function register_hooks(): void {

@@ -14,8 +14,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  *    puede invitar de nuevo (hook deleted_user). Antes quedaba en
  *    "usuario_roto" e Invitacion_Service::invitar() se negaba.
  *
- * 2. Eliminar una farmacia, solo el administrador (Roles::CAP_ADMINISTRAR,
- *    desde Farmacias MDF), y solo si:
+ * 2. Eliminar una farmacia, quien gestiona farmacias, tambien el gestor
+ *    (Admin_Farmacias::CAPACIDAD_ELIMINAR; hasta la v0.47.0, solo el
+ *    administrador), desde Farmacias MDF, y solo si:
  *    - no tiene ningun documento, en ningun estado (tambien despublicados y
  *      347 retirados): no se dejan documentos huerfanos, que nadie podria
  *      ver y que no se pueden reasignar;
@@ -80,7 +81,7 @@ class Farmacia_Eliminacion_Service {
 			return array(
 				'corto' => 'Tiene cuenta de acceso',
 				'largo' => sprintf(
-					'La farmacia tiene una cuenta de acceso (usuario «%s»). Bórrala antes en Usuarios; la farmacia quedará «Sin cuenta» y entonces se podrá eliminar.',
+					'La farmacia tiene una cuenta de acceso (usuario «%s»). Antes hay que borrar esa cuenta en Usuarios (solo puede un administrador); la farmacia quedará «Sin cuenta» y entonces se podrá eliminar.',
 					$usuario->user_login
 				),
 			);

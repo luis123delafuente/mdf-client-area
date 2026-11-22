@@ -4,7 +4,7 @@
  * la logica (validacion de CIF, duplicados, plan) vive en
  * Farmacia_Import_Service, el mismo servicio que el importador CSV.
  *
- * Alta manual sin edicion; "Eliminar" solo para el administrador (v0.46.0,
+ * Alta manual sin edicion; "Eliminar" para quien gestiona farmacias (v0.46.0; gestor desde la v0.47.1,
  * ver cabecera de Admin_Farmacias).
  *
  * @var \MdfClientArea\Plan[]     $planes
