@@ -61,7 +61,7 @@ class Farmacia_Service {
 	 *
 	 * @return Farmacia|\WP_Error
 	 */
-	public function crear( string $cif, string $nombre, ?int $wp_user_id = null, ?int $plan_id = null ) {
+	public function crear( string $cif, string $nombre, ?int $wp_user_id = null, ?int $plan_id = null, ?string $email = null ) {
 		$cif    = Identificador_Fiscal_Validator::normalizar( $cif );
 		$nombre = trim( $nombre );
 
@@ -97,7 +97,7 @@ class Farmacia_Service {
 			return self::error_duplicado( $cif );
 		}
 
-		$farmacia = $this->repository->insert( $cif, $nombre, $wp_user_id );
+		$farmacia = $this->repository->insert( $cif, $nombre, $wp_user_id, $email );
 
 		if ( null === $farmacia ) {
 			global $wpdb;

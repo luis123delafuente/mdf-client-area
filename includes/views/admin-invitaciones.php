@@ -13,6 +13,11 @@
  * @var \MdfClientArea\Farmacia[] $farmacias
  * @var array<int, array{estado: string, etiqueta: string, email: ?string, enviada_en: ?int}> $estados
  * @var array{tipo: string, mensaje: string}|null $aviso
+ * @var array<string, mixed>|null $trabajo         Invitar a todas (v0.47.0), ver el parcial.
+ * @var array<string, int>|null   $masiva_resumen
+ * @var array|null                $revision
+ * @var array<int, string>        $nombres_farmacias
+ * @var int                       $sin_cuenta
  */
 
 namespace MdfClientArea;
@@ -37,6 +42,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 		cualquier enlace anterior sin usar.
 	</p>
 
+	<?php if ( $farmacias ) : ?>
+		<?php require __DIR__ . '/parcial-invitacion-masiva.php'; ?>
+	<?php endif; ?>
+
 	<?php if ( ! $farmacias ) : ?>
 		<p>Todavia no hay ninguna farmacia dada de alta.</p>
 	<?php else : ?>
@@ -59,7 +68,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<tr>
 						<td><?php echo esc_html( $farmacia->get_nombre() . ' (' . $farmacia->get_cif() . ')' ); ?></td>
 						<td><?php echo esc_html( $estado['etiqueta'] ); ?></td>
-						<td><?php echo $estado['email'] ? esc_html( $estado['email'] ) : '-'; ?></td>
+						<td><?php echo $estado['email'] ? esc_html( $estado['email'] ) : ( $farmacia->get_email() ? esc_html( $farmacia->get_email() ) . ' <em>(sin enviar)</em>' : '-' ); ?></td>
 						<td>
 							<?php echo $estado['enviada_en'] ? esc_html( date_i18n( get_option( 'date_format' ) . ' H:i', $estado['enviada_en'] ) ) : '-'; ?>
 						</td>
@@ -67,8 +76,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 							<?php if ( 'usuario_roto' === $estado['estado'] ) : ?>
 								<em>El usuario vinculado ya no existe. Requiere revision manual.</em>
 							<?php elseif ( 'sin_cuenta' === $estado['estado'] ) : ?>
-								<input type="text" form="<?php echo esc_attr( $form_id ); ?>" name="user_login" placeholder="Usuario" style="width:120px;" required />
-								<input type="email" form="<?php echo esc_attr( $form_id ); ?>" name="email" placeholder="email@farmacia.com" style="width:200px;" required />
+								<?php // Rellenado de antemano (v0.47.0): usuario = CIF/NIF, email = el del importador o el alta. Se puede cambiar antes de enviar. ?>
+								<input type="text" form="<?php echo esc_attr( $form_id ); ?>" name="user_login" value="<?php echo esc_attr( $farmacia->get_cif() ); ?>" placeholder="Usuario" style="width:120px;" required />
+								<input type="email" form="<?php echo esc_attr( $form_id ); ?>" name="email" value="<?php echo esc_attr( (string) $farmacia->get_email() ); ?>" placeholder="email@farmacia.com" style="width:200px;" required />
 								<button type="submit" form="<?php echo esc_attr( $form_id ); ?>" class="button button-primary">Enviar invitacion</button>
 							<?php else : ?>
 								<button type="submit" form="<?php echo esc_attr( $form_id ); ?>" class="button">Reenviar invitacion</button>

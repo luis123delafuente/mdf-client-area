@@ -24,7 +24,15 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   " premium " y "PREMIUM" resuelven al mismo plan.
  * - Un CIF repetido dentro del mismo lote rechaza TODAS sus filas: no hay
  *   forma de saber cual es la buena.
- * - Una farmacia existente solo cambia nombre y plan. wp_user_id, estado
+ * - Email (v0.47.0, columna opcional): correo de contacto que rellena de
+ *   antemano la invitacion. Se guarda en minusculas; uno mal escrito o
+ *   repetido en el fichero rechaza la fila (cada cuenta necesita el suyo:
+ *   WordPress no admite dos usuarios con el mismo email). Vacio o sin
+ *   columna: no se toca el que hubiera. No cambia el email de una cuenta
+ *   ya creada (ese vive en wp_users). Si ya hay una cuenta de WordPress
+ *   con ese email, la fila entra igual con un aviso: la invitacion
+ *   fallara hasta que se cambie.
+ * - Una farmacia existente solo cambia nombre, plan y email. wp_user_id, estado
  *   de invitacion y documentos no se tocan; nunca se crean usuarios ni se
  *   envian invitaciones (eso sigue siendo Invitacion_Service).
  * - Idempotente: reaplicar el mismo lote deja todas las filas en
@@ -40,6 +48,9 @@ class Farmacia_Import_Service {
 	/** Longitud de la columna nombre (VARCHAR(255), ver DB_Schema). */
 	private const NOMBRE_MAX_CARACTERES = 255;
 
+	/** Longitud de la columna email (VARCHAR(100), como wp_users.user_email). */
+	private const EMAIL_MAX_CARACTERES = 100;
+
 	private Farmacia_Repository $repository;
 	private Plan_Repository $plan_repository;
 	private Farmacia_Service $farmacia_service;
@@ -51,11 +62,11 @@ class Farmacia_Import_Service {
 	}
 
 	/**
-	 * @param array<int, array{linea: int, cif: string, nombre: string, plan: string}> $filas
+	 * @param array<int, array{linea: int, cif: string, nombre: string, plan: string, email?: string}> $filas
 	 * @return array<int, array{
-	 *     linea: int, cif: string, nombre: string, plan: string,
-	 *     accion: string, motivos: string[], farmacia_id: ?int, plan_id: ?int,
-	 *     nombre_anterior: ?string, plan_anterior: ?string, plan_nombre: ?string
+	 *     linea: int, cif: string, nombre: string, plan: string, email: string,
+	 *     accion: string, motivos: string[], avisos: string[], farmacia_id: ?int, plan_id: ?int,
+	 *     nombre_anterior: ?string, plan_anterior: ?string, plan_nombre: ?string, email_anterior: ?string
 	 * }>
 	 */
 	public function simular( array $filas ): array {
@@ -71,15 +82,22 @@ class Farmacia_Import_Service {
 		sort( $slugs_validos );
 
 		// Primera pasada: normalizar y localizar duplicados dentro del lote.
-		$lineas_por_cif = array();
+		$lineas_por_cif   = array();
+		$lineas_por_email = array();
 
 		foreach ( $filas as $i => $fila ) {
-			$cif                  = Identificador_Fiscal_Validator::normalizar( $fila['cif'] );
-			$filas[ $i ]['cif']   = $cif;
+			$cif                   = Identificador_Fiscal_Validator::normalizar( $fila['cif'] );
+			$email                 = strtolower( trim( (string) ( $fila['email'] ?? '' ) ) );
+			$filas[ $i ]['cif']    = $cif;
 			$filas[ $i ]['nombre'] = trim( $fila['nombre'] );
+			$filas[ $i ]['email']  = $email;
 
 			if ( '' !== $cif ) {
 				$lineas_por_cif[ $cif ][] = $fila['linea'];
+			}
+
+			if ( '' !== $email ) {
+				$lineas_por_email[ $email ][] = $fila['linea'];
 			}
 		}
 
@@ -92,7 +110,9 @@ class Farmacia_Import_Service {
 		foreach ( $filas as $fila ) {
 			$cif     = $fila['cif'];
 			$nombre  = $fila['nombre'];
+			$email   = $fila['email'];
 			$motivos = array();
+			$avisos  = array();
 
 			if ( '' === $cif ) {
 				$motivos[] = 'CIF/NIF vacio.';
@@ -123,13 +143,30 @@ class Farmacia_Import_Service {
 				$motivos[] = sprintf( 'CIF/NIF duplicado en el fichero (lineas %s).', implode( ', ', $lineas_por_cif[ $cif ] ) );
 			}
 
-			$existente = $existentes[ $cif ] ?? null;
+			if ( '' !== $email ) {
+				if ( mb_strlen( $email ) > self::EMAIL_MAX_CARACTERES || ! is_email( $email ) || sanitize_email( $email ) !== $email ) {
+					$motivos[] = sprintf( 'Email "%s" no valido.', $email );
+				} elseif ( count( $lineas_por_email[ $email ] ) > 1 ) {
+					$motivos[] = sprintf( 'Email repetido en el fichero (lineas %s): cada farmacia necesita el suyo.', implode( ', ', $lineas_por_email[ $email ] ) );
+				}
+			}
+
+			$existente    = $existentes[ $cif ] ?? null;
+			$email_cambia = '' !== $email && ( ! $existente || $existente->get_email() !== $email );
+
+			if ( ! $motivos && $email_cambia ) {
+				if ( $existente && $existente->get_wp_user_id() ) {
+					$avisos[] = 'Ya tiene cuenta: el email se guarda, pero la cuenta sigue con el suyo.';
+				} elseif ( email_exists( $email ) ) {
+					$avisos[] = 'Ya hay una cuenta con este email: la invitacion fallara hasta que se cambie.';
+				}
+			}
 
 			if ( $motivos ) {
 				$accion = self::ACCION_RECHAZADA;
 			} elseif ( ! $existente ) {
 				$accion = self::ACCION_CREAR;
-			} elseif ( $existente->get_nombre() === $nombre && $existente->get_plan_id() === $plan->get_id() ) {
+			} elseif ( ! $email_cambia && $existente->get_nombre() === $nombre && $existente->get_plan_id() === $plan->get_id() ) {
 				$accion = self::ACCION_SIN_CAMBIOS;
 			} else {
 				$accion = self::ACCION_ACTUALIZAR;
@@ -148,13 +185,16 @@ class Farmacia_Import_Service {
 				'cif'             => $cif,
 				'nombre'          => $nombre,
 				'plan'            => $fila['plan'],
+				'email'           => $email,
 				'accion'          => $accion,
 				'motivos'         => $motivos,
+				'avisos'          => $avisos,
 				'farmacia_id'     => $existente ? $existente->get_id() : null,
 				'plan_id'         => $plan ? $plan->get_id() : null,
 				'plan_nombre'     => $plan ? $plan->get_nombre() : null,
 				'nombre_anterior' => $existente ? $existente->get_nombre() : null,
 				'plan_anterior'   => $plan_anterior,
+				'email_anterior'  => $existente ? $existente->get_email() : null,
 			);
 		}
 
@@ -171,13 +211,14 @@ class Farmacia_Import_Service {
 	 *
 	 * @return Farmacia|\WP_Error
 	 */
-	public function crear_una( string $cif, string $nombre, string $plan ) {
+	public function crear_una( string $cif, string $nombre, string $plan, string $email = '' ) {
 		$filas     = array(
 			array(
 				'linea'  => 1,
 				'cif'    => $cif,
 				'nombre' => $nombre,
 				'plan'   => $plan,
+				'email'  => $email,
 			),
 		);
 		$resultado = $this->simular( $filas )[0];
@@ -214,7 +255,7 @@ class Farmacia_Import_Service {
 	}
 
 	/**
-	 * @param array<int, array{linea: int, cif: string, nombre: string, plan: string}> $filas
+	 * @param array<int, array{linea: int, cif: string, nombre: string, plan: string, email?: string}> $filas
 	 * @param string|null $huella_esperada Si se indica y la simulacion actual no coincide, no se escribe nada.
 	 * @return array{creadas: int, actualizadas: int, sin_cambios: int, rechazadas: int}|\WP_Error
 	 */
@@ -251,7 +292,7 @@ class Farmacia_Import_Service {
 
 			switch ( $resultado['accion'] ) {
 				case self::ACCION_CREAR:
-					$farmacia = $this->farmacia_service->crear( $resultado['cif'], $resultado['nombre'], null, $resultado['plan_id'] );
+					$farmacia = $this->farmacia_service->crear( $resultado['cif'], $resultado['nombre'], null, $resultado['plan_id'], '' !== $resultado['email'] ? $resultado['email'] : null );
 
 					if ( is_wp_error( $farmacia ) ) {
 						$error = $farmacia->get_error_message();
@@ -261,7 +302,7 @@ class Farmacia_Import_Service {
 					break;
 
 				case self::ACCION_ACTUALIZAR:
-					if ( $this->repository->update_nombre_y_plan( $resultado['farmacia_id'], $resultado['nombre'], $resultado['plan_id'] ) ) {
+					if ( $this->repository->update_desde_importacion( $resultado['farmacia_id'], $resultado['nombre'], $resultado['plan_id'], '' !== $resultado['email'] ? $resultado['email'] : null ) ) {
 						++$resumen['actualizadas'];
 					} else {
 						$error = sprintf( 'Error de base de datos: %s', $wpdb->last_error );

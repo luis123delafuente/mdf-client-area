@@ -213,7 +213,7 @@ class Admin_Importador_Farmacias {
 	}
 
 	/**
-	 * @return array{filas: array<int, array{linea: int, cif: string, nombre: string, plan: string}>, fichero: string}|null
+	 * @return array{filas: array<int, array{linea: int, cif: string, nombre: string, plan: string, email?: string}>, fichero: string}|null
 	 */
 	private static function leer_lote( string $lote_id ): ?array {
 		$lote = get_transient( self::clave_lote( $lote_id ) );
@@ -225,7 +225,7 @@ class Admin_Importador_Farmacias {
 	 * Lee y borra. Solo devuelve el lote quien consigue borrarlo: de dos
 	 * confirmaciones simultaneas, solo una llega a aplicar.
 	 *
-	 * @return array{filas: array<int, array{linea: int, cif: string, nombre: string, plan: string}>, fichero: string}|null
+	 * @return array{filas: array<int, array{linea: int, cif: string, nombre: string, plan: string, email?: string}>, fichero: string}|null
 	 */
 	private static function consumir_lote( string $lote_id ): ?array {
 		$lote = self::leer_lote( $lote_id );

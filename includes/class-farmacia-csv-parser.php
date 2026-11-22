@@ -30,18 +30,24 @@ class Farmacia_Csv_Parser {
 
 	/** Cabecera normalizada => campo. Columnas no listadas se ignoran. */
 	private const CABECERAS = array(
-		'nombre'  => 'nombre',
-		'cif'     => 'cif',
-		'nif'     => 'cif',
-		'cif/nif' => 'cif',
-		'nif/cif' => 'cif',
-		'cif_nif' => 'cif',
-		'plan'    => 'plan',
+		'nombre'            => 'nombre',
+		'cif'               => 'cif',
+		'nif'               => 'cif',
+		'cif/nif'           => 'cif',
+		'nif/cif'           => 'cif',
+		'cif_nif'           => 'cif',
+		'plan'              => 'plan',
+		// Opcional (v0.47.0): correo para rellenar la invitacion.
+		'email'             => 'email',
+		'e-mail'            => 'email',
+		'mail'              => 'email',
+		'correo'            => 'email',
+		'correoelectronico' => 'email',
 	);
 
 	/**
 	 * @param array{name?: string, type?: string, tmp_name?: string, error?: int, size?: int}|null $archivo Un elemento de $_FILES.
-	 * @return array<int, array{linea: int, cif: string, nombre: string, plan: string}>|\WP_Error
+	 * @return array<int, array{linea: int, cif: string, nombre: string, plan: string, email: string}>|\WP_Error
 	 */
 	public function parsear( ?array $archivo ) {
 		$validacion = $this->validar_archivo( $archivo );
@@ -66,7 +72,7 @@ class Farmacia_Csv_Parser {
 	/**
 	 * Separado de parsear() para poder probarlo sin una subida HTTP real.
 	 *
-	 * @return array<int, array{linea: int, cif: string, nombre: string, plan: string}>|\WP_Error
+	 * @return array<int, array{linea: int, cif: string, nombre: string, plan: string, email: string}>|\WP_Error
 	 */
 	public function parsear_contenido( string $contenido ) {
 		if ( 0 === strncmp( $contenido, "\xEF\xBB\xBF", 3 ) ) {
@@ -125,6 +131,8 @@ class Farmacia_Csv_Parser {
 				'cif'    => sanitize_text_field( $valores[ $columnas['cif'] ] ?? '' ),
 				'nombre' => sanitize_text_field( $valores[ $columnas['nombre'] ] ?? '' ),
 				'plan'   => sanitize_text_field( $valores[ $columnas['plan'] ] ?? '' ),
+				// Sin columna email, o celda vacia: '' (el servicio no lo toca).
+				'email'  => isset( $columnas['email'] ) ? sanitize_text_field( $valores[ $columnas['email'] ] ?? '' ) : '',
 			);
 		}
 
@@ -139,7 +147,7 @@ class Farmacia_Csv_Parser {
 
 	/**
 	 * @param array<int, string|null> $cabecera
-	 * @return array{cif: int, nombre: int, plan: int}|\WP_Error Campo => indice de columna.
+	 * @return array{cif: int, nombre: int, plan: int, email?: int}|\WP_Error Campo => indice de columna.
 	 */
 	private function mapear_cabecera( array $cabecera ) {
 		$columnas = array();
@@ -157,7 +165,7 @@ class Farmacia_Csv_Parser {
 		if ( $faltan ) {
 			return new \WP_Error(
 				'mdf_ca_csv_cabecera',
-				sprintf( 'Faltan columnas obligatorias en la cabecera: %s. La primera fila debe ser: nombre;cif;plan', implode( ', ', $faltan ) )
+				sprintf( 'Faltan columnas obligatorias en la cabecera: %s. La primera fila debe ser: nombre;cif;plan (y, si se quiere, ;email)', implode( ', ', $faltan ) )
 			);
 		}
 

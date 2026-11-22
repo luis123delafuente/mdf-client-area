@@ -74,6 +74,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 					</td>
 				</tr>
 				<tr>
+					<th scope="row"><label for="mdf-ca-farmacia-email">Email (opcional)</label></th>
+					<td>
+						<input
+							type="email"
+							id="mdf-ca-farmacia-email"
+							name="email"
+							class="regular-text"
+							maxlength="100"
+						/>
+						<p class="description">Deja la invitacion ya rellenada con este correo.</p>
+					</td>
+				</tr>
+				<tr>
 					<th scope="row"><label for="mdf-ca-farmacia-plan">Plan</label></th>
 					<td>
 						<select id="mdf-ca-farmacia-plan" name="plan" required>

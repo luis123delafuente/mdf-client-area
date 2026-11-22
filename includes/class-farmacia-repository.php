@@ -186,7 +186,7 @@ class Farmacia_Repository {
 	 *
 	 * @return Farmacia|null Null si la insercion en BD falla.
 	 */
-	public function insert( string $cif, string $nombre, ?int $wp_user_id = null ): ?Farmacia {
+	public function insert( string $cif, string $nombre, ?int $wp_user_id = null, ?string $email = null ): ?Farmacia {
 		global $wpdb;
 
 		$table = DB_Schema::get_farmacias_table_name();
@@ -200,6 +200,11 @@ class Farmacia_Repository {
 		if ( null !== $wp_user_id ) {
 			$data['wp_user_id'] = $wp_user_id;
 			$format[]           = '%d';
+		}
+
+		if ( null !== $email && '' !== $email ) {
+			$data['email'] = $email;
+			$format[]      = '%s';
 		}
 
 		$result = $wpdb->insert( $table, $data, $format );
@@ -256,25 +261,27 @@ class Farmacia_Repository {
 	}
 
 	/**
-	 * Actualiza solo nombre y plan: lo unico que el upsert del importador
-	 * puede cambiar de una farmacia existente. wp_user_id (y con el el
-	 * estado de invitacion) y los documentos no se tocan desde aqui.
+	 * Actualiza nombre, plan y (si llega) email: lo unico que el upsert del
+	 * importador puede cambiar de una farmacia existente. Email null = no se
+	 * toca (el CSV no lo trae o viene vacio). wp_user_id (y con el el estado
+	 * de invitacion) y los documentos no se tocan desde aqui.
 	 */
-	public function update_nombre_y_plan( int $farmacia_id, string $nombre, int $plan_id ): bool {
+	public function update_desde_importacion( int $farmacia_id, string $nombre, int $plan_id, ?string $email ): bool {
 		global $wpdb;
 
-		$table = DB_Schema::get_farmacias_table_name();
-
-		$result = $wpdb->update(
-			$table,
-			array(
-				'nombre'  => $nombre,
-				'plan_id' => $plan_id,
-			),
-			array( 'id' => $farmacia_id ),
-			array( '%s', '%d' ),
-			array( '%d' )
+		$table  = DB_Schema::get_farmacias_table_name();
+		$data   = array(
+			'nombre'  => $nombre,
+			'plan_id' => $plan_id,
 		);
+		$format = array( '%s', '%d' );
+
+		if ( null !== $email ) {
+			$data['email'] = $email;
+			$format[]      = '%s';
+		}
+
+		$result = $wpdb->update( $table, $data, array( 'id' => $farmacia_id ), $format, array( '%d' ) );
 
 		return false !== $result;
 	}

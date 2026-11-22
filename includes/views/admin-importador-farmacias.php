@@ -39,7 +39,7 @@ $etiquetas_accion = array(
 	<?php if ( null === $resultados ) : ?>
 
 		<p class="description">
-			Primera fila de cabecera con las columnas <code>nombre</code>, <code>cif</code> (o <code>nif</code>) y <code>plan</code> (slug del plan).
+			Primera fila de cabecera con las columnas <code>nombre</code>, <code>cif</code> (o <code>nif</code>) y <code>plan</code> (slug del plan), y opcionalmente <code>email</code>, que deja la invitacion ya rellenada.
 			Separador <code>;</code> o <code>,</code>. Maximo <?php echo esc_html( $max_tamano ); ?> y <?php echo esc_html( (string) $max_filas ); ?> filas.
 			Subir el fichero solo simula: no se guarda nada hasta confirmar.
 			La importacion no crea usuarios ni envia invitaciones.
@@ -85,6 +85,7 @@ $etiquetas_accion = array(
 					<th>CIF / NIF</th>
 					<th>Nombre</th>
 					<th>Plan</th>
+					<th>Email</th>
 					<th>Detalle</th>
 				</tr>
 			</thead>
@@ -96,6 +97,7 @@ $etiquetas_accion = array(
 						<td><?php echo esc_html( $fila['cif'] ); ?></td>
 						<td><?php echo esc_html( $fila['nombre'] ); ?></td>
 						<td><?php echo esc_html( $fila['plan_nombre'] ?? $fila['plan'] ); ?></td>
+						<td><?php echo esc_html( ( $fila['email'] ?? '' ) !== '' ? $fila['email'] : '-' ); ?></td>
 						<td>
 							<?php if ( Farmacia_Import_Service::ACCION_RECHAZADA === $fila['accion'] ) : ?>
 								<?php echo esc_html( implode( ' ', $fila['motivos'] ) ); ?>
@@ -104,9 +106,15 @@ $etiquetas_accion = array(
 									Nombre antes: <?php echo esc_html( (string) $fila['nombre_anterior'] ); ?><br />
 								<?php endif; ?>
 								<?php if ( $fila['plan_anterior'] !== $fila['plan_nombre'] ) : ?>
-									Plan antes: <?php echo esc_html( $fila['plan_anterior'] ?? 'sin plan' ); ?>
+									Plan antes: <?php echo esc_html( $fila['plan_anterior'] ?? 'sin plan' ); ?><br />
+								<?php endif; ?>
+								<?php if ( '' !== ( $fila['email'] ?? '' ) && ( $fila['email_anterior'] ?? null ) !== $fila['email'] ) : ?>
+									Email antes: <?php echo esc_html( $fila['email_anterior'] ?? 'sin email' ); ?><br />
 								<?php endif; ?>
 							<?php endif; ?>
+							<?php foreach ( $fila['avisos'] ?? array() as $aviso_fila ) : ?>
+								<em><?php echo esc_html( $aviso_fila ); ?></em><br />
+							<?php endforeach; ?>
 						</td>
 					</tr>
 				<?php endforeach; ?>

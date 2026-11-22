@@ -31,14 +31,16 @@ class Farmacia {
 	private ?int $wp_user_id;
 	private ?int $plan_id;
 	private string $fecha_alta;
+	private ?string $email;
 
-	public function __construct( int $id, string $cif, string $nombre, ?int $wp_user_id, ?int $plan_id, string $fecha_alta ) {
+	public function __construct( int $id, string $cif, string $nombre, ?int $wp_user_id, ?int $plan_id, string $fecha_alta, ?string $email = null ) {
 		$this->id         = $id;
 		$this->cif        = $cif;
 		$this->nombre     = $nombre;
 		$this->wp_user_id = $wp_user_id;
 		$this->plan_id    = $plan_id;
 		$this->fecha_alta = $fecha_alta;
+		$this->email      = $email;
 	}
 
 	public static function from_db_row( object $row ): self {
@@ -48,7 +50,8 @@ class Farmacia {
 			$row->nombre,
 			null !== $row->wp_user_id ? (int) $row->wp_user_id : null,
 			null !== $row->plan_id ? (int) $row->plan_id : null,
-			$row->fecha_alta
+			$row->fecha_alta,
+			isset( $row->email ) && '' !== $row->email ? (string) $row->email : null
 		);
 	}
 
@@ -115,5 +118,13 @@ class Farmacia {
 
 	public function get_fecha_alta(): string {
 		return $this->fecha_alta;
+	}
+
+	/**
+	 * Correo de contacto del importador CSV (v0.47.0): solo sirve para
+	 * rellenar la invitacion. No es el email de la cuenta de WordPress.
+	 */
+	public function get_email(): ?string {
+		return $this->email;
 	}
 }

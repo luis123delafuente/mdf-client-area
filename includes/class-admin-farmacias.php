@@ -144,8 +144,9 @@ class Admin_Farmacias {
 		$nombre  = isset( $_POST['nombre'] ) ? sanitize_text_field( wp_unslash( $_POST['nombre'] ) ) : '';
 		$cif     = isset( $_POST['cif'] ) ? sanitize_text_field( wp_unslash( $_POST['cif'] ) ) : '';
 		$plan    = isset( $_POST['plan'] ) ? sanitize_text_field( wp_unslash( $_POST['plan'] ) ) : '';
+		$email   = isset( $_POST['email'] ) ? sanitize_text_field( wp_unslash( $_POST['email'] ) ) : '';
 
-		$resultado = ( new Farmacia_Import_Service() )->crear_una( $cif, $nombre, $plan );
+		$resultado = ( new Farmacia_Import_Service() )->crear_una( $cif, $nombre, $plan, $email );
 
 		if ( is_wp_error( $resultado ) ) {
 			self::guardar_aviso( 'error', $resultado->get_error_message() );

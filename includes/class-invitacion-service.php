@@ -228,6 +228,11 @@ class Invitacion_Service {
 			}
 		}
 
+		// Primera invitacion de verdad tambien si la cuenta se creo pero el
+		// correo nunca llego a salir (reintento de un envio fallido, v0.47.0):
+		// el texto debe ser el de activar la cuenta, no el de "nuevo enlace".
+		$primera_invitacion = $es_alta_nueva || ! get_user_meta( $usuario->ID, self::META_INVITACION_ENVIADA, true );
+
 		self::$generando_invitacion = true;
 		$key                         = get_password_reset_key( $usuario );
 		self::$generando_invitacion = false;
@@ -236,10 +241,16 @@ class Invitacion_Service {
 			return $key;
 		}
 
-		$enviado = $this->enviar_email_invitacion( $usuario, $key, $farmacia, $es_alta_nueva );
+		$fallo = $this->enviar_email_invitacion( $usuario, $key, $farmacia, $primera_invitacion );
 
-		if ( ! $enviado ) {
-			return new \WP_Error( 'mdf_ca_invitacion_email_no_enviado', 'No se pudo enviar el correo de invitacion. Comprueba la configuracion de envio de email del sitio.' );
+		if ( null !== $fallo ) {
+			// Solo la categoria (texto fijo): el detalle de PHPMailer puede
+			// llevar el email y esto lo ve tambien el gestor.
+			return new \WP_Error(
+				'mdf_ca_invitacion_email_no_enviado',
+				sprintf( 'No se pudo enviar el correo de invitacion (%s). La cuenta queda creada: se puede reintentar.', Correo::texto_categoria( $fallo['categoria'] ) ),
+				$fallo
+			);
 		}
 
 		update_user_meta( $usuario->ID, self::META_INVITACION_ENVIADA, time() );
@@ -290,7 +301,10 @@ class Invitacion_Service {
 		return get_userdata( $user_id );
 	}
 
-	private function enviar_email_invitacion( \WP_User $usuario, string $key, Farmacia $farmacia, bool $es_alta_nueva ): bool {
+	/**
+	 * @return array{categoria: string, detalle: string}|null null si ha salido (Correo::enviar()).
+	 */
+	private function enviar_email_invitacion( \WP_User $usuario, string $key, Farmacia $farmacia, bool $es_alta_nueva ): ?array {
 		$url = self::url_establecer_password( $usuario->user_login, $key );
 
 		if ( $es_alta_nueva ) {
@@ -311,7 +325,7 @@ class Invitacion_Service {
 			);
 		}
 
-		return (bool) wp_mail( $usuario->user_email, $asunto, $cuerpo );
+		return Correo::enviar( $usuario->user_email, $asunto, $cuerpo );
 	}
 
 	private static function cuerpo_email( string $introduccion, string $url, string $pie ): string {

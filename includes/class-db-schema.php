@@ -217,12 +217,17 @@ class DB_Schema {
 		// no exigir backfill de las farmacias ya existentes; sin plan
 		// asignado el catalogo por plan simplemente no muestra nada
 		// (Permissions).
+		// email (v0.47.0): correo de contacto que trae el importador CSV,
+		// solo para rellenar de antemano la invitacion. No es el email de la
+		// cuenta (ese vive en wp_users) y no se usa para nada mas. Mismo
+		// largo que wp_users.user_email.
 		$farmacias_sql = "CREATE TABLE {$farmacias_table} (
 			id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 			cif VARCHAR(9) NOT NULL,
 			nombre VARCHAR(255) NOT NULL,
 			wp_user_id BIGINT UNSIGNED NULL,
 			plan_id BIGINT UNSIGNED NULL,
+			email VARCHAR(100) NULL,
 			fecha_alta DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY  (id),
 			UNIQUE KEY cif (cif),
