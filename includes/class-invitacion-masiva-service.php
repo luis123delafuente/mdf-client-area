@@ -38,8 +38,16 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Invitacion_Masiva_Service {
 
+	/**
+	 * 5 cada 45 s = 400 por hora (v0.47.2). Produccion envia por
+	 * smtp.ionos.es (buzon Mail Basic/Business), que admite 500 por hora con
+	 * el buzon de mas de 30 dias (50, 100 y 400 si es mas nuevo) y responde
+	 * "450 Mail send limit exceeded" al pasarse. Se deja margen para el resto
+	 * de correos de la web (recuperar contrasena, avisos). Ayuda de IONOS:
+	 * "What restrictions apply to sending bulk emails?".
+	 */
 	public const TAMANO_TANDA       = 5;
-	public const INTERVALO_SEGUNDOS = 30;
+	public const INTERVALO_SEGUNDOS = 45;
 
 	/** El trabajo dura lo bastante para 270 farmacias con pausas (unos 27 min). */
 	private const TTL_TRABAJO = 12 * HOUR_IN_SECONDS;
