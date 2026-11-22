@@ -17,7 +17,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Admin_Invitaciones: menu propio, capacidad Admin_Farmacias::CAPACIDAD
  * (mdf_cliente nunca la tiene, y Role_Restrictions::bloquear_acceso_admin()
  * ya lo saca de todo wp-admin antes de llegar aqui), admin-post.php con
- * nonce. Sin edicion. Desde la v0.46.0, "Eliminar" una farmacia sin
+ * nonce. Sin edicion, salvo «Cambiar plan» (v0.48.0, tambien el gestor:
+ * pantalla &cambiar_plan=ID y admin-post con nonce por farmacia, sobre
+ * Farmacia_Service::cambiar_plan()). Desde la v0.46.0, "Eliminar" una farmacia sin
  * documentos ni cuenta; desde la v0.47.1 tambien el gestor (ver
  * Farmacia_Eliminacion_Service), con pantalla de confirmacion. El alta
  * masiva por CSV (Fase 4) vive en Admin_Importador_Farmacias, submenu de
@@ -52,10 +54,18 @@ class Admin_Farmacias {
 	public const CAPACIDAD_ELIMINAR = Roles::CAP_GESTIONAR_FARMACIAS;
 	private const ACCION_ELIMINAR   = 'mdf_ca_eliminar_farmacia';
 
+	/**
+	 * Cambiar el plan de una farmacia (v0.48.0). Misma capacidad que el
+	 * resto de la pantalla: el gestor tambien. Nonce por farmacia:
+	 * ACCION_CAMBIAR_PLAN . '_' . id.
+	 */
+	private const ACCION_CAMBIAR_PLAN = 'mdf_ca_cambiar_plan_farmacia';
+
 	public static function register_hooks(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'registrar_menu' ) );
 		add_action( 'admin_post_mdf_ca_crear_farmacia', array( __CLASS__, 'gestionar_crear' ) );
 		add_action( 'admin_post_' . self::ACCION_ELIMINAR, array( __CLASS__, 'gestionar_eliminar' ) );
+		add_action( 'admin_post_' . self::ACCION_CAMBIAR_PLAN, array( __CLASS__, 'gestionar_cambiar_plan' ) );
 	}
 
 	public static function registrar_menu(): void {
@@ -81,7 +91,19 @@ class Admin_Farmacias {
 			return;
 		}
 
+		// Solo pinta el formulario; el cambio (gestionar_cambiar_plan) exige nonce.
+		if ( isset( $_GET['cambiar_plan'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			self::render_cambiar_plan( (int) $_GET['cambiar_plan'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+
 		$planes           = ( new Plan_Repository() )->find_all();
+		$nombres_planes   = array();
+
+		foreach ( $planes as $plan ) {
+			$nombres_planes[ $plan->get_id() ] = $plan->get_nombre();
+		}
+
 		$farmacias        = ( new Farmacia_Repository() )->find_all();
 		$aviso            = self::consumir_aviso();
 		$puede_eliminar   = current_user_can( self::CAPACIDAD_ELIMINAR );
@@ -107,6 +129,57 @@ class Admin_Farmacias {
 			),
 			admin_url( 'admin.php' )
 		);
+	}
+
+	public static function url_cambiar_plan( int $farmacia_id ): string {
+		return add_query_arg(
+			array(
+				'page'         => self::MENU_SLUG,
+				'cambiar_plan' => $farmacia_id,
+			),
+			admin_url( 'admin.php' )
+		);
+	}
+
+	private static function render_cambiar_plan( int $farmacia_id ): void {
+		$farmacia   = ( new Farmacia_Repository() )->find_by_id( $farmacia_id );
+		$planes     = ( new Plan_Repository() )->find_all();
+		$aviso      = self::consumir_aviso();
+		$accion     = self::ACCION_CAMBIAR_PLAN;
+		$url_volver = admin_url( 'admin.php?page=' . self::MENU_SLUG );
+
+		require MDF_CA_PLUGIN_DIR . 'includes/views/admin-cambiar-plan-farmacia.php';
+	}
+
+	public static function gestionar_cambiar_plan(): void {
+		if ( ! current_user_can( self::CAPACIDAD ) ) {
+			wp_die( 'No tienes permiso para realizar esta acción.', '', array( 'response' => 403 ) );
+		}
+
+		$id      = isset( $_POST['farmacia_id'] ) ? (int) $_POST['farmacia_id'] : 0;
+		$plan_id = isset( $_POST['plan_id'] ) ? (int) $_POST['plan_id'] : 0;
+
+		check_admin_referer( self::ACCION_CAMBIAR_PLAN . '_' . $id );
+
+		$resultado = ( new Farmacia_Service() )->cambiar_plan( $id, $plan_id );
+
+		if ( is_wp_error( $resultado ) ) {
+			self::guardar_aviso( 'error', $resultado->get_error_message() );
+			self::redirigir( $id > 0 ? self::url_cambiar_plan( $id ) : admin_url( 'admin.php?page=' . self::MENU_SLUG ) );
+		}
+
+		$farmacia = $resultado['farmacia'];
+
+		if ( ! $resultado['cambiado'] ) {
+			$mensaje = sprintf( 'La farmacia «%s» (%s) ya tenía el plan «%s». No se ha cambiado nada.', $farmacia->get_nombre(), $farmacia->get_cif(), $resultado['nuevo']->get_nombre() );
+		} elseif ( null === $resultado['anterior'] ) {
+			$mensaje = sprintf( 'Farmacia «%s» (%s): plan «%s» asignado.', $farmacia->get_nombre(), $farmacia->get_cif(), $resultado['nuevo']->get_nombre() );
+		} else {
+			$mensaje = sprintf( 'Farmacia «%s» (%s): plan cambiado de «%s» a «%s».', $farmacia->get_nombre(), $farmacia->get_cif(), $resultado['anterior']->get_nombre(), $resultado['nuevo']->get_nombre() );
+		}
+
+		self::guardar_aviso( 'success', $mensaje );
+		self::redirigir( admin_url( 'admin.php?page=' . self::MENU_SLUG ) );
 	}
 
 	private static function render_confirmar_eliminar( int $farmacia_id ): void {

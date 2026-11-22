@@ -111,7 +111,7 @@ class Farmacia_Service {
 			if ( ! $this->repository->update_plan( $farmacia->get_id(), $plan_id ) ) {
 				return new \WP_Error(
 					'mdf_ca_error_bd',
-					'La farmacia se creo correctamente, pero no se pudo asignar el plan. Asignalo despues desde Planes MDF.'
+					'La farmacia se creó correctamente, pero no se pudo asignar el plan. Asígnalo después con «Cambiar plan» en Farmacias MDF.'
 				);
 			}
 
@@ -119,5 +119,51 @@ class Farmacia_Service {
 		}
 
 		return $farmacia;
+	}
+
+	/**
+	 * Cambia el plan de una farmacia existente («Cambiar plan» en Farmacias
+	 * MDF, v0.48.0). El plan es obligatorio, como en el alta: no se puede
+	 * dejar una farmacia sin plan desde aqui. Solo toca plan_id: nombre,
+	 * email, cuenta, invitacion y documentos no cambian. Lo que la farmacia
+	 * ve del catalogo y de [mdf_ca_si_plan] lo sigue decidiendo Permissions
+	 * con el plan leido de la BD en cada peticion.
+	 *
+	 * @return array{farmacia: Farmacia, anterior: ?Plan, nuevo: Plan, cambiado: bool}|\WP_Error
+	 */
+	public function cambiar_plan( int $farmacia_id, int $plan_id ) {
+		$farmacia = $farmacia_id > 0 ? $this->repository->find_by_id( $farmacia_id ) : null;
+
+		if ( null === $farmacia ) {
+			return new \WP_Error( 'mdf_ca_farmacia_no_existe', 'La farmacia no existe.' );
+		}
+
+		$nuevo = $plan_id > 0 ? $this->plan_repository->find_by_id( $plan_id ) : null;
+
+		if ( null === $nuevo ) {
+			return new \WP_Error( 'mdf_ca_plan_no_existe', 'El plan seleccionado no existe.' );
+		}
+
+		$anterior = null !== $farmacia->get_plan_id() ? $this->plan_repository->find_by_id( $farmacia->get_plan_id() ) : null;
+
+		if ( $farmacia->get_plan_id() === $nuevo->get_id() ) {
+			return array(
+				'farmacia' => $farmacia,
+				'anterior' => $anterior,
+				'nuevo'    => $nuevo,
+				'cambiado' => false,
+			);
+		}
+
+		if ( ! $this->repository->update_plan( $farmacia->get_id(), $nuevo->get_id() ) ) {
+			return new \WP_Error( 'mdf_ca_error_bd', 'No se pudo guardar el plan. Inténtalo de nuevo.' );
+		}
+
+		return array(
+			'farmacia' => $farmacia,
+			'anterior' => $anterior,
+			'nuevo'    => $nuevo,
+			'cambiado' => true,
+		);
 	}
 }

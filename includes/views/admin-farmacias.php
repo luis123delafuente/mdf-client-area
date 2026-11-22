@@ -4,11 +4,12 @@
  * la logica (validacion de CIF, duplicados, plan) vive en
  * Farmacia_Import_Service, el mismo servicio que el importador CSV.
  *
- * Alta manual sin edicion; "Eliminar" para quien gestiona farmacias (v0.46.0; gestor desde la v0.47.1,
- * ver cabecera de Admin_Farmacias).
+ * Alta manual sin edicion; «Cambiar plan» (v0.48.0) y "Eliminar" para quien gestiona farmacias
+ * (v0.46.0; gestor desde la v0.47.1, ver cabecera de Admin_Farmacias).
  *
  * @var \MdfClientArea\Plan[]     $planes
  * @var \MdfClientArea\Farmacia[] $farmacias
+ * @var array<int, string>        $nombres_planes Nombre de cada plan por id.
  * @var array{tipo: string, mensaje: string}|null $aviso
  * @var bool                      $puede_eliminar
  * @var array<int, array{corto: string, largo: string}|null> $bloqueos Por farmacia; solo si $puede_eliminar.
@@ -119,10 +120,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 					<th>Nombre</th>
 					<th>CIF / NIF</th>
 					<th>Alta</th>
+					<th>Plan</th>
 					<th>Documentos</th>
-					<?php if ( $puede_eliminar ) : ?>
-						<th>Acciones</th>
-					<?php endif; ?>
+					<th>Acciones</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -131,9 +131,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 						<td><?php echo esc_html( $farmacia->get_nombre() ); ?></td>
 						<td><?php echo esc_html( $farmacia->get_cif() ); ?></td>
 						<td><?php echo esc_html( $farmacia->get_fecha_alta() ); ?></td>
+						<td>
+							<?php if ( null === $farmacia->get_plan_id() ) : ?>
+								<span class="description">Sin plan</span>
+							<?php else : ?>
+								<?php echo esc_html( $nombres_planes[ $farmacia->get_plan_id() ] ?? sprintf( 'Plan inexistente (ID %d)', $farmacia->get_plan_id() ) ); ?>
+							<?php endif; ?>
+						</td>
 						<td><?php echo esc_html( (string) ( $documentos_total[ $farmacia->get_id() ] ?? 0 ) ); ?></td>
-						<?php if ( $puede_eliminar ) : ?>
-							<td>
+						<td>
+							<a href="<?php echo esc_url( Admin_Farmacias::url_cambiar_plan( $farmacia->get_id() ) ); ?>">
+								Cambiar plan<span class="screen-reader-text"> de <?php echo esc_html( $farmacia->get_nombre() ); ?></span>
+							</a>
+							<?php if ( $puede_eliminar ) : ?>
+								|
 								<?php if ( null === $bloqueos[ $farmacia->get_id() ] ) : ?>
 									<a href="<?php echo esc_url( Admin_Farmacias::url_eliminar( $farmacia->get_id() ) ); ?>" class="button-link-delete">
 										Eliminar<span class="screen-reader-text"> <?php echo esc_html( $farmacia->get_nombre() ); ?></span>
@@ -141,8 +152,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 								<?php else : ?>
 									<span class="description" title="<?php echo esc_attr( $bloqueos[ $farmacia->get_id() ]['largo'] ); ?>"><?php echo esc_html( $bloqueos[ $farmacia->get_id() ]['corto'] ); ?></span>
 								<?php endif; ?>
-							</td>
-						<?php endif; ?>
+							<?php endif; ?>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
