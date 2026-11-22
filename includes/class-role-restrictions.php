@@ -85,6 +85,7 @@ class Role_Restrictions {
 	public static function register_hooks(): void {
 		add_filter( 'login_redirect', array( __CLASS__, 'redirigir_tras_login' ), 10, 3 );
 		add_action( 'init', array( __CLASS__, 'bloquear_acceso_admin' ) );
+		add_action( 'template_redirect', array( __CLASS__, 'redirigir_raiz_al_area' ) );
 		add_action( 'template_redirect', array( __CLASS__, 'proteger_area_privada' ) );
 		add_filter( 'show_admin_bar', array( __CLASS__, 'ocultar_admin_bar_cliente' ) );
 		add_filter( 'rest_page_query', array( __CLASS__, 'ocultar_area_privada_en_rest_listado' ), 10, 2 );
@@ -140,6 +141,31 @@ class Role_Restrictions {
 		}
 
 		wp_safe_redirect( wp_login_url( self::url_actual() ) );
+		exit;
+	}
+
+	/**
+	 * La raiz del sitio (v0.48.1) va a la portada del area
+	 * (get_area_privada_url()), con sesion o sin ella: sin sesion, esa
+	 * pagina ya redirige al login (proteger_area_privada()) y vuelve a la
+	 * portada tras entrar. Antes, "/" mostraba el indice de entradas de
+	 * WordPress (Ajustes > Lectura). Se cubre is_front_page() e is_home()
+	 * para no depender de ese ajuste. Los feeds no se tocan. Si el destino
+	 * fuera la propia raiz (alguien pone la portada del area como pagina
+	 * de inicio), no redirige, para no entrar en bucle.
+	 */
+	public static function redirigir_raiz_al_area(): void {
+		if ( is_feed() || ! ( is_front_page() || is_home() ) ) {
+			return;
+		}
+
+		$destino = self::get_area_privada_url();
+
+		if ( untrailingslashit( $destino ) === untrailingslashit( home_url( '/' ) ) ) {
+			return;
+		}
+
+		wp_safe_redirect( $destino );
 		exit;
 	}
 
